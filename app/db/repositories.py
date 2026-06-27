@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from app.ingestion.chunker import ChunkDraft, SectionDraft
@@ -28,6 +29,29 @@ class SectionRecord:
 
     id: str
     section_index: int
+
+
+@dataclass(frozen=True)
+class UserSettings:
+    """Per-user Telegram UX and model settings."""
+
+    telegram_user_id: int
+    answer_mode: str = "cheap"
+    vision_mode: str = "auto"
+    debug_mode: bool = False
+    selected_workspace_id: str | None = None
+    updated_at: datetime | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        """Serialize settings for Supabase."""
+        return {
+            "telegram_user_id": self.telegram_user_id,
+            "answer_mode": self.answer_mode,
+            "vision_mode": self.vision_mode,
+            "debug_mode": self.debug_mode,
+            "selected_workspace_id": self.selected_workspace_id,
+            "updated_at": (self.updated_at or datetime.now(timezone.utc)).isoformat(),
+        }
 
 
 class DocumentRepository:
@@ -221,6 +245,160 @@ class ConversationRepository:
     def __init__(self, client: "SupabaseClient") -> None:
         self._client = client
 
+    async def get_active_conversation(self, telegram_user_id: int, workspace_id: str) -> dict[str, Any] | None:
+        """Return active conversation for a Telegram user."""
+        rows = await self._client.select(
+            "conversations",
+            params={
+                "select": "id,title,summary,is_active",
+                "telegram_user_id": f"eq.{telegram_user_id}",
+                "workspace_id": f"eq.{workspace_id}",
+                "is_active": "eq.true",
+                "order": "updated_at.desc",
+                "limit": "1",
+            },
+        )
+        return rows[0] if rows else None
+
+    async def close_active_conversations(self, telegram_user_id: int, workspace_id: str) -> None:
+        """Close active conversations for a Telegram user."""
+        await self._client.update(
+            "conversations",
+            {"is_active": False},
+            params={
+                "telegram_user_id": f"eq.{telegram_user_id}",
+                "workspace_id": f"eq.{workspace_id}",
+                "is_active": "eq.true",
+            },
+        )
+
+    async def create_conversation(
+        self,
+        *,
+        telegram_user_id: int,
+        workspace_id: str,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new active conversation."""
+        rows = await self._client.insert(
+            "conversations",
+            {
+                "telegram_user_id": telegram_user_id,
+                "workspace_id": workspace_id,
+                "title": title,
+                "is_active": True,
+            },
+        )
+        return rows[0]
+
+
+class BotUserRepository:
+    """Database access for Telegram bot users."""
+
+    def __init__(self, client: "SupabaseClient") -> None:
+        self._client = client
+
+    async def ensure_user(self, telegram_user_id: int, role: str = "user") -> dict[str, Any]:
+        """Create a bot user when missing and return the row."""
+        rows = await self._client.select(
+            "bot_users",
+            params={
+                "select": "telegram_user_id,role,is_active",
+                "telegram_user_id": f"eq.{telegram_user_id}",
+                "limit": "1",
+            },
+        )
+        if rows:
+            return rows[0]
+        return (
+            await self._client.insert(
+                "bot_users",
+                {"telegram_user_id": telegram_user_id, "role": role, "is_active": True},
+            )
+        )[0]
+
+
+class UserSettingsRepository:
+    """Database access for user_settings.
+
+    This repository expects the optional `public.user_settings` table described in
+    the Telegram UX migration proposal. It is intentionally isolated so the RAG
+    pipeline and schema remain untouched until that migration is approved.
+    """
+
+    def __init__(self, client: "SupabaseClient") -> None:
+        self._client = client
+
+    async def get(self, telegram_user_id: int) -> UserSettings:
+        """Return settings for a user or defaults when no row exists."""
+        rows = await self._client.select(
+            "user_settings",
+            params={
+                "select": "telegram_user_id,answer_mode,vision_mode,debug_mode,selected_workspace_id,updated_at",
+                "telegram_user_id": f"eq.{telegram_user_id}",
+                "limit": "1",
+            },
+        )
+        if not rows:
+            return UserSettings(telegram_user_id=telegram_user_id)
+        return _user_settings(rows[0])
+
+    async def save(self, settings: UserSettings) -> UserSettings:
+        """Insert or update settings for a user."""
+        existing = await self._client.select(
+            "user_settings",
+            params={"select": "telegram_user_id", "telegram_user_id": f"eq.{settings.telegram_user_id}", "limit": "1"},
+        )
+        payload = settings.to_payload()
+        if existing:
+            await self._client.update(
+                "user_settings",
+                payload,
+                params={"telegram_user_id": f"eq.{settings.telegram_user_id}"},
+            )
+        else:
+            await self._client.insert("user_settings", payload)
+        return settings
+
+    async def set_answer_mode(self, telegram_user_id: int, answer_mode: str) -> UserSettings:
+        """Update only answer mode."""
+        current = await self.get(telegram_user_id)
+        updated = UserSettings(
+            telegram_user_id=current.telegram_user_id,
+            answer_mode=answer_mode,
+            vision_mode=current.vision_mode,
+            debug_mode=current.debug_mode,
+            selected_workspace_id=current.selected_workspace_id,
+            updated_at=datetime.now(timezone.utc),
+        )
+        return await self.save(updated)
+
+    async def set_vision_mode(self, telegram_user_id: int, vision_mode: str) -> UserSettings:
+        """Update only vision mode."""
+        current = await self.get(telegram_user_id)
+        updated = UserSettings(
+            telegram_user_id=current.telegram_user_id,
+            answer_mode=current.answer_mode,
+            vision_mode=vision_mode,
+            debug_mode=current.debug_mode,
+            selected_workspace_id=current.selected_workspace_id,
+            updated_at=datetime.now(timezone.utc),
+        )
+        return await self.save(updated)
+
+    async def set_debug_mode(self, telegram_user_id: int, debug_mode: bool) -> UserSettings:
+        """Update only debug mode."""
+        current = await self.get(telegram_user_id)
+        updated = UserSettings(
+            telegram_user_id=current.telegram_user_id,
+            answer_mode=current.answer_mode,
+            vision_mode=current.vision_mode,
+            debug_mode=debug_mode,
+            selected_workspace_id=current.selected_workspace_id,
+            updated_at=datetime.now(timezone.utc),
+        )
+        return await self.save(updated)
+
 
 class EvidenceLogRepository:
     """Database access for evidence-first RAG traces."""
@@ -260,4 +438,15 @@ def _document_record(row: dict[str, Any]) -> DocumentRecord:
         version=int(row["version"]),
         status=str(row["status"]),
         content_hash=str(row["content_hash"]),
+    )
+
+
+def _user_settings(row: dict[str, Any]) -> UserSettings:
+    return UserSettings(
+        telegram_user_id=int(row["telegram_user_id"]),
+        answer_mode=str(row.get("answer_mode") or "cheap"),
+        vision_mode=str(row.get("vision_mode") or "auto"),
+        debug_mode=bool(row.get("debug_mode", False)),
+        selected_workspace_id=row.get("selected_workspace_id"),
+        updated_at=None,
     )

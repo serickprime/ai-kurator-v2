@@ -5,26 +5,38 @@ from __future__ import annotations
 import base64
 import mimetypes
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 
-from app.config import Settings
+if TYPE_CHECKING:
+    from app.config import Settings
+    from app.llm.model_router import ModelRouter
 
 
 class VisionTextifier:
     """Extract text from screenshots and images with an OpenRouter vision model."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: "Settings", model_router: "ModelRouter | None" = None) -> None:
         self._api_key = settings.openrouter_api_key
         self._model = settings.vision_model
+        self._model_router = model_router
         self._client = httpx.AsyncClient(
             base_url="https://openrouter.ai/api/v1",
             timeout=90.0,
             trust_env=False,
         )
 
-    async def describe_image(self, path: Path) -> str:
+    async def describe_image(self, path: Path, answer_mode: str = "cheap") -> str:
         """Return a compact description of an image for indexing."""
+        prompt = (
+            "Describe the educational or technical content in this image. "
+            "Focus on visible UI, diagrams, errors, commands, settings, and labels."
+        )
+        if self._model_router is not None:
+            result = await self._model_router.complete_vision(path, prompt, answer_mode=answer_mode)
+            return result.text.strip()
+
         if not self._api_key:
             raise RuntimeError("OPENROUTER_API_KEY is required for vision ingestion")
 
@@ -41,10 +53,7 @@ class VisionTextifier:
                         "content": [
                             {
                                 "type": "text",
-                                "text": (
-                                    "Describe the educational or technical content in this image. "
-                                    "Focus on visible UI, diagrams, errors, commands, settings, and labels."
-                                ),
+                                "text": prompt,
                             },
                             {"type": "image_url", "image_url": {"url": data_url}},
                         ],

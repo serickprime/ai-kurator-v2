@@ -77,7 +77,7 @@ async def generate_answer(
 
     if llm_client is not None:
         try:
-            text = (await llm_client.complete_text(messages)).strip()
+            text = (await _complete_text(llm_client, messages, dialog_context)).strip()
             if text:
                 return AnswerDraft(
                     text=text,
@@ -86,8 +86,16 @@ async def generate_answer(
                     answer_mode=evidence_pack.answer_mode,
                     model_input={"messages": messages},
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            user_message = str(getattr(exc, "user_message", "")).strip()
+            if user_message:
+                return AnswerDraft(
+                    text=user_message,
+                    status=AnswerStatus.NEEDS_CLARIFICATION,
+                    used_evidence_ids=_used_evidence_ids(evidence_pack),
+                    answer_mode=evidence_pack.answer_mode,
+                    model_input={"messages": messages},
+                )
 
     return AnswerDraft(
         text=_fallback_answer(question_analysis, evidence_pack),
@@ -106,6 +114,17 @@ def _messages(model_input: dict[str, Any]) -> list[dict[str, str]]:
             "content": json.dumps(model_input, ensure_ascii=False, indent=2),
         },
     ]
+
+
+async def _complete_text(
+    llm_client: AnswerLlm,
+    messages: list[dict[str, str]],
+    dialog_context: object | None,
+) -> str:
+    dialog_aware = getattr(llm_client, "complete_text_for_dialog", None)
+    if dialog_aware is not None:
+        return await dialog_aware(messages, dialog_context)
+    return await llm_client.complete_text(messages)
 
 
 def _model_input(

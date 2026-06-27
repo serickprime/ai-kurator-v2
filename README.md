@@ -77,6 +77,20 @@ Fill `.env` with local secrets. Never commit `.env`.
 .\.venv\Scripts\python.exe -m app.main
 ```
 
+## Telegram UX
+
+The bot has a compact persistent reply keyboard:
+
+- `Новая тема`
+- `Загрузить материал`
+- `Настройки`
+
+Questions, captions, and image context are combined into one user intake before RAG. Vision text is context only, not a standalone question. Upload mode is explicit: files outside `Загрузить материал` are not indexed automatically, and text sent during upload mode does not go to RAG.
+
+Answer model routing is controlled by per-user settings and the `OPENROUTER_*_MODELS` environment lists. Free mode never silently falls back to paid models. Quality can fall back to cheap only when `ALLOW_QUALITY_TO_CHEAP_FALLBACK=true`.
+
+Persistent settings need the optional `user_settings` migration proposed in [Telegram UX](docs/bot_ux.md). It has not been applied automatically in this step.
+
 ## Ingest Materials
 
 ```powershell
@@ -93,3 +107,4 @@ Make sure `EMBEDDING_MODEL` points to a local model that actually returns 1024-d
 - [RAG pipeline](docs/rag_pipeline.md)
 - [Evaluation](docs/eval.md)
 - [Prompts](docs/prompts.md)
+- [Telegram UX](docs/bot_ux.md)
