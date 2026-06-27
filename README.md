@@ -89,6 +89,8 @@ Questions, captions, and image context are combined into one user intake before 
 
 Answer model routing is controlled by per-user settings and the `OPENROUTER_*_MODELS` environment lists. Free mode never silently falls back to paid models. Quality can fall back to cheap only when `ALLOW_QUALITY_TO_CHEAP_FALLBACK=true`.
 
+`OPENROUTER_BASE_URL`, `OPENROUTER_SITE_URL`, and `OPENROUTER_APP_NAME` are optional transport/header settings. Keep `OPENROUTER_API_KEY` server-side only.
+
 Persistent settings need the optional `user_settings` migration proposed in [Telegram UX](docs/bot_ux.md). It has not been applied automatically in this step.
 
 ## Ingest Materials
@@ -126,3 +128,4 @@ RAG v2 eval проверяет не только текст ответа, но �
 - [Evaluation](docs/eval.md)
 - [Prompts](docs/prompts.md)
 - [Telegram UX](docs/bot_ux.md)
+- [Ported utilities](docs/ported_utilities.md)

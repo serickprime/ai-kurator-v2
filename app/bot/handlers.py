@@ -10,7 +10,8 @@ from typing import Any, Protocol
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
-from app.bot.formatting import format_status
+from app.bot.access import UserAccessPolicy
+from app.bot.formatting import format_for_telegram, format_status
 from app.bot.intake_buffer import MessageIntakeBuffer, UserIntake
 from app.bot.keyboards import (
     BTN_CANCEL,
@@ -76,12 +77,18 @@ class BotServices:
     vision_textifier: Any | None = None
     download_dir: Path = Path("data/uploads/telegram")
     owner_ids: tuple[int, ...] = ()
+    admin_ids: tuple[int, ...] = ()
     default_workspace_id: str = ""
     default_workspace_name: str = "team"
     embedding_model: str = "BAAI/bge-m3"
     reranker_mode: str = "identity"
     schema_version: str = "v2"
     model_lists: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+    @property
+    def access_policy(self) -> UserAccessPolicy:
+        """Return the current access policy."""
+        return UserAccessPolicy(owner_ids=self.owner_ids, fallback_admin_ids=self.admin_ids)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -146,10 +153,11 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     settings = await services.settings_repo.get(user_id)
     models = services.model_lists.get(settings.answer_mode, ())
+    role = await services.access_policy.role_for(user_id)
     await update.message.reply_text(
         format_status(
             workspace=services.default_workspace_id or services.default_workspace_name,
-            role="user",
+            role=role,
             settings=settings,
             embedding_model=services.embedding_model,
             reranker_mode=services.reranker_mode,
@@ -464,7 +472,11 @@ async def _answer_intake(update: Update, services: BotServices, intake: UserInta
         workspace_id=str(intake.user_settings.get("selected_workspace_id") or services.default_workspace_id),
         dialog_context={"user_settings": intake.user_settings, "vision_errors": intake.vision_errors},
     )
-    await update.message.reply_text(result.answer, reply_markup=main_menu_keyboard())
+    await update.message.reply_text(
+        format_for_telegram(result.answer),
+        parse_mode="HTML",
+        reply_markup=main_menu_keyboard(),
+    )
     if user_id is not None:
         state = services.state_store.get(user_id)
         state.last_debug = {
@@ -508,7 +520,12 @@ def _safe_filename(filename: str) -> str:
 
 
 def _can_upload(services: BotServices, telegram_user_id: int) -> bool:
-    return not services.owner_ids or telegram_user_id in services.owner_ids
+    policy = services.access_policy
+    return (
+        policy.open_access()
+        or telegram_user_id in set(policy.owner_ids)
+        or telegram_user_id in set(policy.fallback_admin_ids)
+    )
 
 
 def _services(context: ContextTypes.DEFAULT_TYPE) -> BotServices:

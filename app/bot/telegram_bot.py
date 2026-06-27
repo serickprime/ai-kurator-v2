@@ -2,6 +2,7 @@
 
 from telegram.ext import Application, ApplicationBuilder
 
+from app.bot.access import parse_telegram_ids
 from app.bot.handlers import BotServices, register_handlers
 from app.config import Settings
 from app.llm.model_router import ModelRouter, ModelRouterConfig
@@ -29,7 +30,8 @@ def _build_services(settings: Settings) -> BotServices:
 
     return BotServices(
         vision_textifier=vision_textifier,
-        owner_ids=_split_ints(settings.owner_ids),
+        owner_ids=parse_telegram_ids(settings.owner_ids),
+        admin_ids=parse_telegram_ids(settings.admin_ids),
         default_workspace_id=settings.default_workspace_id,
         default_workspace_name=settings.default_workspace_name,
         embedding_model=settings.embedding_model,
@@ -41,16 +43,3 @@ def _build_services(settings: Settings) -> BotServices:
             "quality": model_config.quality_text,
         },
     )
-
-
-def _split_ints(value: str) -> tuple[int, ...]:
-    result: list[int] = []
-    for item in value.split(","):
-        item = item.strip()
-        if not item:
-            continue
-        try:
-            result.append(int(item))
-        except ValueError:
-            continue
-    return tuple(result)
