@@ -46,6 +46,29 @@ python scripts/evaluate.py --cases app/eval/cases.json --save-report
 
 Without a predictions file, the runner produces a `not_run` report. This is deliberate: the eval layer should not invent RAG outputs when no live pipeline result was supplied.
 
+## Simple Synthetic Retrieval Benchmark
+
+Use this benchmark before judging answer generation. It uses simple household materials, not technical terms, and checks only retrieval stages:
+
+```powershell
+python scripts/evaluate_retrieval_simple_synthetic.py
+python scripts/evaluate_retrieval_simple_synthetic.py --reingest
+python scripts/evaluate_retrieval_simple_synthetic.py --question "как поливать комнатный лимон зимой?"
+```
+
+Inputs:
+
+- `sample_materials/rag_search_simple_test/`
+- `app/eval/rag_search_simple_test_cases.json`
+
+Reports:
+
+- `eval_runs/retrieval_simple_synthetic/latest.json`
+- `eval_runs/retrieval_simple_synthetic/latest.md`
+- timestamped JSON and Markdown files in the same directory.
+
+The benchmark shows document candidates, selected evidence chunks, found `FACT-ID`s, discarded candidates, and whether forbidden documents leaked into the evidence pack. Raw candidates may include similar forbidden documents; the failure condition is forbidden evidence in `evidence_pack`.
+
 To evaluate real outputs, pass a JSON file:
 
 ```powershell

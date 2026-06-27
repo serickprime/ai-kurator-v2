@@ -143,6 +143,18 @@ python scripts/evaluate.py --cases app\eval\cases.json --save-report
 
 The sample materials cover `n8n local install`, `YooMoney setup`, and `Supabase match_documents` so routing can be checked against documents with overlapping technical terms.
 
+## Simple Retrieval Benchmark
+
+For retrieval-only diagnostics on non-technical household materials:
+
+```powershell
+python scripts/evaluate_retrieval_simple_synthetic.py
+python scripts/evaluate_retrieval_simple_synthetic.py --reingest
+python scripts/evaluate_retrieval_simple_synthetic.py --question "как поливать комнатный лимон зимой?"
+```
+
+Reports are written to `eval_runs/retrieval_simple_synthetic/latest.json` and `eval_runs/retrieval_simple_synthetic/latest.md`. This benchmark does not generate final answers; it checks document routing, evidence chunks, fact ids, and forbidden document leakage in the evidence pack.
+
 ## CI
 
 GitHub Actions runs:
