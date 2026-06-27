@@ -44,6 +44,8 @@ The current code includes an in-memory settings fallback for tests and local dry
 Model lists are configured with environment variables:
 
 ```text
+OPENROUTER_DEFAULT_MODEL=
+OPENROUTER_VISION_MODEL=
 OPENROUTER_FREE_TEXT_MODELS=
 OPENROUTER_FREE_VISION_MODELS=
 OPENROUTER_CHEAP_TEXT_MODELS=
@@ -96,4 +98,3 @@ Why this table is useful:
 - RLS can stay enabled while the server bot uses `SUPABASE_SERVICE_ROLE_KEY`.
 
 Never expose `SUPABASE_SERVICE_ROLE_KEY` in Telegram messages, frontend code, browser/mobile apps, logs, or committed files.
-

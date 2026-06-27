@@ -348,5 +348,47 @@
     "must_not_use_discarded_candidates": true,
     "expected_supported_points": ["не выдумывать дедлайн", "попросить административный источник"],
     "requires_sources": false
+  },
+  {
+    "id": "sample_n8n_local_install",
+    "category": "sample_materials",
+    "question": "как локально запустить n8n и где открыть интерфейс?",
+    "expected_documents": ["n8n local install", "localhost:5678", "npx n8n"],
+    "forbidden_documents": ["YooMoney setup", "Supabase match_documents"],
+    "expected_answer_terms": ["npx n8n", "localhost:5678", "порт 5678"],
+    "forbidden_answer_terms": ["shop id", "match_documents", "YooKassa"],
+    "expected_answer_mode": "answer_from_materials",
+    "expected_source_count_max": 2,
+    "must_not_use_discarded_candidates": true,
+    "expected_supported_points": ["команда запуска", "адрес интерфейса", "проверка запуска"],
+    "requires_sources": true
+  },
+  {
+    "id": "sample_yoomoney_hash",
+    "category": "sample_materials",
+    "question": "что проверить, если YooMoney webhook пришёл, но hash подписи не совпадает?",
+    "expected_documents": ["YooMoney setup", "hash", "secret key"],
+    "forbidden_documents": ["n8n local install", "Supabase match_documents", "Docker"],
+    "expected_answer_terms": ["hash", "secret key", "payload", "webhook"],
+    "forbidden_answer_terms": ["localhost:5678", "vector(1024)", "npx n8n"],
+    "expected_answer_mode": "answer_from_materials",
+    "expected_source_count_max": 2,
+    "must_not_use_discarded_candidates": true,
+    "expected_supported_points": ["проверить shop id", "проверить secret key", "не подтверждать платеж без подписи"],
+    "requires_sources": true
+  },
+  {
+    "id": "sample_supabase_match_documents",
+    "category": "sample_materials",
+    "question": "как должна выглядеть match_documents для chunks и vector(1024)?",
+    "expected_documents": ["Supabase match_documents", "chunks", "vector(1024)"],
+    "forbidden_documents": ["YooMoney setup", "n8n local install", "порт 5678"],
+    "expected_answer_terms": ["chunks", "document_id", "<=>", "vector(1024)"],
+    "forbidden_answer_terms": ["shop id", "YooKassa", "npx n8n"],
+    "expected_answer_mode": "answer_from_materials",
+    "expected_source_count_max": 2,
+    "must_not_use_discarded_candidates": true,
+    "expected_supported_points": ["искать по chunks", "фильтровать по document ids", "соблюдать размерность 1024"],
+    "requires_sources": true
   }
 ]

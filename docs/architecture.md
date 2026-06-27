@@ -16,13 +16,27 @@ The system may cast a wide net during early retrieval, but the answer model rece
 - Answer generator: writes an answer only from the evidence pack.
 - Claim verifier: checks the answer draft against the evidence pack.
 - Source formatter: shows sources only from evidence used in the final answer.
+- Smoke scripts: validate Telegram config, Supabase connectivity, and OpenRouter completion before the first real launch.
+- CI: compiles Python, runs tests, validates JSON, and scans committed files for common secret patterns.
 
-## Non-Goals For The Initial Structure
+## Runtime Boundary
+
+The Telegram bot is the only interactive runtime in the first release. It loads settings from `.env`, configures logs under `logs/`, and starts polling through `app/main.py`.
+
+Server-side secrets are used only by local scripts and the bot process:
+
+- `SUPABASE_SERVICE_ROLE_KEY` for Supabase service-role REST calls;
+- `OPENROUTER_API_KEY` for answer and vision models;
+- `TELEGRAM_BOT_TOKEN` for Telegram polling.
+
+These values must never appear in frontend code, committed examples, reports, or logs.
+
+## Non-Goals For The Runnable Structure
 
 - No copied legacy `services/rag.py`.
 - No global raw chunk context in generation prompts.
 - No answer synthesis when evidence is missing.
-- No live Supabase migration is applied by this initial commit.
+- No schema changes are made by smoke scripts.
 
 ## Data Boundary
 
@@ -39,3 +53,13 @@ The source contract is:
 ```text
 used evidence -> displayed sources
 ```
+
+## Demo Corpus
+
+`sample_materials/` contains a deliberately small corpus for first-run checks:
+
+- `n8n_local_install.md`
+- `yoomoney_setup.md`
+- `supabase_match_documents.md`
+
+These files share broad technical terms but answer different questions. They are meant to catch regressions where a generic platform match outranks an answerable document.

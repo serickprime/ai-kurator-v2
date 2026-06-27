@@ -62,8 +62,7 @@ docs/
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
@@ -71,11 +70,41 @@ Fill `.env` with local secrets. Never commit `.env`.
 
 `SUPABASE_SERVICE_ROLE_KEY` is only for the server-side Telegram bot and local maintenance scripts. Never put it in browser, mobile, frontend, README examples with real values, logs, or any client-side code.
 
+Required first-run settings:
+
+- `TELEGRAM_BOT_TOKEN`
+- `OWNER_IDS`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `DEFAULT_WORKSPACE_ID`
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_DEFAULT_MODEL`
+- `OPENROUTER_VISION_MODEL`
+- `EMBEDDING_PROVIDER`
+- `EMBEDDING_MODEL`
+- `EMBEDDING_DIM=1024`
+- `RAG_PIPELINE_VERSION=v2`
+
 ## Run
 
 ```powershell
-.\.venv\Scripts\python.exe -m app.main
+python app/main.py
 ```
+
+Runtime logs are written to `logs/app.log` and `logs/errors.log`.
+
+## Smoke Checks
+
+Run these after filling `.env` and applying the Supabase schema:
+
+```powershell
+python scripts/smoke_telegram_config.py
+python scripts/smoke_supabase.py
+python scripts/smoke_openrouter.py
+```
+
+`smoke_supabase.py` is read-only and checks that `DEFAULT_WORKSPACE_ID` exists in `workspaces`.
+`smoke_openrouter.py` sends a tiny completion request to `OPENROUTER_DEFAULT_MODEL`.
 
 ## Telegram UX
 
@@ -102,6 +131,26 @@ Persistent settings need the optional `user_settings` migration proposed in [Tel
 Ingestion creates a document row, a document card for document-first routing, parent sections, child chunks, and embeddings for the card, sections, and chunks. If a file has the same content hash as the active version, it is skipped. If the file changed, the old active document is archived after the new version is fully indexed.
 
 Make sure `EMBEDDING_MODEL` points to a local model that actually returns 1024-dimensional vectors. The database schema uses `vector(1024)`, so older 768-dimensional models such as `nomic-embed-text` require a schema change or reindexing plan before use.
+
+## Demo Materials
+
+The repository includes a tiny first-run corpus:
+
+```powershell
+python scripts/ingest_files.py --path .\sample_materials --workspace team --course "demo"
+python scripts/evaluate.py --cases app\eval\cases.json --save-report
+```
+
+The sample materials cover `n8n local install`, `YooMoney setup`, and `Supabase match_documents` so routing can be checked against documents with overlapping technical terms.
+
+## CI
+
+GitHub Actions runs:
+
+- `compileall` for `app`, `scripts`, and `tests`;
+- `pytest`;
+- JSON validation for committed `.json` files;
+- a secret grep that fails on common Telegram, GitHub, and Supabase secret patterns.
 
 ## Как проверять качество
 

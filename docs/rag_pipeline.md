@@ -33,3 +33,27 @@ Sources are rendered from used evidence only.
 ## Key Invariant
 
 Candidate retrieval can be broad. Generation context must be narrow.
+
+## First-Run Checks
+
+Before judging answer quality, verify infrastructure:
+
+```powershell
+python scripts/smoke_telegram_config.py
+python scripts/smoke_supabase.py
+python scripts/smoke_openrouter.py
+```
+
+Then ingest the demo corpus:
+
+```powershell
+python scripts/ingest_files.py --path .\sample_materials --workspace team --course "demo"
+```
+
+The expected manual routing behavior:
+
+- a local n8n install question should route to `n8n_local_install.md`;
+- a YooMoney hash/signature question should route to `yoomoney_setup.md`;
+- a Supabase `match_documents` question should route to `supabase_match_documents.md`.
+
+If a broad term such as `n8n`, `Docker`, `API`, or `Supabase` pulls in an unrelated lesson as the final source, the pipeline has violated the evidence-first source contract.

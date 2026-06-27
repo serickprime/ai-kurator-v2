@@ -12,6 +12,8 @@ Prompt design must enforce the evidence-first contract.
 - Ask for concise, friendly Russian text.
 - Avoid decorative Markdown in Telegram answers.
 
+Prompt changes are part of the RAG contract. Do not edit prompts to hide routing or retrieval failures; fix the earliest failing stage and add an eval case for the pattern.
+
 ## Answer Generation Prompt
 
 ```text

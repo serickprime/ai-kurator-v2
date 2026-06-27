@@ -30,6 +30,14 @@ Eval cases live in `app/eval/cases.json`. Each case has:
 
 The starter set intentionally includes adversarial overlap such as `n8n`, `Supabase`, `API`, `Docker`, credentials, and payment terms. The goal is to catch cases where broad retrieval candidates are acceptable, but answer generation or sources leak unrelated lessons.
 
+The first-run demo cases use `sample_materials/`:
+
+- `sample_n8n_local_install`
+- `sample_yoomoney_hash`
+- `sample_supabase_match_documents`
+
+They should be used after ingesting the sample corpus to confirm that document routing separates superficially similar technical materials.
+
 ## Running
 
 ```powershell
@@ -95,3 +103,7 @@ The comparator flags regressions when:
 - sources appear for `ask_for_missing_data`;
 - a discarded candidate is used;
 - final score drops by `0.5` or more.
+
+## CI Validation
+
+The GitHub Actions workflow validates committed JSON files before tests run. Keep eval cases strict JSON, not JSONC: no comments, trailing commas, or unquoted strings.
