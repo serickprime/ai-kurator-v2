@@ -55,7 +55,7 @@ docs/
 - Python 3.11+
 - Telegram bot token
 - Supabase project with PostgreSQL and pgvector
-- Ollama for local embeddings
+- Local multilingual embeddings, defaulting to `BAAI/bge-m3` with `EMBEDDING_DIM=1024`
 - OpenRouter-compatible chat model for answer generation
 
 ## Local Setup
@@ -68,6 +68,8 @@ Copy-Item .env.example .env
 ```
 
 Fill `.env` with local secrets. Never commit `.env`.
+
+`SUPABASE_SERVICE_ROLE_KEY` is only for the server-side Telegram bot and local maintenance scripts. Never put it in browser, mobile, frontend, README examples with real values, logs, or any client-side code.
 
 ## Run
 
