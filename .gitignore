@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data
+logs/
+data/uploads/*
+data/processed/*
+
+# Local project notes
+PROJECT_STATUS.md
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

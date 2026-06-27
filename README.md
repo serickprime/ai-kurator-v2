@@ -1,0 +1,85 @@
+# AI Kurator V2
+
+Evidence-first Telegram RAG bot with Supabase, document-first retrieval, evidence packs, and claim verification.
+
+## Why V2 Exists
+
+The old chunk-first flow searched similar chunks across the full knowledge base and then sent mixed candidate chunks to the answer model. That made the bot vulnerable to noisy sources from unrelated lessons that happened to share broad terms like `n8n`, `Supabase`, `API`, or `Docker`.
+
+V2 uses an evidence-first architecture:
+
+- document-first retrieval selects the most relevant documents before detailed evidence search;
+- evidence retrieval runs inside selected documents, not across every raw chunk in the database;
+- the generation prompt receives only the evidence pack;
+- answers must be written only from evidence;
+- claim verification checks the draft against the evidence pack;
+- sources are built only from evidence actually used in the answer;
+- raw candidate chunks are never included in the generation prompt.
+
+If no evidence is found, the bot should say that the answer is not supported by the knowledge base and ask for the missing material or a more specific question.
+
+## Pipeline
+
+```text
+question
+-> question analysis
+-> document router
+-> evidence retrieval inside selected documents
+-> reranking
+-> evidence pack
+-> answer generation from evidence only
+-> claim verification
+-> final answer with sources from used evidence only
+```
+
+## Project Layout
+
+```text
+app/
+  main.py
+  config.py
+  logging_config.py
+  bot/
+  db/
+  ingestion/
+  rag/
+  llm/
+  eval/
+scripts/
+tests/
+docs/
+```
+
+## Requirements
+
+- Python 3.11+
+- Telegram bot token
+- Supabase project with PostgreSQL and pgvector
+- Ollama for local embeddings
+- OpenRouter-compatible chat model for answer generation
+
+## Local Setup
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+```
+
+Fill `.env` with local secrets. Never commit `.env`.
+
+## Run
+
+```powershell
+.\.venv\Scripts\python.exe -m app.main
+```
+
+The current repository contains the initial structure only. Core ingestion, routing, retrieval, generation, and verification logic will be implemented in later commits.
+
+## Docs
+
+- [Architecture](docs/architecture.md)
+- [RAG pipeline](docs/rag_pipeline.md)
+- [Evaluation](docs/eval.md)
+- [Prompts](docs/prompts.md)
