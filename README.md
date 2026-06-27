@@ -77,7 +77,15 @@ Fill `.env` with local secrets. Never commit `.env`.
 .\.venv\Scripts\python.exe -m app.main
 ```
 
-The current repository contains the initial structure only. Core ingestion, routing, retrieval, generation, and verification logic will be implemented in later commits.
+## Ingest Materials
+
+```powershell
+.\.venv\Scripts\python.exe scripts\ingest_files.py --path .\materials --workspace team --course "n8n 3.0"
+```
+
+Ingestion creates a document row, a document card for document-first routing, parent sections, child chunks, and embeddings for the card, sections, and chunks. If a file has the same content hash as the active version, it is skipped. If the file changed, the old active document is archived after the new version is fully indexed.
+
+Make sure `EMBEDDING_MODEL` points to a local model that actually returns 1024-dimensional vectors. The database schema uses `vector(1024)`, so older 768-dimensional models such as `nomic-embed-text` require a schema change or reindexing plan before use.
 
 ## Docs
 

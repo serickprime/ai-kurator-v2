@@ -1,6 +1,7 @@
 """Minimal Supabase REST client wrapper."""
 
 from types import TracebackType
+from typing import Any
 
 import httpx
 
@@ -27,6 +28,43 @@ class SupabaseClient:
             trust_env=False,
         )
 
+    async def select(
+        self,
+        table: str,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Select rows from a Supabase table through PostgREST."""
+        response = await self._client.get(f"/rest/v1/{table}", params=params)
+        return _json_response(response)
+
+    async def insert(
+        self,
+        table: str,
+        payload: dict[str, Any] | list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Insert rows and return their representation."""
+        response = await self._client.post(
+            f"/rest/v1/{table}",
+            json=payload,
+            headers={"Prefer": "return=representation"},
+        )
+        return _json_response(response)
+
+    async def update(
+        self,
+        table: str,
+        payload: dict[str, Any],
+        params: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Update rows and return their representation."""
+        response = await self._client.patch(
+            f"/rest/v1/{table}",
+            params=params,
+            json=payload,
+            headers={"Prefer": "return=representation"},
+        )
+        return _json_response(response)
+
     async def close(self) -> None:
         """Close underlying HTTP resources."""
         await self._client.aclose()
@@ -42,3 +80,21 @@ class SupabaseClient:
     ) -> None:
         del exc_type, exc, traceback
         await self.close()
+
+
+def _json_response(response: httpx.Response) -> list[dict[str, Any]]:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(
+            f"Supabase request failed: {exc.response.status_code} {exc.response.text}"
+        ) from exc
+
+    if not response.content:
+        return []
+    data = response.json()
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return [data]
+    raise RuntimeError("Unexpected Supabase response shape")

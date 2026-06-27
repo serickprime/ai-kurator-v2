@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     embedding_dim: int = Field(default=1024, alias="EMBEDDING_DIM")
     openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     openrouter_model: str = Field(default="openai/gpt-4.1-mini", alias="OPENROUTER_MODEL")
+    vision_enabled: bool = Field(default=False, alias="VISION_ENABLED")
+    vision_model: str = Field(default="openai/gpt-4.1-mini", alias="VISION_MODEL")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
 
