@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Literal
 
 
 class AnswerStatus(str, Enum):
@@ -12,14 +13,64 @@ class AnswerStatus(str, Enum):
     NEEDS_CLARIFICATION = "needs_clarification"
 
 
+FacetRole = Literal[
+    "platform",
+    "action",
+    "object",
+    "environment",
+    "symptom",
+    "constraint",
+    "source",
+]
+
+
+@dataclass(frozen=True)
+class QueryFacet:
+    """One routing signal extracted from a question."""
+
+    role: FacetRole
+    text: str
+    importance: float = 1.0
+
+
 @dataclass(frozen=True)
 class QuestionAnalysis:
     """Structured representation of a user question."""
 
-    raw_question: str
+    original_question: str = ""
+    primary_intent: str = "unknown"
+    task_type: str = "general"
+    source_required: bool = True
+    diagnostic: bool = False
+    conceptual: bool = False
+    needs_official_docs: bool = False
+    answer_scope: str = "knowledge_base"
+    must_answer_points: tuple[str, ...] = ()
+    evidence_questions: tuple[str, ...] = ()
+    missing_input_requirements: tuple[str, ...] = ()
+    query_facets: tuple[QueryFacet, ...] = ()
+    raw_question: str = ""
     intent: str = "unknown"
     keywords: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Keep legacy aliases populated while exposing the v2 contract."""
+        original = self.original_question or self.raw_question
+        raw = self.raw_question or original
+        intent = self.intent
+        if intent == "unknown" and self.primary_intent != "unknown":
+            intent = "question"
+
+        object.__setattr__(self, "original_question", original)
+        object.__setattr__(self, "raw_question", raw)
+        object.__setattr__(self, "intent", intent)
+        object.__setattr__(self, "must_answer_points", tuple(self.must_answer_points))
+        object.__setattr__(self, "evidence_questions", tuple(self.evidence_questions))
+        object.__setattr__(self, "missing_input_requirements", tuple(self.missing_input_requirements))
+        object.__setattr__(self, "query_facets", tuple(self.query_facets))
+        object.__setattr__(self, "keywords", tuple(self.keywords))
+        object.__setattr__(self, "constraints", tuple(self.constraints))
 
 
 @dataclass(frozen=True)
@@ -27,9 +78,19 @@ class DocumentCandidate:
     """A document selected by the document router."""
 
     document_id: str
-    title: str
-    reason: str
-    score: float
+    filename: str = ""
+    title: str = ""
+    course: str | None = None
+    lesson: str | None = None
+    score: float = 0.0
+    reason: str = ""
+    matched_topics: tuple[str, ...] = ()
+    matched_questions: tuple[str, ...] = ()
+    route: str = "document_card"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "matched_topics", tuple(self.matched_topics))
+        object.__setattr__(self, "matched_questions", tuple(self.matched_questions))
 
 
 @dataclass(frozen=True)

@@ -1,17 +1,18 @@
 """Minimal Supabase REST client wrapper."""
 
 from types import TracebackType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from app.config import Settings
+if TYPE_CHECKING:
+    from app.config import Settings
 
 
 class SupabaseClient:
     """Small async HTTP client for Supabase server-side calls."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: "Settings") -> None:
         if not settings.supabase_url:
             raise RuntimeError("SUPABASE_URL is required")
         if not settings.supabase_service_role_key:
@@ -62,6 +63,18 @@ class SupabaseClient:
             params=params,
             json=payload,
             headers={"Prefer": "return=representation"},
+        )
+        return _json_response(response)
+
+    async def rpc(
+        self,
+        function_name: str,
+        payload: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Call a Postgres function through Supabase PostgREST RPC."""
+        response = await self._client.post(
+            f"/rest/v1/rpc/{function_name}",
+            json=payload or {},
         )
         return _json_response(response)
 

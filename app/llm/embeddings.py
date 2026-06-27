@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import httpx
 
-from app.config import Settings
+if TYPE_CHECKING:
+    from app.config import Settings
 
 
 class EmbeddingClient(Protocol):
@@ -22,7 +23,7 @@ class EmbeddingClient(Protocol):
 class OllamaEmbeddingClient:
     """Generate local embeddings through Ollama."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: "Settings") -> None:
         self._model = settings.embedding_model or settings.ollama_embedding_model
         self._expected_dim = settings.embedding_dim
         self._client = httpx.AsyncClient(
