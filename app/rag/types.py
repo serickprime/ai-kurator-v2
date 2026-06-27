@@ -13,6 +13,14 @@ class AnswerStatus(str, Enum):
     NEEDS_CLARIFICATION = "needs_clarification"
 
 
+AnswerMode = Literal[
+    "answer_from_materials",
+    "partial_answer",
+    "ask_for_missing_data",
+    "general_answer_without_sources",
+]
+
+
 FacetRole = Literal[
     "platform",
     "action",
@@ -104,6 +112,7 @@ class EvidenceSpan:
     locator: str | None = None
     source_uri: str | None = None
     score: float | None = None
+    is_source: bool = True
 
 
 @dataclass(frozen=True)
@@ -114,6 +123,7 @@ class SourceRef:
     document_title: str
     locator: str | None = None
     source_uri: str | None = None
+    evidence_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -121,9 +131,19 @@ class EvidencePack:
     """The only context that answer generation is allowed to see."""
 
     items: tuple[EvidenceSpan, ...] = field(default_factory=tuple)
+    answer_mode: AnswerMode = "answer_from_materials"
+    source_matches: tuple[SourceRef, ...] = field(default_factory=tuple)
+    missing_requirements: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "items", tuple(self.items))
+        items = tuple(self.items)
+        object.__setattr__(self, "items", items)
+        object.__setattr__(self, "missing_requirements", tuple(self.missing_requirements))
+        if self.answer_mode not in {"answer_from_materials", "partial_answer"}:
+            source_matches: tuple[SourceRef, ...] = ()
+        else:
+            source_matches = tuple(self.source_matches) or _sources_from_items(items)
+        object.__setattr__(self, "source_matches", source_matches)
 
     @property
     def is_empty(self) -> bool:
@@ -135,30 +155,26 @@ class EvidencePack:
         """Return unique source document ids in evidence order."""
         seen: set[str] = set()
         ids: list[str] = []
-        for item in self.items:
-            if item.document_id in seen:
+        for source in self.source_matches:
+            if source.document_id in seen:
                 continue
-            seen.add(item.document_id)
-            ids.append(item.document_id)
+            seen.add(source.document_id)
+            ids.append(source.document_id)
         return tuple(ids)
 
     def sources(self) -> tuple[SourceRef, ...]:
         """Return source refs derived only from evidence in this pack."""
-        seen: set[tuple[str, str | None]] = set()
+        if self.answer_mode not in {"answer_from_materials", "partial_answer"}:
+            return ()
+
+        seen: set[tuple[str, str | None, str | None]] = set()
         sources: list[SourceRef] = []
-        for item in self.items:
-            key = (item.document_id, item.locator)
+        for source in self.source_matches:
+            key = (source.document_id, source.locator, source.evidence_id)
             if key in seen:
                 continue
             seen.add(key)
-            sources.append(
-                SourceRef(
-                    document_id=item.document_id,
-                    document_title=item.document_title,
-                    locator=item.locator,
-                    source_uri=item.source_uri,
-                )
-            )
+            sources.append(source)
         return tuple(sources)
 
 
@@ -169,6 +185,8 @@ class AnswerDraft:
     text: str
     status: AnswerStatus
     used_evidence_ids: tuple[str, ...] = ()
+    answer_mode: AnswerMode = "answer_from_materials"
+    model_input: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -178,6 +196,9 @@ class VerificationReport:
     is_supported: bool
     unsupported_claims: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
+    verdict: str = "pass"
+    safe_answer: str = ""
+    source_leakage: bool = False
 
 
 @dataclass(frozen=True)
@@ -188,3 +209,20 @@ class PipelineResult:
     status: AnswerStatus
     sources: tuple[SourceRef, ...]
     verification: VerificationReport
+
+
+def _sources_from_items(items: tuple[EvidenceSpan, ...]) -> tuple[SourceRef, ...]:
+    sources: list[SourceRef] = []
+    for item in items:
+        if not item.is_source:
+            continue
+        sources.append(
+            SourceRef(
+                document_id=item.document_id,
+                document_title=item.document_title,
+                locator=item.locator,
+                source_uri=item.source_uri,
+                evidence_id=item.evidence_id,
+            )
+        )
+    return tuple(sources)

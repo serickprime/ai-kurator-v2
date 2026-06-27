@@ -222,6 +222,38 @@ class ConversationRepository:
         self._client = client
 
 
+class EvidenceLogRepository:
+    """Database access for evidence-first RAG traces."""
+
+    def __init__(self, client: "SupabaseClient") -> None:
+        self._client = client
+
+    async def log_evidence(
+        self,
+        *,
+        workspace_id: str,
+        question: str,
+        question_analysis: dict[str, object],
+        document_candidates: list[dict[str, object]],
+        evidence_pack: dict[str, object],
+        final_answer: str,
+        final_sources: list[str],
+    ) -> None:
+        """Store one pipeline trace in evidence_logs."""
+        await self._client.insert(
+            "evidence_logs",
+            {
+                "workspace_id": workspace_id,
+                "question": question,
+                "question_analysis": question_analysis,
+                "document_candidates": document_candidates,
+                "evidence_pack": evidence_pack,
+                "final_answer": final_answer,
+                "final_sources": final_sources,
+            },
+        )
+
+
 def _document_record(row: dict[str, Any]) -> DocumentRecord:
     return DocumentRecord(
         id=str(row["id"]),

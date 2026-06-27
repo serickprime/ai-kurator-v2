@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from app.config import Settings
+if TYPE_CHECKING:
+    from app.config import Settings
 
 
 class OpenRouterClient:
     """Async OpenRouter-compatible chat client."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: "Settings") -> None:
         self._api_key = settings.openrouter_api_key
         self._model = settings.openrouter_model
         self._client = httpx.AsyncClient(
@@ -40,6 +41,23 @@ class OpenRouterClient:
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         return json.loads(content)
+
+    async def complete_text(self, messages: list[dict[str, str]]) -> str:
+        """Request a text completion from OpenRouter."""
+        if not self._api_key:
+            raise RuntimeError("OPENROUTER_API_KEY is required for answer generation")
+
+        response = await self._client.post(
+            "/chat/completions",
+            headers={"Authorization": f"Bearer {self._api_key}"},
+            json={
+                "model": self._model,
+                "messages": messages,
+                "temperature": 0.1,
+            },
+        )
+        response.raise_for_status()
+        return str(response.json()["choices"][0]["message"]["content"])
 
     async def close(self) -> None:
         """Close underlying HTTP resources."""
