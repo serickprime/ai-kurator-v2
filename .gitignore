@@ -21,6 +21,7 @@ venv/
 logs/
 data/uploads/*
 data/processed/*
+eval_runs/
 
 # Local project notes
 PROJECT_STATUS.md

@@ -101,6 +101,24 @@ Ingestion creates a document row, a document card for document-first routing, pa
 
 Make sure `EMBEDDING_MODEL` points to a local model that actually returns 1024-dimensional vectors. The database schema uses `vector(1024)`, so older 768-dimensional models such as `nomic-embed-text` require a schema change or reindexing plan before use.
 
+## Как проверять качество
+
+RAG v2 eval проверяет не только текст ответа, но и document routing, evidence, sources, answer mode и утечки forbidden/discarded candidates.
+
+```powershell
+.\.venv\Scripts\python.exe scripts\evaluate.py --cases app\eval\cases.json --save-report
+```
+
+Отчёты пишутся в `eval_runs/latest.json`, `eval_runs/latest.md` и timestamp-файлы. Без подключенного prediction-файла раннер честно помечает кейсы как `not_run`; реальные результаты pipeline можно подать через `--predictions path\to\predictions.json`.
+
+Сравнение прогонов:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\compare_eval_runs.py eval_runs\baseline.json eval_runs\latest.json
+```
+
+Регрессиями считаются пропавший expected document, появившийся forbidden document, лишние sources, неправильный answer mode, sources при `ask_for_missing_data`, использование discarded candidate и падение score на `0.5+`.
+
 ## Docs
 
 - [Architecture](docs/architecture.md)
