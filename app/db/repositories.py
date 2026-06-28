@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -11,6 +12,8 @@ from app.ingestion.document_cards import DocumentCard
 
 if TYPE_CHECKING:
     from app.db.supabase_client import SupabaseClient
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -237,6 +240,36 @@ class DocumentRepository:
         for start in range(0, len(all_rows), batch_size):
             inserted.extend(await self._client.insert("chunks", all_rows[start : start + batch_size]))
         return inserted
+
+    async def refresh_term_statistics(self, workspace_id: str) -> int:
+        """Rebuild corpus term statistics for active documents in a workspace."""
+        try:
+            rows = await self._client.rpc("refresh_term_statistics", {"p_workspace_id": workspace_id})
+        except Exception as exc:  # noqa: BLE001 - term stats must not break ingestion
+            LOGGER.warning("failed to refresh term statistics for workspace %s: %s", workspace_id, exc)
+            return 0
+        if not rows:
+            return 0
+        value = next(iter(rows[0].values()), 0)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    async def list_term_statistics(self, workspace_id: str, limit: int = 5000) -> list[dict[str, Any]]:
+        """Return corpus term statistics for workspace-level rarity scoring."""
+        return await self._client.select(
+            "term_statistics",
+            params={
+                "select": (
+                    "term,normalized_term,document_frequency,chunk_frequency,course_frequency,"
+                    "first_seen_at,last_seen_at,examples,term_type_guess,metadata"
+                ),
+                "workspace_id": f"eq.{workspace_id}",
+                "order": "document_frequency.desc",
+                "limit": str(limit),
+            },
+        )
 
 
 class ConversationRepository:

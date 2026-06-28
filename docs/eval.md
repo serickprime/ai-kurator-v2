@@ -48,7 +48,7 @@ Without a predictions file, the runner produces a `not_run` report. This is deli
 
 ## Simple Synthetic Retrieval Benchmark
 
-Use this benchmark before judging answer generation. It uses simple household materials, not technical terms, and checks only retrieval stages:
+Use this benchmark before judging answer generation. It uses simple household materials plus generated crowded IT distractors and checks only retrieval stages:
 
 ```powershell
 python scripts/evaluate_retrieval_simple_synthetic.py
@@ -68,6 +68,8 @@ Reports:
 - timestamped JSON and Markdown files in the same directory.
 
 The benchmark shows document candidates, selected evidence chunks, found `FACT-ID`s, discarded candidates, and whether forbidden documents leaked into the evidence pack. Raw candidates may include similar forbidden documents; the failure condition is forbidden evidence in `evidence_pack`.
+
+The generated crowded IT cases intentionally add many documents that repeat terms like `webhook`, `n8n`, and `Supabase`. The expected behavior is that frequent terms become weak signals while rare anchors such as `sha1_hash`, `localhost:5678`, and `match_documents` dominate document and evidence selection.
 
 To evaluate real outputs, pass a JSON file:
 

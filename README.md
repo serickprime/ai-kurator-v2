@@ -130,6 +130,12 @@ Persistent settings need the optional `user_settings` migration proposed in [Tel
 
 Ingestion creates a document row, a document card for document-first routing, parent sections, child chunks, and embeddings for the card, sections, and chunks. If a file has the same content hash as the active version, it is skipped. If the file changed, the old active document is archived after the new version is fully indexed.
 
+Ingestion also attempts to refresh corpus term statistics, so frequently repeated terms automatically become weaker retrieval signals and rare exact terms become stronger anchors. After a large import or reindexing, rebuild them explicitly:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\rebuild_term_statistics.py --workspace team
+```
+
 Make sure `EMBEDDING_MODEL` points to a local model that actually returns 1024-dimensional vectors. The database schema uses `vector(1024)`, so older 768-dimensional models such as `nomic-embed-text` require a schema change or reindexing plan before use.
 
 ## Demo Materials

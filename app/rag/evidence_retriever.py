@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
+from app.rag import term_scoring
 from app.rag.types import DocumentCandidate, EvidenceSpan, QuestionAnalysis
 
 LOGGER = logging.getLogger(__name__)
@@ -195,6 +196,7 @@ class EvidenceRetriever:
         match_count: int = 32,
         max_evidence: int = 8,
         min_score: float = 0.18,
+        term_scorer: term_scoring.CorpusTermScorer | None = None,
     ) -> None:
         self._chunk_store = chunk_store or (SupabaseEvidenceChunkStore(client) if client is not None else None)
         self._embedding_client = embedding_client
@@ -202,6 +204,7 @@ class EvidenceRetriever:
         self._match_count = match_count
         self._max_evidence = max_evidence
         self._min_score = min_score
+        self._term_scorer = term_scorer or term_scoring.CorpusTermScorer.neutral()
         self.last_discarded: tuple[DiscardedEvidence, ...] = ()
 
     async def retrieve(
@@ -216,8 +219,8 @@ class EvidenceRetriever:
         document_titles = _document_titles(documents)
 
         for record in records:
-            scored = score_evidence_record(analysis, record)
-            discard_reason = _discard_reason(analysis, scored, self._min_score)
+            scored = score_evidence_record(analysis, record, term_scorer=self._term_scorer)
+            discard_reason = _discard_reason(analysis, scored, self._min_score, term_scorer=self._term_scorer)
             if discard_reason:
                 discarded.append(_discarded(scored, discard_reason))
                 continue
@@ -230,8 +233,11 @@ class EvidenceRetriever:
         for record in records:
             if record.chunk_id in selected_ids or len(discarded) >= 16:
                 continue
-            scored = score_evidence_record(analysis, record)
-            discard_reason = _discard_reason(analysis, scored, self._min_score) or "not selected after reranking"
+            scored = score_evidence_record(analysis, record, term_scorer=self._term_scorer)
+            discard_reason = (
+                _discard_reason(analysis, scored, self._min_score, term_scorer=self._term_scorer)
+                or "not selected after reranking"
+            )
             discarded.append(_discarded(scored, discard_reason))
 
         self.last_discarded = tuple(_dedupe_discarded(discarded, limit=16))
@@ -262,7 +268,7 @@ class EvidenceRetriever:
             LOGGER.warning("evidence chunk retrieval failed: %s", exc)
             return ()
 
-        scored = [score_evidence_record(analysis, record) for record in records]
+        scored = [score_evidence_record(analysis, record, term_scorer=self._term_scorer) for record in records]
         scored.sort(key=lambda item: _sort_key(item))
         return tuple(scored)
 
@@ -291,8 +297,15 @@ def evidence_query_text(analysis: QuestionAnalysis) -> str:
     return "\n".join(part for part in parts if part)
 
 
-def score_evidence_record(analysis: QuestionAnalysis, record: EvidenceChunkRecord) -> EvidenceChunkRecord:
+def score_evidence_record(
+    analysis: QuestionAnalysis,
+    record: EvidenceChunkRecord,
+    *,
+    term_scorer: term_scoring.CorpusTermScorer | None = None,
+) -> EvidenceChunkRecord:
     """Apply deterministic object-first scoring to one chunk candidate."""
+    term_scorer = term_scorer or term_scoring.CorpusTermScorer.neutral()
+    query_term_analysis = term_scorer.query_terms(analysis)
     text = _record_text(record)
     text_roots = _roots(_tokens(text))
     query_roots = _query_roots(analysis)
@@ -304,12 +317,23 @@ def score_evidence_record(analysis: QuestionAnalysis, record: EvidenceChunkRecor
     object_overlap = object_roots & text_roots
     action_overlap = action_roots & text_roots
     constraint_overlap = constraint_roots & text_roots
+    anchor_terms = (
+        tuple(query_term_analysis.rare_anchor_terms)
+        + tuple(query_term_analysis.exact_terms)
+        + tuple(query_term_analysis.config_terms)
+        + tuple(query_term_analysis.symptom_terms)
+    )
+    common_terms = tuple(query_term_analysis.common_terms) + tuple(query_term_analysis.platform_terms)
+    anchor_matches = term_scorer.matched_terms(anchor_terms, text, role="rare_anchor")
+    common_matches = term_scorer.matched_terms(common_terms, text, role="common")
 
     base = max(record.score, record.vector_score, record.text_score, record.trigram_score, 0.0)
     overlap_score = len(overlap) / max(len(query_roots), 1) if query_roots else 0.0
     object_score = len(object_overlap) / max(len(object_roots), 1) if object_roots else 0.0
     constraint_score = len(constraint_overlap) / max(len(constraint_roots), 1) if constraint_roots else 0.0
     action_score = 1.0 if action_overlap else 0.0
+    anchor_score = term_scorer.weighted_match_ratio(anchor_terms, text, role="rare_anchor") if anchor_terms else 0.0
+    common_score = term_scorer.weighted_match_ratio(common_matches, text, role="common") if common_matches else 0.0
     fact_bonus = 0.16 if _has_fact_marker(record) else 0.0
     heading_bonus = 0.08 if _heading_supports_query(record, query_roots) else 0.0
 
@@ -319,6 +343,8 @@ def score_evidence_record(analysis: QuestionAnalysis, record: EvidenceChunkRecor
         + object_score * 0.26
         + action_score * 0.08
         + constraint_score * 0.12
+        + anchor_score * 0.20
+        + common_score * 0.03
         + fact_bonus
         + heading_bonus
     )
@@ -331,6 +357,10 @@ def score_evidence_record(analysis: QuestionAnalysis, record: EvidenceChunkRecor
         reason_parts.append("action match")
     if constraint_overlap:
         reason_parts.append("constraint match: " + ", ".join(sorted(constraint_overlap)[:5]))
+    if anchor_matches:
+        reason_parts.append("anchor match: " + ", ".join(anchor_matches[:5]))
+    if common_matches:
+        reason_parts.append("common match: " + ", ".join(common_matches[:5]))
     if _has_fact_marker(record):
         reason_parts.append("supporting fact marker")
 
@@ -341,6 +371,9 @@ def score_evidence_record(analysis: QuestionAnalysis, record: EvidenceChunkRecor
             "query_overlap": sorted(overlap),
             "object_overlap": sorted(object_overlap),
             "constraint_overlap": sorted(constraint_overlap),
+            "common_terms": list(common_matches),
+            "anchor_terms": list(anchor_matches),
+            "strongest_evidence_terms": list(query_term_analysis.strongest_evidence_terms),
             "retrieval_reason": "; ".join(reason_parts) or "low lexical support",
         }
     )
@@ -351,7 +384,10 @@ def _discard_reason(
     analysis: QuestionAnalysis,
     record: EvidenceChunkRecord,
     min_score: float,
+    *,
+    term_scorer: term_scoring.CorpusTermScorer | None = None,
 ) -> str:
+    term_scorer = term_scorer or term_scoring.CorpusTermScorer.neutral()
     text = _record_text(record)
     text_roots = _roots(_tokens(text))
     object_roots = _roots(analysis.object_terms)
@@ -362,6 +398,8 @@ def _discard_reason(
         return "not-about section"
     if object_roots and not (object_roots & text_roots):
         return "missing primary object terms"
+    if term_scorer.has_statistics and not term_scorer.has_strong_evidence_match(analysis, text):
+        return "missing strong evidence term"
     if constraint_roots and _requires_constraint(analysis) and not (constraint_roots & text_roots):
         return "missing requested constraint"
     if record.score < min_score:

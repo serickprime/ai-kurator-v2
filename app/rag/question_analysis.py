@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
+from app.rag.term_scoring import exact_terms as extract_exact_terms
+from app.rag.term_scoring import guess_term_type
 from app.rag.types import QueryFacet, QuestionAnalysis
 
 _TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
@@ -112,21 +114,6 @@ _GENERIC_TERMS = {
     "место",
     "воды",
     "вода",
-}
-
-_TECH_TERMS = {
-    "api",
-    "cli",
-    "docker",
-    "github",
-    "http",
-    "json",
-    "localhost",
-    "n8n",
-    "postgres",
-    "python",
-    "supabase",
-    "telegram",
 }
 
 _TASK_MARKERS = {
@@ -306,6 +293,8 @@ def analyze_question(
     task_type = _detect_task_type(lowered, attachments)
     requested_action = _requested_action(task_type, lowered)
     generic_terms = tuple(_generic_terms(tokens))
+    exact_terms = tuple(extract_exact_terms(combined))
+    config_terms = tuple(term for term in exact_terms if guess_term_type(term) in {"config", "identifier", "function", "path_or_parameter", "endpoint_or_address"})
     object_terms = tuple(_object_terms(tokens, requested_action=requested_action, generic_terms=generic_terms))
     primary_object = object_terms[0] if object_terms else ""
     requested_attribute = _requested_attribute(lowered, object_terms)
@@ -325,6 +314,8 @@ def analyze_question(
         requested_action=requested_action,
         object_terms=object_terms,
         generic_terms=generic_terms,
+        exact_terms=exact_terms,
+        config_terms=config_terms,
     )
     keywords = tuple(_dedupe([facet.text for facet in facets] + list(tokens), limit=16))
     constraints = tuple(facet.text for facet in facets if facet.role == "constraint")
@@ -357,6 +348,16 @@ def analyze_question(
         requested_action=requested_action,
         requested_attribute=requested_attribute,
         generic_terms=generic_terms,
+        common_terms=generic_terms,
+        platform_terms=tuple(facet.text for facet in facets if facet.role == "platform"),
+        action_terms=tuple(facet.text for facet in facets if facet.role == "action"),
+        symptom_terms=tuple(facet.text for facet in facets if facet.role == "symptom"),
+        environment_terms=tuple(facet.text for facet in facets if facet.role == "environment"),
+        config_terms=config_terms,
+        exact_terms=exact_terms,
+        rare_anchor_terms=tuple(facet.text for facet in facets if facet.role in {"rare_anchor", "exact", "config"}),
+        ignored_weak_terms=generic_terms,
+        strongest_evidence_terms=tuple(facet.text for facet in facets if facet.role in {"object", "symptom", "exact", "config"}),
     )
 
 
@@ -395,6 +396,8 @@ def _build_facets(
     requested_action: str,
     object_terms: tuple[str, ...],
     generic_terms: tuple[str, ...],
+    exact_terms: tuple[str, ...],
+    config_terms: tuple[str, ...],
 ) -> list[QueryFacet]:
     facets: list[QueryFacet] = []
     platform_terms = [token for token in tokens if _is_platform_like(token)]
@@ -403,11 +406,18 @@ def _build_facets(
     if requested_action:
         facets.append(QueryFacet("action", requested_action, 1.0))
 
+    for term in exact_terms:
+        facets.append(QueryFacet("exact", term, 1.0))
+    for term in config_terms:
+        facets.append(QueryFacet("config", term, 1.0))
+
     for token in tokens:
         if (
             token in _STOPWORDS
             or token in platform_terms
             or token in generic_terms
+            or token in exact_terms
+            or token in config_terms
             or _is_marker_token(token)
             or _is_action_token(token, requested_action)
         ):
@@ -452,8 +462,8 @@ def _normalize_token(token: str) -> str:
 
 
 def _is_platform_like(token: str) -> bool:
-    if token in _TECH_TERMS:
-        return True
+    # Product-like identifiers are detected by shape. Commonness is handled by
+    # corpus statistics, not by a fixed vendor/platform dictionary.
     return any(char.isdigit() for char in token) and any(char.isalpha() for char in token)
 
 

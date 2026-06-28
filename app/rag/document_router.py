@@ -6,11 +6,12 @@ import re
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
+from app.rag import term_scoring
 from app.rag.types import DocumentCandidate, QuestionAnalysis, QueryFacet
 
 _TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
 _PLATFORM_ROLES = {"platform"}
-_SPECIFIC_ROLES = {"action", "object", "environment", "symptom", "constraint", "source"}
+_SPECIFIC_ROLES = {"action", "object", "environment", "symptom", "constraint", "config", "exact", "rare_anchor", "source"}
 _MATCH_STOPWORDS = {
     "and",
     "the",
@@ -158,6 +159,28 @@ class SupabaseDocumentCardStore:
         cards = await self._cards_for_documents(documents)
         return [replace(card, vector_score=vector_scores.get(card.document_id)) for card in cards]
 
+    async def list_term_statistics(
+        self,
+        *,
+        workspace_id: str,
+        course: str | None = None,
+        limit: int = 5000,
+    ) -> list[dict[str, Any]]:
+        """Return corpus term statistics for workspace-level rarity scoring."""
+        del course
+        return await self._client.select(
+            "term_statistics",
+            params={
+                "select": (
+                    "term,normalized_term,document_frequency,chunk_frequency,course_frequency,"
+                    "first_seen_at,last_seen_at,examples,term_type_guess,metadata"
+                ),
+                "workspace_id": f"eq.{workspace_id}",
+                "order": "document_frequency.desc",
+                "limit": str(limit),
+            },
+        )
+
     async def _cards_for_documents(self, documents: list[dict[str, Any]]) -> list[DocumentCardRecord]:
         if not documents:
             return []
@@ -207,10 +230,12 @@ class DocumentRouter:
         self,
         store: DocumentCardStore | None = None,
         embedding_client: EmbeddingClient | None = None,
+        term_scorer: term_scoring.CorpusTermScorer | None = None,
         min_score: float = 0.12,
     ) -> None:
         self._store = store
         self._embedding_client = embedding_client
+        self._term_scorer = term_scorer
         self._min_score = min_score
 
     async def route(
@@ -238,8 +263,9 @@ class DocumentRouter:
             existing = records_by_id.get(record.document_id)
             records_by_id[record.document_id] = _merge_records(existing, record)
 
+        scorer = await self._corpus_scorer(workspace_id=workspace_id, course=course)
         candidates = [
-            _score_record(analysis, record)
+            _score_record(analysis, record, scorer)
             for record in records_by_id.values()
             if not _is_explicitly_not_about(analysis, record)
         ]
@@ -267,6 +293,21 @@ class DocumentRouter:
             )
         except Exception:
             return []
+
+    async def _corpus_scorer(self, *, workspace_id: str, course: str | None) -> term_scoring.CorpusTermScorer:
+        if self._term_scorer is not None:
+            return self._term_scorer
+        if self._store is None or not hasattr(self._store, "list_term_statistics"):
+            return term_scoring.CorpusTermScorer.neutral()
+        try:
+            rows = await getattr(self._store, "list_term_statistics")(
+                workspace_id=workspace_id,
+                course=course,
+                limit=5000,
+            )
+        except Exception:
+            return term_scoring.CorpusTermScorer.neutral()
+        return term_scoring.CorpusTermScorer.from_rows(rows)
 
 
 async def route_documents(
@@ -300,7 +341,13 @@ async def route_documents(
             await embedding_client.close()
 
 
-def _score_record(analysis: QuestionAnalysis, record: DocumentCardRecord) -> DocumentCandidate:
+def _score_record(
+    analysis: QuestionAnalysis,
+    record: DocumentCardRecord,
+    scorer: term_scoring.CorpusTermScorer | None = None,
+) -> DocumentCandidate:
+    scorer = scorer or term_scoring.CorpusTermScorer.neutral()
+    query_terms = scorer.query_terms(analysis)
     platform_facets = [facet for facet in analysis.query_facets if facet.role in _PLATFORM_ROLES]
     specific_facets = [facet for facet in analysis.query_facets if facet.role in _SPECIFIC_ROLES]
     all_text = _record_text(record)
@@ -323,6 +370,20 @@ def _score_record(analysis: QuestionAnalysis, record: DocumentCardRecord) -> Doc
     object_matches = _matching_terms(object_terms, answer_text)
     action_matches = _matching_terms(action_terms, answer_text)
     constraint_matches = _matching_terms(constraint_terms, answer_text)
+    common_matches = list(
+        scorer.matched_terms(
+            tuple(query_terms.common_terms) + tuple(query_terms.platform_terms),
+            all_text,
+            role="common",
+        )
+    )
+    anchor_terms = (
+        tuple(query_terms.rare_anchor_terms)
+        + tuple(query_terms.exact_terms)
+        + tuple(query_terms.config_terms)
+        + tuple(query_terms.symptom_terms)
+    )
+    anchor_matches = list(scorer.matched_terms(anchor_terms, answer_text, role="rare_anchor"))
     matched_topics = _matched_items(record.topics, analysis)
     matched_questions = _matched_items(record.questions_answered, analysis)
     task_match = _task_matches(analysis.task_type, record.task_types)
@@ -332,18 +393,24 @@ def _score_record(analysis: QuestionAnalysis, record: DocumentCardRecord) -> Doc
 
     platform_signal = sum(facet.importance for facet in platform_matches)
     specific_signal = sum(facet.importance for facet in specific_matches)
-    object_signal = min(len(object_matches) / max(len(object_terms), 1), 1.0) if object_terms else 0.0
-    action_signal = min(len(action_matches) / max(len(action_terms), 1), 1.0) if action_terms else 0.0
-    constraint_signal = min(len(constraint_matches) / max(len(constraint_terms), 1), 1.0) if constraint_terms else 0.0
+    object_signal = scorer.weighted_match_ratio(object_terms, answer_text, role="object") if object_terms else 0.0
+    action_signal = scorer.weighted_match_ratio(action_terms, answer_text, role="action") if action_terms else 0.0
+    constraint_signal = (
+        scorer.weighted_match_ratio(constraint_terms, answer_text, role="environment") if constraint_terms else 0.0
+    )
+    common_signal = scorer.weighted_match_ratio(common_matches, all_text, role="common") if common_matches else 0.0
+    anchor_signal = scorer.weighted_match_ratio(anchor_terms, answer_text, role="rare_anchor") if anchor_terms else 0.0
     question_signal = min(len(matched_questions) * 0.20, 0.40)
     topic_signal = min(len(matched_topics) * 0.10, 0.30)
     task_signal = 0.12 if task_match else 0.0
 
     score = (
         min(vector_score, 1.0) * 0.16
-        + min(platform_signal, 1.5) * 0.04
+        + min(platform_signal, 1.5) * 0.02
+        + common_signal * 0.04
         + min(specific_signal, 2.5) * 0.12
-        + object_signal * 0.42
+        + anchor_signal * 0.28
+        + object_signal * 0.34
         + action_signal * 0.16
         + constraint_signal * 0.16
         + question_signal
@@ -353,30 +420,49 @@ def _score_record(analysis: QuestionAnalysis, record: DocumentCardRecord) -> Doc
         + quality_score * 0.03
     )
 
+    penalties: list[str] = []
     if platform_signal and specific_signal < 0.3 and not matched_questions:
         score *= 0.35
+        penalties.append("same_platform_but_wrong_task")
+    if common_matches and not (anchor_matches or object_matches or action_matches or constraint_matches or matched_questions):
+        score *= 0.25
+        penalties.append("general_common_term_only")
+    if anchor_terms and not anchor_matches:
+        score *= 0.78
+        penalties.append("missing_anchor_terms")
     if object_terms and object_signal == 0:
         score *= 0.28
+        penalties.append("missing_object_terms")
     elif len(object_terms) >= 3 and object_signal < 0.4:
         score *= 0.55
+        penalties.append("weak_object_coverage")
     if action_terms and action_signal == 0 and not matched_questions:
         score *= 0.72
+        penalties.append("missing_action_terms")
     if constraint_terms and constraint_signal == 0 and analysis.task_type in {"debug", "setup"}:
         score *= 0.82
+        penalties.append("missing_constraint_terms")
     if not platform_signal and not specific_signal and vector_score < 0.68:
         score *= 0.45
 
     score = round(score, 4)
+    answerability_score = round(
+        min(anchor_signal * 0.35 + object_signal * 0.30 + action_signal * 0.20 + constraint_signal * 0.15, 1.0),
+        4,
+    )
     reason = _reason(
         vector_score=vector_score,
         platform_matches=platform_matches,
         specific_matches=specific_matches,
+        common_matches=common_matches,
+        anchor_matches=anchor_matches,
         object_matches=object_matches,
         action_matches=action_matches,
         constraint_matches=constraint_matches,
         matched_topics=matched_topics,
         matched_questions=matched_questions,
         task_match=task_match,
+        penalties=penalties,
     )
     route = "document_card_hybrid" if vector_score else "document_card_lexical"
     return DocumentCandidate(
@@ -390,6 +476,12 @@ def _score_record(analysis: QuestionAnalysis, record: DocumentCardRecord) -> Doc
         matched_topics=tuple(matched_topics),
         matched_questions=tuple(matched_questions),
         route=route,
+        matched_common_terms=tuple(common_matches),
+        matched_anchor_terms=tuple(anchor_matches),
+        missing_action_terms=tuple(term for term in action_terms if term not in action_matches),
+        missing_object_terms=tuple(term for term in object_terms if term not in object_matches),
+        answerability_score=answerability_score,
+        penalties=tuple(penalties),
     )
 
 
@@ -522,16 +614,23 @@ def _reason(
     vector_score: float,
     platform_matches: list[QueryFacet],
     specific_matches: list[QueryFacet],
+    common_matches: list[str],
+    anchor_matches: list[str],
     object_matches: list[str],
     action_matches: list[str],
     constraint_matches: list[str],
     matched_topics: list[str],
     matched_questions: list[str],
     task_match: bool,
+    penalties: list[str],
 ) -> str:
     parts: list[str] = []
     if vector_score:
         parts.append(f"card embedding score {vector_score:.3f}")
+    if common_matches:
+        parts.append("matched_common_terms: " + ", ".join(common_matches[:5]))
+    if anchor_matches:
+        parts.append("matched_anchor_terms: " + ", ".join(anchor_matches[:5]))
     if object_matches:
         parts.append("object terms: " + ", ".join(object_matches[:5]))
     if action_matches:
@@ -546,8 +645,12 @@ def _reason(
         parts.append("matched topics: " + ", ".join(matched_topics[:4]))
     if task_match:
         parts.append("task type matches document card")
+    if penalties:
+        parts.append("penalties: " + ", ".join(penalties[:5]))
     if platform_matches and not specific_matches and not matched_questions:
         parts.append("platform/course match only; not enough by itself")
+    if common_matches and not (anchor_matches or object_matches or action_matches or constraint_matches or matched_questions):
+        parts.append("general_common_term_only")
     return "; ".join(parts) or "low-confidence document-card match"
 
 
@@ -632,11 +735,12 @@ def _roots(tokens: tuple[str, ...] | list[str]) -> set[str]:
 
 
 def _root(token: str) -> str:
-    if len(token) >= 8:
-        return _stem_ru(token)[:7]
-    if len(token) >= 6:
-        return _stem_ru(token)[:5]
-    return _stem_ru(token)
+    clean = _stem_ru(token)
+    if len(clean) >= 8:
+        return clean[:7]
+    if len(clean) >= 6:
+        return clean[:5]
+    return clean
 
 
 def _stem_ru(token: str) -> str:

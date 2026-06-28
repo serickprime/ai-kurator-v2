@@ -416,5 +416,38 @@
     "expected_top_k_chunks": 0,
     "expected_answer_mode": "ask_for_missing_data",
     "notes": "Неполный вопрос: не ясно, для растения, рецепта или поездки нужна вода."
+  },
+  {
+    "id": "crowded_webhook_yoomoney_hash",
+    "question": "как проверить YooMoney hash в webhook?",
+    "expected_document": "it_yoomoney_hash.md",
+    "expected_fact_ids": ["IT_YOOMONEY_HASH"],
+    "forbidden_documents": ["crowded_webhook_noise_01.md", "crowded_webhook_noise_02.md", "crowded_webhook_noise_03.md", "crowded_webhook_noise_04.md", "crowded_webhook_noise_05.md", "crowded_webhook_noise_06.md", "crowded_webhook_noise_07.md", "crowded_webhook_noise_08.md", "crowded_webhook_noise_09.md", "crowded_webhook_noise_10.md"],
+    "expected_top_k_document": 1,
+    "expected_top_k_chunks": 3,
+    "expected_answer_mode": "answer_from_materials",
+    "notes": "Проверяет, что частый webhook не перебивает редкий YooMoney/SHA1/hash anchor."
+  },
+  {
+    "id": "crowded_n8n_local_install",
+    "question": "как установить n8n локально на localhost:5678?",
+    "expected_document": "it_n8n_local_install.md",
+    "expected_fact_ids": ["IT_N8N_LOCAL_INSTALL"],
+    "forbidden_documents": ["crowded_n8n_noise_01.md", "crowded_n8n_noise_02.md", "crowded_n8n_noise_03.md", "crowded_n8n_noise_04.md", "crowded_n8n_noise_05.md", "crowded_n8n_noise_06.md", "crowded_n8n_noise_07.md", "crowded_n8n_noise_08.md", "crowded_n8n_noise_09.md", "crowded_n8n_noise_10.md"],
+    "expected_top_k_document": 1,
+    "expected_top_k_chunks": 3,
+    "expected_answer_mode": "answer_from_materials",
+    "notes": "Проверяет, что частый n8n сам по себе не выбирает уроки про workflow/webhook."
+  },
+  {
+    "id": "crowded_supabase_match_documents",
+    "question": "где описана RPC match_documents для Supabase pgvector?",
+    "expected_document": "it_supabase_match_documents.md",
+    "expected_fact_ids": ["IT_SUPABASE_MATCH_DOCUMENTS"],
+    "forbidden_documents": ["crowded_supabase_noise_01.md", "crowded_supabase_noise_02.md", "crowded_supabase_noise_03.md", "crowded_supabase_noise_04.md", "crowded_supabase_noise_05.md", "crowded_supabase_noise_06.md", "crowded_supabase_noise_07.md", "crowded_supabase_noise_08.md", "crowded_supabase_noise_09.md", "crowded_supabase_noise_10.md"],
+    "expected_top_k_document": 1,
+    "expected_top_k_chunks": 3,
+    "expected_answer_mode": "answer_from_materials",
+    "notes": "Проверяет, что редкая RPC/function anchor сильнее общих Supabase/table материалов."
   }
 ]

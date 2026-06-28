@@ -32,6 +32,7 @@ from app.rag.evidence_retriever import EvidenceChunkRecord, EvidenceRetriever  #
 from app.rag.evidence_pack import EvidencePackBuilder  # noqa: E402
 from app.rag.question_analysis import QuestionAnalyzer  # noqa: E402
 from app.rag.reranker import EvidenceReranker  # noqa: E402
+from app.rag.term_scoring import CorpusDocumentText, CorpusTermScorer  # noqa: E402
 from app.rag.types import DocumentCandidate, EvidencePack, EvidenceSpan, QuestionAnalysis  # noqa: E402
 
 DEFAULT_MATERIALS_DIR = ROOT / "sample_materials" / "rag_search_simple_test"
@@ -377,9 +378,11 @@ async def run_benchmark(
 
     embedding_client = HashEmbeddingClient()
     index = await build_index(materials_dir, embedding_client)
+    term_scorer = _corpus_term_scorer(index)
     router = DocumentRouter(
         store=InMemoryDocumentCardStore(index),
         embedding_client=embedding_client,
+        term_scorer=term_scorer,
         min_score=0.12,
     )
     analyzer = QuestionAnalyzer()
@@ -389,9 +392,10 @@ async def run_benchmark(
         match_count=120,
         max_evidence=8,
         min_score=0.22,
+        term_scorer=term_scorer,
     )
     reranker = EvidenceReranker()
-    pack_builder = EvidencePackBuilder()
+    pack_builder = EvidencePackBuilder(term_scorer=term_scorer)
 
     results: list[CaseRun] = []
     for case in cases:
@@ -466,7 +470,185 @@ async def build_index(materials_dir: Path, embedding_client: HashEmbeddingClient
         )
         embeddings[path.name] = card_embedding
 
+    for document in await _crowded_it_documents(embedding_client):
+        documents.append(document)
+        embeddings[document.filename] = document.card_embedding
+
     return SyntheticIndex(documents=tuple(documents), embeddings=embeddings)
+
+
+async def _crowded_it_documents(embedding_client: HashEmbeddingClient) -> tuple[IndexedDocument, ...]:
+    """Return controlled IT distractors with repeated common terms."""
+    specs: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = []
+
+    for index in range(1, 11):
+        specs.append(
+            (
+                f"crowded_webhook_noise_{index:02d}.md",
+                f"Webhook distractor {index:02d}",
+                (
+                    f"# Webhook distractor {index:02d}\n\n"
+                    f"FACT-ID: WEBHOOK_NOISE_{index:02d}\n"
+                    "Этот материал много раз упоминает webhook, HTTP callback и уведомления, "
+                    "но объясняет только общий прием событий и не содержит расчет подписи платежа."
+                ),
+                ("webhook", "HTTP callback", "notification"),
+                ("Как принять общий webhook?",),
+                ("YooMoney hash", "подпись платежа", "SHA1"),
+            )
+        )
+
+    for index in range(1, 11):
+        specs.append(
+            (
+                f"crowded_n8n_noise_{index:02d}.md",
+                f"n8n distractor {index:02d}",
+                (
+                    f"# n8n distractor {index:02d}\n\n"
+                    f"FACT-ID: N8N_NOISE_{index:02d}\n"
+                    "Материал упоминает n8n, workflow, webhook и интеграции, "
+                    "но остается обзором автоматизаций и не дает шаги запуска сервера."
+                ),
+                ("n8n", "workflow", "webhook"),
+                ("Как устроен общий workflow n8n?",),
+                ("локальная установка", "localhost:5678", "npx"),
+            )
+        )
+
+    for index in range(1, 11):
+        specs.append(
+            (
+                f"crowded_supabase_noise_{index:02d}.md",
+                f"Supabase distractor {index:02d}",
+                (
+                    f"# Supabase distractor {index:02d}\n\n"
+                    f"FACT-ID: SUPABASE_NOISE_{index:02d}\n"
+                    "Материал упоминает Supabase, таблицы, REST API и RLS, "
+                    "но остается обзором обычной структуры базы и прав доступа."
+                ),
+                ("Supabase", "таблицы", "REST API", "RLS"),
+                ("Как создать обычную таблицу Supabase?",),
+                ("match_documents", "pgvector", "vector search"),
+            )
+        )
+
+    specs.extend(
+        [
+            (
+                "it_yoomoney_hash.md",
+                "YooMoney webhook hash",
+                (
+                    "# YooMoney webhook hash\n\n"
+                    "FACT-ID: IT_YOOMONEY_HASH\n"
+                    "Для YooMoney webhook проверяют подпись уведомления: строку параметров "
+                    "собирают в заданном порядке и сравнивают рассчитанный SHA1 hash с полем sha1_hash."
+                ),
+                ("YooMoney", "webhook", "SHA1", "sha1_hash", "подпись"),
+                ("Как проверить YooMoney hash в webhook?",),
+                ("Docker", "n8n локальная установка", "Supabase tables"),
+            ),
+            (
+                "it_n8n_local_install.md",
+                "n8n local install",
+                (
+                    "# n8n local install\n\n"
+                    "FACT-ID: IT_N8N_LOCAL_INSTALL\n"
+                    "Локальная установка n8n выполняется через npx или Docker. После запуска "
+                    "интерфейс открывают на localhost:5678 и проверяют, что порт отвечает."
+                ),
+                ("n8n", "локальная установка", "Docker", "npx", "localhost:5678"),
+                ("Как установить n8n локально?",),
+                ("YooMoney", "workflow payments", "Supabase RAG"),
+            ),
+            (
+                "it_supabase_match_documents.md",
+                "Supabase match_documents RPC",
+                (
+                    "# Supabase match_documents RPC\n\n"
+                    "FACT-ID: IT_SUPABASE_MATCH_DOCUMENTS\n"
+                    "RPC match_documents используют как pgvector-функцию: она принимает query_embedding, "
+                    "сравнивает embedding через vector search и возвращает похожие документы."
+                ),
+                ("Supabase", "match_documents", "pgvector", "query_embedding", "vector search"),
+                ("Как работает Supabase match_documents?",),
+                ("общие таблицы", "RLS overview", "storage"),
+            ),
+        ]
+    )
+
+    return tuple([await _generated_document(spec, embedding_client) for spec in specs])
+
+
+async def _generated_document(
+    spec: tuple[str, str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...]],
+    embedding_client: HashEmbeddingClient,
+) -> IndexedDocument:
+    filename, title, content, topics, questions, not_about = spec
+    card = DocumentCardRecord(
+        document_id=filename,
+        filename=filename,
+        title=title,
+        course="crowded it synthetic",
+        lesson=title,
+        summary=content,
+        topics=topics,
+        questions_answered=questions,
+        entities=tuple(_dedupe(list(topics) + _fact_ids(content), limit=16)),
+        task_types=("setup", "debug", "source_check", "reference"),
+        not_about=not_about,
+        quality_score=0.9,
+    )
+    section = SectionDraft(section_index=0, heading=title, content=content, summary=content[:240])
+    chunk = IndexedChunk(
+        chunk_id=f"{filename}:0",
+        document_id=filename,
+        filename=filename,
+        document_title=title,
+        heading=title,
+        content=content,
+        chunk_index=0,
+        section_index=0,
+        fact_ids=tuple(_fact_ids(content)),
+    )
+    return IndexedDocument(
+        document_id=filename,
+        filename=filename,
+        title=title,
+        card=card,
+        sections=(section,),
+        chunks=(chunk,),
+        card_embedding=await embedding_client.embed(_card_text(card)),
+        fact_ids=tuple(_fact_ids(content)),
+    )
+
+
+def _corpus_term_scorer(index: SyntheticIndex) -> CorpusTermScorer:
+    """Build corpus-aware term scorer from the synthetic index."""
+    documents = [
+        CorpusDocumentText(
+            document_id=document.filename,
+            title=document.title,
+            course=document.card.course,
+            text=_positive_card_text(document.card),
+            chunks=tuple(chunk.content for chunk in document.chunks),
+        )
+        for document in index.documents
+    ]
+    return CorpusTermScorer.from_documents(documents)
+
+
+def _positive_card_text(card: DocumentCardRecord) -> str:
+    """Return card text without negative/not-about terms for corpus stats."""
+    return "\n".join(
+        [
+            card.filename,
+            card.title,
+            card.summary,
+            " ".join(card.topics),
+            " ".join(card.questions_answered),
+            " ".join(card.entities),
+        ]
+    )
 
 
 async def evaluate_case(
@@ -927,6 +1109,12 @@ def _analysis_dict(analysis: QuestionAnalysis) -> dict[str, Any]:
         "object_terms": list(analysis.object_terms),
         "requested_action": analysis.requested_action,
         "requested_attribute": analysis.requested_attribute,
+        "common_terms": list(analysis.common_terms),
+        "platform_terms": list(analysis.platform_terms),
+        "config_terms": list(analysis.config_terms),
+        "exact_terms": list(analysis.exact_terms),
+        "rare_anchor_terms": list(analysis.rare_anchor_terms),
+        "strongest_evidence_terms": list(analysis.strongest_evidence_terms),
     }
 
 
@@ -940,6 +1128,12 @@ def _candidate_dict(candidate: DocumentCandidate) -> dict[str, Any]:
         "matched_topics": list(candidate.matched_topics),
         "matched_questions": list(candidate.matched_questions),
         "route": candidate.route,
+        "matched_common_terms": list(candidate.matched_common_terms),
+        "matched_anchor_terms": list(candidate.matched_anchor_terms),
+        "missing_action_terms": list(candidate.missing_action_terms),
+        "missing_object_terms": list(candidate.missing_object_terms),
+        "answerability_score": candidate.answerability_score,
+        "penalties": list(candidate.penalties),
     }
 
 

@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 import re
 
+from app.rag import term_scoring
 from app.rag.types import EvidencePack, EvidenceSpan, QuestionAnalysis, SourceRef
 
 TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
@@ -11,6 +12,9 @@ TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
 class EvidencePackBuilder:
     """Build the narrow context passed to answer generation."""
 
+    def __init__(self, term_scorer: term_scoring.CorpusTermScorer | None = None) -> None:
+        self._term_scorer = term_scorer or term_scoring.CorpusTermScorer.neutral()
+
     def build(
         self,
         spans: Sequence[EvidenceSpan],
@@ -18,7 +22,7 @@ class EvidencePackBuilder:
         analysis: QuestionAnalysis | None = None,
     ) -> EvidencePack:
         """Build a compact evidence pack from reranked spans."""
-        selected = tuple(_strong_spans(spans, analysis, max_items=max_items))
+        selected = tuple(_strong_spans(spans, analysis, max_items=max_items, term_scorer=self._term_scorer))
         answer_mode = _answer_mode(selected, analysis)
         missing = tuple(analysis.missing_input_requirements) if analysis else ()
         return EvidencePack(
@@ -98,6 +102,7 @@ def _strong_spans(
     analysis: QuestionAnalysis | None,
     *,
     max_items: int,
+    term_scorer: term_scoring.CorpusTermScorer,
 ) -> list[EvidenceSpan]:
     selected: list[EvidenceSpan] = []
     for span in spans:
@@ -107,10 +112,21 @@ def _strong_spans(
             continue
         if analysis is not None and _misses_object(span, analysis):
             continue
+        if analysis is not None and term_scorer.has_statistics and not _has_strong_term(span, analysis, term_scorer):
+            continue
         selected.append(span)
         if len(selected) >= max_items:
             break
     return selected
+
+
+def _has_strong_term(
+    span: EvidenceSpan,
+    analysis: QuestionAnalysis,
+    term_scorer: term_scoring.CorpusTermScorer,
+) -> bool:
+    text = " ".join([span.document_title, span.locator or "", span.text])
+    return term_scorer.has_strong_evidence_match(analysis, text)
 
 
 def _misses_object(span: EvidenceSpan, analysis: QuestionAnalysis) -> bool:

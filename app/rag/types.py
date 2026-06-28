@@ -23,12 +23,16 @@ AnswerMode = Literal[
 
 
 FacetRole = Literal[
+    "common",
     "platform",
     "action",
     "object",
     "environment",
     "symptom",
     "constraint",
+    "config",
+    "exact",
+    "rare_anchor",
     "source",
 ]
 
@@ -67,6 +71,16 @@ class QuestionAnalysis:
     requested_action: str = ""
     requested_attribute: str = ""
     generic_terms: tuple[str, ...] = ()
+    common_terms: tuple[str, ...] = ()
+    platform_terms: tuple[str, ...] = ()
+    action_terms: tuple[str, ...] = ()
+    symptom_terms: tuple[str, ...] = ()
+    environment_terms: tuple[str, ...] = ()
+    config_terms: tuple[str, ...] = ()
+    exact_terms: tuple[str, ...] = ()
+    rare_anchor_terms: tuple[str, ...] = ()
+    ignored_weak_terms: tuple[str, ...] = ()
+    strongest_evidence_terms: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Keep legacy aliases populated while exposing the v2 contract."""
@@ -87,6 +101,16 @@ class QuestionAnalysis:
         object.__setattr__(self, "constraints", tuple(self.constraints))
         object.__setattr__(self, "object_terms", tuple(self.object_terms))
         object.__setattr__(self, "generic_terms", tuple(self.generic_terms))
+        object.__setattr__(self, "common_terms", tuple(self.common_terms))
+        object.__setattr__(self, "platform_terms", tuple(self.platform_terms))
+        object.__setattr__(self, "action_terms", tuple(self.action_terms))
+        object.__setattr__(self, "symptom_terms", tuple(self.symptom_terms))
+        object.__setattr__(self, "environment_terms", tuple(self.environment_terms))
+        object.__setattr__(self, "config_terms", tuple(self.config_terms))
+        object.__setattr__(self, "exact_terms", tuple(self.exact_terms))
+        object.__setattr__(self, "rare_anchor_terms", tuple(self.rare_anchor_terms))
+        object.__setattr__(self, "ignored_weak_terms", tuple(self.ignored_weak_terms))
+        object.__setattr__(self, "strongest_evidence_terms", tuple(self.strongest_evidence_terms))
 
 
 @dataclass(frozen=True)
@@ -103,10 +127,21 @@ class DocumentCandidate:
     matched_topics: tuple[str, ...] = ()
     matched_questions: tuple[str, ...] = ()
     route: str = "document_card"
+    matched_common_terms: tuple[str, ...] = ()
+    matched_anchor_terms: tuple[str, ...] = ()
+    missing_action_terms: tuple[str, ...] = ()
+    missing_object_terms: tuple[str, ...] = ()
+    answerability_score: float = 0.0
+    penalties: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "matched_topics", tuple(self.matched_topics))
         object.__setattr__(self, "matched_questions", tuple(self.matched_questions))
+        object.__setattr__(self, "matched_common_terms", tuple(self.matched_common_terms))
+        object.__setattr__(self, "matched_anchor_terms", tuple(self.matched_anchor_terms))
+        object.__setattr__(self, "missing_action_terms", tuple(self.missing_action_terms))
+        object.__setattr__(self, "missing_object_terms", tuple(self.missing_object_terms))
+        object.__setattr__(self, "penalties", tuple(self.penalties))
 
 
 @dataclass(frozen=True)

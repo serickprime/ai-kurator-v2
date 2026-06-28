@@ -43,6 +43,14 @@ async def main_async() -> None:
     print(_json(asdict(analysis)))
 
     try:
+        term_analysis = await _term_analysis(args, analysis)
+        print("QueryTermAnalysis")
+        print(_json(term_analysis))
+    except Exception as exc:  # noqa: BLE001 - debug command should explain setup gaps
+        print("QueryTermAnalysis")
+        print(_json({"error": str(exc)}))
+
+    try:
         candidates = await _route(args, analysis)
     except Exception as exc:  # noqa: BLE001 - debug command should explain setup gaps
         print("DocumentCandidates")
@@ -78,6 +86,44 @@ async def _route(args: argparse.Namespace, analysis: Any) -> tuple[Any, ...]:
             )
         finally:
             await embedding_client.close()
+
+
+async def _term_analysis(args: argparse.Namespace, analysis: Any) -> dict[str, Any]:
+    from app.db.supabase_client import SupabaseClient
+    from app.rag.document_router import SupabaseDocumentCardStore
+    from app.rag.term_scoring import CorpusTermScorer
+
+    settings = _load_settings()
+    async with SupabaseClient(settings) as supabase:
+        workspace_id = args.workspace_id or await _workspace_id(supabase, args.workspace)
+        if not workspace_id:
+            raise RuntimeError(f"Workspace not found: {args.workspace}")
+        store = SupabaseDocumentCardStore(supabase)
+        rows = await store.list_term_statistics(workspace_id=workspace_id, course=args.course)
+        query_terms = CorpusTermScorer.from_rows(rows).query_terms(analysis)
+        return {
+            "common_terms": list(query_terms.common_terms),
+            "platform_terms": list(query_terms.platform_terms),
+            "action_terms": list(query_terms.action_terms),
+            "object_terms": list(query_terms.object_terms),
+            "symptom_terms": list(query_terms.symptom_terms),
+            "environment_terms": list(query_terms.environment_terms),
+            "config_terms": list(query_terms.config_terms),
+            "exact_terms": list(query_terms.exact_terms),
+            "rare_anchor_terms": list(query_terms.rare_anchor_terms),
+            "ignored_weak_terms": list(query_terms.ignored_weak_terms),
+            "strongest_evidence_terms": list(query_terms.strongest_evidence_terms),
+            "weights": {
+                key: {
+                    "class": value.frequency_class,
+                    "weight": value.weight,
+                    "document_frequency": value.document_frequency,
+                    "chunk_frequency": value.chunk_frequency,
+                    "term_type_guess": value.term_type_guess,
+                }
+                for key, value in query_terms.weights.items()
+            },
+        }
 
 
 async def _workspace_id(supabase: Any, workspace_name: str) -> str | None:

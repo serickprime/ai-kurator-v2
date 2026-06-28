@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -11,6 +12,8 @@ from app.db.repositories import DocumentRecord, DocumentRepository
 from app.ingestion.chunker import ChunkDraft, ParentChildChunker, SectionDraft
 from app.ingestion.document_cards import DocumentCardBuilder
 from app.ingestion.loaders import FileLoader, LoadedDocument, is_supported_file
+
+LOGGER = logging.getLogger(__name__)
 
 
 class EmbeddingClient(Protocol):
@@ -52,6 +55,9 @@ class IngestionRepository(Protocol):
 
     async def create_chunks(self, **kwargs: object) -> list[dict[str, object]]:
         """Create chunks."""
+
+    async def refresh_term_statistics(self, workspace_id: str) -> int:
+        """Refresh corpus term statistics."""
 
 
 @dataclass(frozen=True)
@@ -202,6 +208,7 @@ class IndexingService:
 
         await self._repository.archive_active_documents(workspace_id, key)
         await self._repository.activate_document(document.id)
+        await self._refresh_term_statistics(workspace_id)
 
         return IngestionResult(
             path=path,
@@ -213,6 +220,15 @@ class IndexingService:
             chunks_count=len(chunks),
             content_hash=content_hash,
         )
+
+    async def _refresh_term_statistics(self, workspace_id: str) -> None:
+        refresh = getattr(self._repository, "refresh_term_statistics", None)
+        if refresh is None:
+            return
+        try:
+            await refresh(workspace_id)
+        except Exception as exc:  # noqa: BLE001 - optional stats refresh should not break ingestion
+            LOGGER.warning("term statistics refresh failed after ingestion: %s", exc)
 
     async def _embed_sections(self, sections: tuple[SectionDraft, ...]) -> list[list[float]]:
         texts = [
