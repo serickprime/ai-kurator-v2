@@ -41,6 +41,7 @@ Prompt changes are part of the RAG contract. Do not edit prompts to hide routing
 - `partial_answer`: say that materials contain partial information, answer only the confirmed part, and ask for missing data.
 - `ask_for_missing_data`: do not diagnose; ask briefly for the specific missing input.
 - `general_answer_without_sources`: give a general answer without the phrase "По материалам" and without source lines.
+- `out_of_base`: say that the materials do not contain confirmed evidence for the question; do not include source lines.
 
 ## Claim Verification Prompt Requirements
 

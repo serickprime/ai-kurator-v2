@@ -21,3 +21,12 @@ def test_question_analysis_builds_evidence_questions() -> None:
     assert any("локальный запуск" in question for question in analysis.evidence_questions)
     assert any(facet.role == "platform" and facet.text == "n8n" for facet in analysis.query_facets)
     assert any(facet.role == "environment" and facet.text == "локально" for facet in analysis.query_facets)
+
+
+def test_question_analysis_extracts_object_first_signals() -> None:
+    analysis = QuestionAnalyzer().analyze("что делать с пригоревшей сковородой после готовки?")
+
+    assert analysis.primary_object == "пригоревшей"
+    assert "сковородой" in analysis.object_terms
+    assert analysis.requested_action == "готовка"
+    assert "после" in analysis.constraints

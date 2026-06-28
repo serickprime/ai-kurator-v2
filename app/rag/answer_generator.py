@@ -75,6 +75,14 @@ async def generate_answer(
             model_input={"messages": messages},
         )
 
+    if evidence_pack.answer_mode == "out_of_base":
+        return AnswerDraft(
+            text=_out_of_base_answer(),
+            status=AnswerStatus.NEEDS_CLARIFICATION,
+            answer_mode=evidence_pack.answer_mode,
+            model_input={"messages": messages},
+        )
+
     if llm_client is not None:
         try:
             text = (await _complete_text(llm_client, messages, dialog_context)).strip()
@@ -175,6 +183,8 @@ def _fallback_answer(analysis: QuestionAnalysis, evidence: EvidencePack) -> str:
         return _general_answer(analysis)
     if evidence.answer_mode == "partial_answer":
         return _partial_answer(analysis, evidence)
+    if evidence.answer_mode == "out_of_base":
+        return _out_of_base_answer()
     if evidence.is_empty:
         return _ask_for_missing_data(analysis, evidence)
     return _answer_from_materials(analysis, evidence)
@@ -209,6 +219,10 @@ def _ask_for_missing_data(analysis: QuestionAnalysis, evidence: EvidencePack) ->
     if not missing:
         missing = ["подтвержденного фрагмента из материалов по этому вопросу"]
     return "Нужно уточнить: " + ", ".join(missing) + "."
+
+
+def _out_of_base_answer() -> str:
+    return "В материалах не нашел подтвержденного фрагмента по этому вопросу."
 
 
 def _general_answer(analysis: QuestionAnalysis) -> str:
@@ -254,7 +268,7 @@ def _uncovered_points(analysis: QuestionAnalysis, evidence: EvidencePack) -> lis
 
 
 def _status_for_mode(answer_mode: str) -> AnswerStatus:
-    if answer_mode == "ask_for_missing_data":
+    if answer_mode in {"ask_for_missing_data", "out_of_base"}:
         return AnswerStatus.NEEDS_CLARIFICATION
     if answer_mode == "partial_answer":
         return AnswerStatus.INSUFFICIENT_EVIDENCE

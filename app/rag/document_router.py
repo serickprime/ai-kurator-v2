@@ -11,6 +11,48 @@ from app.rag.types import DocumentCandidate, QuestionAnalysis, QueryFacet
 _TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
 _PLATFORM_ROLES = {"platform"}
 _SPECIFIC_ROLES = {"action", "object", "environment", "symptom", "constraint", "source"}
+_MATCH_STOPWORDS = {
+    "and",
+    "the",
+    "for",
+    "with",
+    "from",
+    "как",
+    "что",
+    "где",
+    "куда",
+    "когда",
+    "какой",
+    "какая",
+    "какие",
+    "какого",
+    "каком",
+    "чем",
+    "если",
+    "или",
+    "это",
+    "этот",
+    "эта",
+    "для",
+    "при",
+    "после",
+    "перед",
+    "чтобы",
+    "на",
+    "из",
+    "в",
+    "во",
+    "с",
+    "со",
+    "по",
+    "про",
+    "не",
+    "ни",
+    "ли",
+    "материал",
+    "источник",
+    "документ",
+}
 
 
 class EmbeddingClient(Protocol):
@@ -263,9 +305,24 @@ def _score_record(analysis: QuestionAnalysis, record: DocumentCardRecord) -> Doc
     specific_facets = [facet for facet in analysis.query_facets if facet.role in _SPECIFIC_ROLES]
     all_text = _record_text(record)
     answer_text = _record_answer_text(record)
+    object_terms = tuple(analysis.object_terms) or tuple(facet.text for facet in specific_facets if facet.role == "object")
+    action_terms = tuple(_dedupe([analysis.requested_action, *[facet.text for facet in specific_facets if facet.role == "action"]], limit=4))
+    constraint_terms = tuple(
+        _dedupe(
+            [
+                analysis.requested_attribute,
+                *analysis.constraints,
+                *[facet.text for facet in specific_facets if facet.role in {"environment", "symptom", "constraint"}],
+            ],
+            limit=8,
+        )
+    )
 
     platform_matches = _matching_facets(platform_facets, all_text)
     specific_matches = _matching_facets(specific_facets, answer_text)
+    object_matches = _matching_terms(object_terms, answer_text)
+    action_matches = _matching_terms(action_terms, answer_text)
+    constraint_matches = _matching_terms(constraint_terms, answer_text)
     matched_topics = _matched_items(record.topics, analysis)
     matched_questions = _matched_items(record.questions_answered, analysis)
     task_match = _task_matches(analysis.task_type, record.task_types)
@@ -275,31 +332,48 @@ def _score_record(analysis: QuestionAnalysis, record: DocumentCardRecord) -> Doc
 
     platform_signal = sum(facet.importance for facet in platform_matches)
     specific_signal = sum(facet.importance for facet in specific_matches)
-    question_signal = min(len(matched_questions) * 0.24, 0.48)
-    topic_signal = min(len(matched_topics) * 0.14, 0.42)
-    task_signal = 0.18 if task_match else 0.0
+    object_signal = min(len(object_matches) / max(len(object_terms), 1), 1.0) if object_terms else 0.0
+    action_signal = min(len(action_matches) / max(len(action_terms), 1), 1.0) if action_terms else 0.0
+    constraint_signal = min(len(constraint_matches) / max(len(constraint_terms), 1), 1.0) if constraint_terms else 0.0
+    question_signal = min(len(matched_questions) * 0.20, 0.40)
+    topic_signal = min(len(matched_topics) * 0.10, 0.30)
+    task_signal = 0.12 if task_match else 0.0
 
     score = (
-        min(vector_score, 1.0) * 0.24
-        + min(platform_signal, 1.5) * 0.08
-        + min(specific_signal, 2.5) * 0.26
+        min(vector_score, 1.0) * 0.16
+        + min(platform_signal, 1.5) * 0.04
+        + min(specific_signal, 2.5) * 0.12
+        + object_signal * 0.42
+        + action_signal * 0.16
+        + constraint_signal * 0.16
         + question_signal
         + topic_signal
         + task_signal
-        + keyword_score * 0.18
-        + quality_score * 0.04
+        + keyword_score * 0.10
+        + quality_score * 0.03
     )
 
     if platform_signal and specific_signal < 0.3 and not matched_questions:
         score *= 0.35
+    if object_terms and object_signal == 0:
+        score *= 0.28
+    elif len(object_terms) >= 3 and object_signal < 0.4:
+        score *= 0.55
+    if action_terms and action_signal == 0 and not matched_questions:
+        score *= 0.72
+    if constraint_terms and constraint_signal == 0 and analysis.task_type in {"debug", "setup"}:
+        score *= 0.82
     if not platform_signal and not specific_signal and vector_score < 0.68:
         score *= 0.45
 
-    score = round(min(score, 1.0), 4)
+    score = round(score, 4)
     reason = _reason(
         vector_score=vector_score,
         platform_matches=platform_matches,
         specific_matches=specific_matches,
+        object_matches=object_matches,
+        action_matches=action_matches,
+        constraint_matches=constraint_matches,
         matched_topics=matched_topics,
         matched_questions=matched_questions,
         task_match=task_match,
@@ -372,11 +446,24 @@ def _matching_facets(facets: list[QueryFacet], text: str) -> list[QueryFacet]:
     return matches
 
 
+def _matching_terms(terms: tuple[str, ...], text: str) -> list[str]:
+    text_roots = _roots(_tokens(text))
+    matches: list[str] = []
+    for term in terms:
+        term_roots = _roots(_tokens(term))
+        if term_roots and term_roots & text_roots:
+            matches.append(term)
+    return _dedupe(matches, limit=8)
+
+
 def _matched_items(items: tuple[str, ...], analysis: QuestionAnalysis) -> list[str]:
     needles = " ".join(
         [
             analysis.original_question,
             analysis.primary_intent,
+            analysis.requested_action,
+            analysis.requested_attribute,
+            " ".join(analysis.object_terms),
             " ".join(analysis.must_answer_points),
             " ".join(analysis.evidence_questions),
             " ".join(facet.text for facet in analysis.query_facets if facet.role != "platform"),
@@ -396,6 +483,7 @@ def _keyword_score(analysis: QuestionAnalysis, text: str) -> float:
         keyword
         for keyword in analysis.keywords
         if keyword and not any(facet.text == keyword and facet.role == "platform" for facet in analysis.query_facets)
+        and keyword not in analysis.generic_terms
     ]
     if not keywords:
         return 0.0
@@ -412,9 +500,17 @@ def _task_matches(task_type: str, task_types: tuple[str, ...]) -> bool:
 
 
 def _is_explicitly_not_about(analysis: QuestionAnalysis, record: DocumentCardRecord) -> bool:
+    if analysis.task_type == "compare":
+        return False
     if not record.not_about:
         return False
-    query_roots = _roots(_tokens(_routing_query_text(analysis)))
+    signal_terms = list(analysis.object_terms)
+    signal_terms.extend(analysis.constraints)
+    if analysis.requested_attribute:
+        signal_terms.append(analysis.requested_attribute)
+    query_roots = _roots(_tokens(" ".join(signal_terms)))
+    if not query_roots:
+        return False
     for item in record.not_about:
         if _roots(_tokens(item)) & query_roots:
             return True
@@ -426,6 +522,9 @@ def _reason(
     vector_score: float,
     platform_matches: list[QueryFacet],
     specific_matches: list[QueryFacet],
+    object_matches: list[str],
+    action_matches: list[str],
+    constraint_matches: list[str],
     matched_topics: list[str],
     matched_questions: list[str],
     task_match: bool,
@@ -433,6 +532,12 @@ def _reason(
     parts: list[str] = []
     if vector_score:
         parts.append(f"card embedding score {vector_score:.3f}")
+    if object_matches:
+        parts.append("object terms: " + ", ".join(object_matches[:5]))
+    if action_matches:
+        parts.append("requested action: " + ", ".join(action_matches[:3]))
+    if constraint_matches:
+        parts.append("constraints: " + ", ".join(constraint_matches[:4]))
     if specific_matches:
         parts.append("answerable facets: " + ", ".join(f"{facet.role}:{facet.text}" for facet in specific_matches[:5]))
     if matched_questions:
@@ -506,7 +611,13 @@ def _float_or_none(value: Any) -> float | None:
 
 
 def _tokens(text: str) -> tuple[str, ...]:
-    return tuple(_normalize_token(token) for token in _TOKEN_RE.findall(text.lower()) if token.strip())
+    tokens: list[str] = []
+    for token in _TOKEN_RE.findall(text.lower()):
+        normalized = _normalize_token(token)
+        if not normalized or normalized in _MATCH_STOPWORDS:
+            continue
+        tokens.append(normalized)
+    return tuple(tokens)
 
 
 def _normalize_token(token: str) -> str:
@@ -522,10 +633,58 @@ def _roots(tokens: tuple[str, ...] | list[str]) -> set[str]:
 
 def _root(token: str) -> str:
     if len(token) >= 8:
-        return token[:7]
+        return _stem_ru(token)[:7]
     if len(token) >= 6:
-        return token[:5]
-    return token
+        return _stem_ru(token)[:5]
+    return _stem_ru(token)
+
+
+def _stem_ru(token: str) -> str:
+    clean = token.casefold().replace("ё", "е").strip(".,:;!?()[]{}\"'`«»")
+    if not re.search(r"[а-я]", clean):
+        return clean
+    endings = (
+        "иями",
+        "ями",
+        "ами",
+        "ого",
+        "ему",
+        "ыми",
+        "ими",
+        "его",
+        "ая",
+        "яя",
+        "ое",
+        "ее",
+        "ые",
+        "ие",
+        "ый",
+        "ий",
+        "ой",
+        "ом",
+        "ем",
+        "ах",
+        "ях",
+        "ов",
+        "ев",
+        "ам",
+        "ям",
+        "ою",
+        "ею",
+        "ей",
+        "у",
+        "ю",
+        "а",
+        "я",
+        "ы",
+        "и",
+        "е",
+        "ь",
+    )
+    for ending in endings:
+        if len(clean) > len(ending) + 3 and clean.endswith(ending):
+            return clean[: -len(ending)]
+    return clean
 
 
 def _dedupe(items: list[str], limit: int) -> list[str]:

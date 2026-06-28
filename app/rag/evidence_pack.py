@@ -1,8 +1,11 @@
 """Evidence pack construction."""
 
 from collections.abc import Sequence
+import re
 
 from app.rag.types import EvidencePack, EvidenceSpan, QuestionAnalysis, SourceRef
+
+TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
 
 
 class EvidencePackBuilder:
@@ -11,11 +14,11 @@ class EvidencePackBuilder:
     def build(
         self,
         spans: Sequence[EvidenceSpan],
-        max_items: int = 12,
+        max_items: int = 5,
         analysis: QuestionAnalysis | None = None,
     ) -> EvidencePack:
         """Build a compact evidence pack from reranked spans."""
-        selected = tuple(span for span in spans if span.text.strip())[:max_items]
+        selected = tuple(_strong_spans(spans, analysis, max_items=max_items))
         answer_mode = _answer_mode(selected, analysis)
         missing = tuple(analysis.missing_input_requirements) if analysis else ()
         return EvidencePack(
@@ -56,7 +59,7 @@ def _answer_mode(
     if analysis is not None and analysis.missing_input_requirements:
         return "ask_for_missing_data"
     if not selected:
-        return "ask_for_missing_data"
+        return "out_of_base"
     if analysis is not None and _has_uncovered_points(selected, analysis):
         return "partial_answer"
     return "answer_from_materials"
@@ -88,3 +91,96 @@ def _has_uncovered_points(selected: tuple[EvidenceSpan, ...], analysis: Question
         if any(term[:5] in evidence_text for term in point_terms):
             covered += 1
     return covered < max(1, len(analysis.must_answer_points) // 2)
+
+
+def _strong_spans(
+    spans: Sequence[EvidenceSpan],
+    analysis: QuestionAnalysis | None,
+    *,
+    max_items: int,
+) -> list[EvidenceSpan]:
+    selected: list[EvidenceSpan] = []
+    for span in spans:
+        if not span.text.strip():
+            continue
+        if span.score is not None and span.score < 0.16:
+            continue
+        if analysis is not None and _misses_object(span, analysis):
+            continue
+        selected.append(span)
+        if len(selected) >= max_items:
+            break
+    return selected
+
+
+def _misses_object(span: EvidenceSpan, analysis: QuestionAnalysis) -> bool:
+    object_roots = _roots(analysis.object_terms)
+    if not object_roots:
+        return False
+    text_roots = _roots(_tokens(" ".join([span.document_title, span.locator or "", span.text])))
+    return not bool(object_roots & text_roots)
+
+
+def _tokens(text: str) -> list[str]:
+    return [token.casefold().replace("ё", "е").strip(".,:;!?()[]{}\"'`«»") for token in TOKEN_RE.findall(text)]
+
+
+def _roots(tokens: Sequence[str]) -> set[str]:
+    return {_root(token) for token in tokens if token}
+
+
+def _root(token: str) -> str:
+    clean = token.casefold().replace("ё", "е").strip(".,:;!?()[]{}\"'`«»")
+    clean = _stem_ru(clean)
+    if len(clean) >= 8:
+        return clean[:7]
+    if len(clean) >= 6:
+        return clean[:5]
+    return clean
+
+
+def _stem_ru(token: str) -> str:
+    if not re.search(r"[а-я]", token):
+        return token
+    endings = (
+        "иями",
+        "ями",
+        "ами",
+        "ого",
+        "ему",
+        "ыми",
+        "ими",
+        "его",
+        "ая",
+        "яя",
+        "ое",
+        "ее",
+        "ые",
+        "ие",
+        "ый",
+        "ий",
+        "ой",
+        "ом",
+        "ем",
+        "ах",
+        "ях",
+        "ов",
+        "ев",
+        "ам",
+        "ям",
+        "ою",
+        "ею",
+        "ей",
+        "у",
+        "ю",
+        "а",
+        "я",
+        "ы",
+        "и",
+        "е",
+        "ь",
+    )
+    for ending in endings:
+        if len(token) > len(ending) + 3 and token.endswith(ending):
+            return token[: -len(ending)]
+    return token

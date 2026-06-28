@@ -128,8 +128,8 @@ class DocumentCardBuilder:
         sections: tuple[SectionDraft, ...],
     ) -> DocumentCard:
         headings = [section.heading for section in sections if section.heading and section.heading != "Document"]
-        topic_candidates = headings + _top_keywords(document.structured_text)
-        topics = tuple(_dedupe(topic_candidates, limit=12))
+        topic_candidates = headings + _top_keywords(document.structured_text, limit=36)
+        topics = tuple(_dedupe(topic_candidates, limit=30))
         questions = tuple(_questions_from_sections(sections, document, limit=10))
         entities = tuple(_dedupe(ENTITY_RE.findall(document.structured_text), limit=12))
         task_types = tuple(_task_types(document.structured_text))

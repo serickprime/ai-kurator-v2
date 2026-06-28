@@ -35,7 +35,7 @@ def verify_claims(draft: AnswerDraft, evidence: EvidencePack) -> VerificationRep
             safe_answer="Нужно уточнить: подтвержденного фрагмента из материалов по этому вопросу.",
         )
 
-    if draft.answer_mode in {"ask_for_missing_data", "general_answer_without_sources"}:
+    if draft.answer_mode in {"ask_for_missing_data", "general_answer_without_sources", "out_of_base"}:
         leakage = _has_source_leakage(draft.text, evidence)
         return VerificationReport(
             is_supported=not leakage,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from typing import Protocol
 
@@ -13,6 +14,8 @@ from app.rag.evidence_retriever import EvidenceRetriever
 from app.rag.question_analysis import QuestionAnalyzer
 from app.rag.reranker import EvidenceReranker
 from app.rag.types import AnswerStatus, DocumentCandidate, EvidencePack, PipelineResult
+
+LOGGER = logging.getLogger(__name__)
 
 
 class EvidenceLogger(Protocol):
@@ -67,7 +70,7 @@ class EvidenceFirstRagPipeline:
         analysis = self._analyzer.analyze(question)
         documents = await self._route_documents(analysis, workspace_id=workspace_id, course=course)
         spans = await self._retriever.retrieve(analysis, documents)
-        reranked = self._reranker.rerank(spans)
+        reranked = self._rerank(spans, analysis)
         evidence = self._pack_builder.build(reranked, analysis=analysis)
         draft = await self._answer_generator.generate(analysis, evidence, dialog_context=dialog_context)
         verification = self._verifier.verify(draft, evidence)
@@ -108,6 +111,12 @@ class EvidenceFirstRagPipeline:
         except TypeError:
             return await self._router.route(analysis)
 
+    def _rerank(self, spans: object, analysis: object) -> object:
+        try:
+            return self._reranker.rerank(spans, analysis=analysis)
+        except TypeError:
+            return self._reranker.rerank(spans)
+
     async def _log(
         self,
         *,
@@ -131,7 +140,8 @@ class EvidenceFirstRagPipeline:
                 final_answer=final_answer,
                 final_sources=final_sources,
             )
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - logging failures must not break answers
+            LOGGER.warning("failed to write evidence log: %s", exc)
             return
 
 

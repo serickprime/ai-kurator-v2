@@ -16,24 +16,102 @@ _STOPWORDS = {
     "for",
     "with",
     "from",
+    "about",
+    "into",
+    "not",
     "как",
     "что",
     "где",
     "куда",
+    "когда",
+    "чем",
+    "сколько",
     "если",
     "или",
+    "не",
+    "ни",
+    "ли",
     "это",
+    "этот",
+    "эта",
+    "эти",
+    "такое",
     "его",
     "она",
     "оно",
     "мне",
+    "в",
+    "во",
+    "на",
+    "с",
+    "со",
+    "из",
+    "за",
+    "к",
+    "ко",
+    "по",
+    "про",
+    "от",
+    "до",
+    "у",
     "надо",
+    "делать",
+    "делаю",
+    "сделать",
+    "должен",
+    "должна",
+    "должно",
+    "должны",
     "нужно",
+    "нужен",
+    "нужна",
+    "нужны",
     "можно",
     "почему",
     "какой",
     "какая",
     "какие",
+    "какого",
+    "каком",
+    "какую",
+    "кто",
+    "кого",
+    "чей",
+    "чья",
+    "чье",
+}
+
+_GENERIC_TERMS = {
+    "документ",
+    "материал",
+    "источник",
+    "ответ",
+    "вопрос",
+    "шаг",
+    "шаги",
+    "пример",
+    "основные",
+    "правила",
+    "частые",
+    "ошибки",
+    "ошибка",
+    "делать",
+    "действие",
+    "уход",
+    "общий",
+    "обычный",
+    "обычную",
+    "предмет",
+    "вещь",
+    "это",
+    "такое",
+    "растение",
+    "растения",
+    "продукт",
+    "продукты",
+    "место",
+    "воды",
+    "вода",
 }
 
 _TECH_TERMS = {
@@ -163,6 +241,42 @@ _CONSTRAINT_MARKERS = (
     "обязательно",
     "нельзя",
     "нужен",
+    "после",
+    "перед",
+)
+
+_ACTION_MARKERS = (
+    ("install", "установка"),
+    ("setup", "настройка"),
+    ("configure", "настройка"),
+    ("connect", "подключение"),
+    ("deploy", "развертывание"),
+    ("run", "запуск"),
+    ("start", "запуск"),
+    ("установ", "установка"),
+    ("настро", "настройка"),
+    ("подключ", "подключение"),
+    ("запуст", "запуск"),
+    ("разверн", "развертывание"),
+    ("полив", "полив"),
+    ("поливат", "полив"),
+    ("ухаж", "уход"),
+    ("хран", "хранение"),
+    ("готов", "готовка"),
+    ("подготов", "подготовка"),
+    ("убор", "уборка"),
+    ("убрат", "уборка"),
+    ("провер", "проверка"),
+    ("упаков", "упаковка"),
+    ("упак", "упаковка"),
+    ("полож", "размещение"),
+    ("взять", "сбор"),
+    ("почин", "ремонт"),
+    ("ремонт", "ремонт"),
+    ("отлич", "сравнение"),
+    ("сравн", "сравнение"),
+    ("нельзя", "запрет"),
+    ("должн", "ограничение"),
 )
 
 
@@ -190,6 +304,11 @@ def analyze_question(
     lowered = combined.lower()
     tokens = _extract_keywords(combined)
     task_type = _detect_task_type(lowered, attachments)
+    requested_action = _requested_action(task_type, lowered)
+    generic_terms = tuple(_generic_terms(tokens))
+    object_terms = tuple(_object_terms(tokens, requested_action=requested_action, generic_terms=generic_terms))
+    primary_object = object_terms[0] if object_terms else ""
+    requested_attribute = _requested_attribute(lowered, object_terms)
     diagnostic = task_type == "debug"
     conceptual = task_type in {"explain", "compare", "general"} and _has_any(lowered, _TASK_MARKERS["explain"])
     needs_official_docs = task_type == "source_check" or _has_any(
@@ -197,7 +316,16 @@ def analyze_question(
         ("official", "docs", "documentation", "официальн", "документац"),
     )
 
-    facets = _build_facets(normalized, lowered, tokens, task_type, attachments)
+    facets = _build_facets(
+        normalized,
+        lowered,
+        tokens,
+        task_type,
+        attachments,
+        requested_action=requested_action,
+        object_terms=object_terms,
+        generic_terms=generic_terms,
+    )
     keywords = tuple(_dedupe([facet.text for facet in facets] + list(tokens), limit=16))
     constraints = tuple(facet.text for facet in facets if facet.role == "constraint")
     primary_intent = _primary_intent(task_type, facets, normalized)
@@ -224,6 +352,11 @@ def analyze_question(
         intent=intent,
         keywords=keywords,
         constraints=constraints,
+        primary_object=primary_object,
+        object_terms=object_terms,
+        requested_action=requested_action,
+        requested_attribute=requested_attribute,
+        generic_terms=generic_terms,
     )
 
 
@@ -258,22 +391,29 @@ def _build_facets(
     tokens: tuple[str, ...],
     task_type: str,
     attachments: Sequence[object] | None,
+    *,
+    requested_action: str,
+    object_terms: tuple[str, ...],
+    generic_terms: tuple[str, ...],
 ) -> list[QueryFacet]:
     facets: list[QueryFacet] = []
     platform_terms = [token for token in tokens if _is_platform_like(token)]
     facets.extend(QueryFacet("platform", token, 1.0) for token in platform_terms)
 
-    action_text = _action_text(task_type, lowered)
-    if action_text:
-        facets.append(QueryFacet("action", action_text, 1.0))
+    if requested_action:
+        facets.append(QueryFacet("action", requested_action, 1.0))
 
     for token in tokens:
-        if token in _STOPWORDS or token in platform_terms or _is_marker_token(token):
+        if (
+            token in _STOPWORDS
+            or token in platform_terms
+            or token in generic_terms
+            or _is_marker_token(token)
+            or _is_action_token(token, requested_action)
+        ):
             continue
-        role = "object"
-        if token in {"api", "cli", "json", "webhook"}:
-            role = "object"
-        facets.append(QueryFacet(role, token, 0.65))
+        importance = 0.9 if token in object_terms else 0.55
+        facets.append(QueryFacet("object", token, importance))
 
     for marker in _ENVIRONMENT_MARKERS:
         if marker in lowered:
@@ -321,6 +461,64 @@ def _is_marker_token(token: str) -> bool:
     return any(token.startswith(marker[:6]) for marker in _ENVIRONMENT_MARKERS + _CONSTRAINT_MARKERS)
 
 
+def _requested_action(task_type: str, lowered: str) -> str:
+    action = _action_text(task_type, lowered)
+    if action:
+        return action
+    for marker, label in _ACTION_MARKERS:
+        if marker in lowered:
+            return label
+    return ""
+
+
+def _generic_terms(tokens: tuple[str, ...]) -> list[str]:
+    generic_roots = _roots(tuple(_GENERIC_TERMS))
+    return [token for token in tokens if token in _GENERIC_TERMS or _root(token) in generic_roots]
+
+
+def _object_terms(
+    tokens: tuple[str, ...],
+    *,
+    requested_action: str,
+    generic_terms: tuple[str, ...],
+) -> list[str]:
+    generic = set(generic_terms)
+    objects: list[str] = []
+    for token in tokens:
+        if token in _STOPWORDS or token in generic or _is_platform_like(token):
+            continue
+        if _is_marker_token(token) or _is_action_token(token, requested_action):
+            continue
+        objects.append(token)
+    return _dedupe(objects, limit=8)
+
+
+def _is_action_token(token: str, requested_action: str) -> bool:
+    token_root = _root(token)
+    if requested_action and token_root in _roots([requested_action]):
+        return True
+    return any(token.startswith(marker[: min(len(marker), 6)]) for marker, _ in _ACTION_MARKERS)
+
+
+def _requested_attribute(lowered: str, object_terms: tuple[str, ...]) -> str:
+    attribute_markers = (
+        "свет",
+        "температур",
+        "порт",
+        "ошиб",
+        "цвет",
+        "часто",
+        "сколько",
+        "почему",
+        "где",
+        "куда",
+    )
+    for marker in attribute_markers:
+        if marker in lowered:
+            return marker
+    return object_terms[1] if len(object_terms) > 1 else ""
+
+
 def _action_text(task_type: str, lowered: str) -> str:
     if task_type == "setup":
         if _has_any(lowered, ("установ", "install")):
@@ -355,6 +553,7 @@ def _canonical_environment(marker: str) -> str:
 
 def _primary_intent(task_type: str, facets: list[QueryFacet], question: str) -> str:
     platform = _first_facet(facets, "platform")
+    primary_object = _first_facet(facets, "object")
     action = _first_facet(facets, "action")
     environment = _first_facet(facets, "environment")
     if task_type == "setup" and action:
@@ -370,7 +569,8 @@ def _primary_intent(task_type: str, facets: list[QueryFacet], question: str) -> 
     if task_type == "debug":
         return f"помочь диагностировать проблему{f' в {platform}' if platform else ''}"
     if task_type == "explain":
-        return f"объяснить{f' {platform}' if platform else ''}"
+        target = platform or primary_object
+        return f"объяснить{f' {target}' if target else ''}"
     if task_type == "compare":
         return "сравнить варианты и условия применения"
     if task_type == "admin":
@@ -379,6 +579,8 @@ def _primary_intent(task_type: str, facets: list[QueryFacet], question: str) -> 
         return "проверить утверждение по источникам"
     if task_type == "visual":
         return "разобрать визуальный материал пользователя"
+    if action and primary_object:
+        return f"{action} для {primary_object}"
     return question[:180] or "unknown"
 
 
@@ -416,12 +618,15 @@ def _evidence_questions(task_type: str, facets: list[QueryFacet]) -> list[str]:
     platform = _first_facet(facets, "platform") or "нужную платформу"
     action = _first_facet(facets, "action") or "нужное действие"
     environment = _first_facet(facets, "environment")
+    object_terms = [facet.text for facet in facets if facet.role == "object"]
     action_for_question = _action_for_question(action)
 
     questions = [
         f"источник действительно отвечает про {action_for_question}?",
         f"источник относится к {platform}, а не просто упоминает это слово?",
     ]
+    if object_terms:
+        questions.append("источник отвечает именно про объект вопроса: " + ", ".join(object_terms[:4]) + "?")
 
     if task_type == "setup":
         questions.append(f"источник объясняет установку или запуск {platform}?")
@@ -506,3 +711,64 @@ def _dedupe_facets(facets: Sequence[QueryFacet]) -> list[QueryFacet]:
         seen.add(key)
         result.append(facet)
     return result
+
+
+def _roots(tokens: Sequence[str]) -> set[str]:
+    return {_root(token) for token in tokens if token}
+
+
+def _root(token: str) -> str:
+    clean = token.casefold().replace("ё", "е").strip(".,:;!?()[]{}\"'`«»")
+    clean = _stem_ru(clean)
+    if len(clean) >= 8:
+        return clean[:7]
+    if len(clean) >= 6:
+        return clean[:5]
+    return clean
+
+
+def _stem_ru(token: str) -> str:
+    if not re.search(r"[а-я]", token):
+        return token
+    endings = (
+        "иями",
+        "ями",
+        "ами",
+        "ого",
+        "ему",
+        "ыми",
+        "ими",
+        "его",
+        "ая",
+        "яя",
+        "ое",
+        "ее",
+        "ые",
+        "ие",
+        "ый",
+        "ий",
+        "ой",
+        "ом",
+        "ем",
+        "ах",
+        "ях",
+        "ов",
+        "ев",
+        "ам",
+        "ям",
+        "ою",
+        "ею",
+        "ей",
+        "у",
+        "ю",
+        "а",
+        "я",
+        "ы",
+        "и",
+        "е",
+        "ь",
+    )
+    for ending in endings:
+        if len(token) > len(ending) + 3 and token.endswith(ending):
+            return token[: -len(ending)]
+    return token

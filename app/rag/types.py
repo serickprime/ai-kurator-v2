@@ -18,6 +18,7 @@ AnswerMode = Literal[
     "partial_answer",
     "ask_for_missing_data",
     "general_answer_without_sources",
+    "out_of_base",
 ]
 
 
@@ -61,6 +62,11 @@ class QuestionAnalysis:
     intent: str = "unknown"
     keywords: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
+    primary_object: str = ""
+    object_terms: tuple[str, ...] = ()
+    requested_action: str = ""
+    requested_attribute: str = ""
+    generic_terms: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Keep legacy aliases populated while exposing the v2 contract."""
@@ -79,6 +85,8 @@ class QuestionAnalysis:
         object.__setattr__(self, "query_facets", tuple(self.query_facets))
         object.__setattr__(self, "keywords", tuple(self.keywords))
         object.__setattr__(self, "constraints", tuple(self.constraints))
+        object.__setattr__(self, "object_terms", tuple(self.object_terms))
+        object.__setattr__(self, "generic_terms", tuple(self.generic_terms))
 
 
 @dataclass(frozen=True)
@@ -113,6 +121,8 @@ class EvidenceSpan:
     source_uri: str | None = None
     score: float | None = None
     is_source: bool = True
+    retrieval_reason: str = ""
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

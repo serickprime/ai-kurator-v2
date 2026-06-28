@@ -100,7 +100,7 @@ Supported prediction fields include:
 - `answer_term_score`: coverage of expected answer terms, zeroed when forbidden answer terms appear.
 - `forbidden_leakage`: `1.0` when forbidden document or answer terms appear in answer, evidence, or sources.
 - `claim_grounding_score`: expected supported points present in answer and, for material answers, evidence.
-- `final_score`: weighted aggregate with penalties for wrong mode, source overrun, missing required sources, sources in `ask_for_missing_data`, forbidden leakage, and discarded candidate use.
+- `final_score`: weighted aggregate with penalties for wrong mode, source overrun, missing required sources, sources in no-source modes such as `ask_for_missing_data`, `general_answer_without_sources`, or `out_of_base`, forbidden leakage, and discarded candidate use.
 
 ## Reports
 
@@ -123,7 +123,7 @@ The comparator flags regressions when:
 - a forbidden document appears;
 - source count exceeds the case limit;
 - answer mode is wrong;
-- sources appear for `ask_for_missing_data`;
+- sources appear for no-source modes such as `ask_for_missing_data`, `general_answer_without_sources`, or `out_of_base`;
 - a discarded candidate is used;
 - final score drops by `0.5` or more.
 

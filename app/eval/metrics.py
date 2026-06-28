@@ -79,7 +79,8 @@ def score_eval_case(case: Any, prediction: Any) -> EvalScore:
     source_count_ok = source_count <= source_count_max
     requires_sources = bool(getattr(case, "requires_sources", False))
     sources_required_ok = bool(source_count) if requires_sources else True
-    sources_with_missing_data = answer_mode == "ask_for_missing_data" and source_count > 0
+    no_source_mode = answer_mode in {"ask_for_missing_data", "general_answer_without_sources", "out_of_base"}
+    sources_with_missing_data = no_source_mode and source_count > 0
 
     used_discarded = bool(getattr(prediction, "used_discarded_candidates", False))
     if discarded_candidates:
@@ -265,7 +266,7 @@ def _evidence_precision(
     expected_answer_mode: str,
 ) -> float:
     evidence_count = len([item for item in evidence_items if item])
-    if expected_answer_mode in {"ask_for_missing_data", "general_answer_without_sources"}:
+    if expected_answer_mode in {"ask_for_missing_data", "general_answer_without_sources", "out_of_base"}:
         return 1.0 if evidence_count == 0 else 0.0
     if not expected_signals:
         return 1.0 if evidence_count == 0 else 0.5
