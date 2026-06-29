@@ -76,6 +76,9 @@ class BotServices:
     rag_disabled_reason: str = ""
     rag_missing_config: tuple[str, ...] = ()
     ingestion_service: IntakeIngestionService | None = None
+    ingestion_runtime: Any | None = None
+    ingestion_disabled_reason: str = ""
+    ingestion_missing_config: tuple[str, ...] = ()
     conversation_repo: Any | None = None
     vision_textifier: Any | None = None
     download_dir: Path = Path("data/uploads/telegram")
@@ -444,16 +447,24 @@ async def _ingest_or_count_upload(update: Update, services: BotServices, file_pa
     if update.message is None or user_id is None:
         return
     state = services.state_store.get(user_id)
+    if services.ingestion_service is None:
+        reason = services.ingestion_disabled_reason or (
+            "Загрузка материалов не подключена: не хватает настроек окружения. Проверьте .env."
+        )
+        await update.message.reply_text(reason, reply_markup=upload_menu_keyboard())
+        return
     try:
-        if services.ingestion_service is not None:
-            await services.ingestion_service.ingest_path(
-                file_path,
-                workspace=services.default_workspace_name,
-            )
+        results = await services.ingestion_service.ingest_path(
+            file_path,
+            workspace=services.default_workspace_name,
+        )
         state.uploaded_materials += 1
-        await update.message.reply_text(f"Файл принят: {file_path.name}.", reply_markup=upload_menu_keyboard())
+        await update.message.reply_text(_format_upload_results(results), reply_markup=upload_menu_keyboard())
     except Exception as exc:  # noqa: BLE001
-        await update.message.reply_text(f"Не получилось загрузить файл: {exc}", reply_markup=upload_menu_keyboard())
+        await update.message.reply_text(
+            "Не получилось загрузить материал: " + _safe_error(exc),
+            reply_markup=upload_menu_keyboard(),
+        )
 
 
 async def _answer_intake(update: Update, services: BotServices, intake: UserIntake) -> None:
@@ -524,6 +535,64 @@ def _safe_filename(filename: str) -> str:
     clean = Path(filename).name.strip() or "telegram-file"
     clean = re.sub(r"[^A-Za-z0-9А-Яа-яЁё._ -]+", "_", clean)
     return clean[:160] or "telegram-file"
+
+
+def _format_upload_results(results: list[Any]) -> str:
+    if not results:
+        return "Материал не был загружен: ingestion не вернул результат."
+    if len(results) == 1:
+        return _format_upload_result(results[0])
+    total_sections = sum(int(getattr(result, "sections_count", 0) or 0) for result in results)
+    total_chunks = sum(int(getattr(result, "chunks_count", 0) or 0) for result in results)
+    statuses = _dedupe_strings(str(getattr(result, "term_statistics_status", "skipped")) for result in results)
+    return "\n".join(
+        [
+            "Материалы загружены.",
+            f"Файлов: {len(results)}",
+            f"Разделов: {total_sections}",
+            f"Чанков: {total_chunks}",
+            "Embeddings: ok",
+            "Term statistics: " + ", ".join(statuses),
+        ]
+    )
+
+
+def _format_upload_result(result: Any) -> str:
+    document_label = str(getattr(result, "document_key", "") or getattr(result, "document_id", "") or "unknown")
+    headline = (
+        "Материал уже был загружен без изменений."
+        if bool(getattr(result, "skipped", False))
+        else "Материал загружен."
+    )
+    return "\n".join(
+        [
+            headline,
+            f"Документ: {document_label}",
+            f"Разделов: {int(getattr(result, 'sections_count', 0) or 0)}",
+            f"Чанков: {int(getattr(result, 'chunks_count', 0) or 0)}",
+            "Embeddings: ok",
+            f"Term statistics: {getattr(result, 'term_statistics_status', 'skipped')}",
+        ]
+    )
+
+
+def _safe_error(exc: Exception) -> str:
+    text = re.sub(r"\s+", " ", str(exc)).strip() or exc.__class__.__name__
+    text = re.sub(r"bot[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]+", "bot<redacted>", text)
+    text = re.sub(r"Bearer\s+[A-Za-z0-9._-]+", "Bearer <redacted>", text)
+    return text[:700]
+
+
+def _dedupe_strings(items: Any) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        clean = str(item).strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        result.append(clean)
+    return result
 
 
 def _can_upload(services: BotServices, telegram_user_id: int) -> bool:

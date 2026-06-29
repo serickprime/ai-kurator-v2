@@ -8,6 +8,7 @@ from telegram.ext import Application, ApplicationBuilder
 from app.bot.access import parse_telegram_ids
 from app.bot.handlers import BotServices, register_handlers
 from app.config import Settings
+from app.ingestion.runtime import build_ingestion_runtime_from_settings, validate_ingestion_config
 from app.llm.model_router import ModelRouter, ModelRouterConfig
 from app.llm.openrouter_client import OpenRouterClient
 from app.llm.vision import VisionTextifier
@@ -43,6 +44,8 @@ def _build_services(settings: Settings) -> BotServices:
 
     rag_runtime = build_rag_runtime_from_settings(settings)
     validation = validate_runtime_config(settings)
+    ingestion_runtime = build_ingestion_runtime_from_settings(settings, vision_describer=vision_textifier)
+    ingestion_validation = validate_ingestion_config(settings)
     rag_disabled_reason = ""
     if rag_runtime is None:
         rag_disabled_reason = (
@@ -52,11 +55,27 @@ def _build_services(settings: Settings) -> BotServices:
             rag_disabled_reason += " Не хватает: " + ", ".join(validation.missing) + "."
         LOGGER.warning("RAG pipeline disabled: missing config %s", ", ".join(validation.missing) or "unknown")
 
+    ingestion_disabled_reason = ""
+    if ingestion_runtime is None:
+        ingestion_disabled_reason = (
+            "Загрузка материалов не подключена: не хватает настроек окружения. Проверьте .env."
+        )
+        if ingestion_validation.missing:
+            ingestion_disabled_reason += " Не хватает: " + ", ".join(ingestion_validation.missing) + "."
+        LOGGER.warning(
+            "Upload ingestion disabled: missing config %s",
+            ", ".join(ingestion_validation.missing) or "unknown",
+        )
+
     return BotServices(
         rag_pipeline=rag_runtime.pipeline if rag_runtime is not None else None,
         rag_runtime=rag_runtime,
         rag_disabled_reason=rag_disabled_reason,
         rag_missing_config=validation.missing,
+        ingestion_service=ingestion_runtime.service if ingestion_runtime is not None else None,
+        ingestion_runtime=ingestion_runtime,
+        ingestion_disabled_reason=ingestion_disabled_reason,
+        ingestion_missing_config=ingestion_validation.missing,
         conversation_repo=rag_runtime.conversation_repo if rag_runtime is not None else None,
         vision_textifier=vision_textifier,
         owner_ids=parse_telegram_ids(settings.owner_ids),
@@ -85,3 +104,9 @@ async def _shutdown_runtime_services(application: Application) -> None:
     runtime = getattr(services, "rag_runtime", None)
     if runtime is not None:
         await runtime.close()
+    ingestion_runtime = getattr(services, "ingestion_runtime", None)
+    if ingestion_runtime is not None:
+        await ingestion_runtime.close()
+    vision_textifier = getattr(services, "vision_textifier", None)
+    if vision_textifier is not None:
+        await vision_textifier.close()

@@ -5,7 +5,7 @@ import re
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-_TELEGRAM_BOT_TOKEN_RE = re.compile(r"bot[0-9]{6,}:[A-Za-z0-9_-]+")
+_TELEGRAM_BOT_TOKEN_RE = re.compile(r"bot[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]+")
 
 
 def configure_logging(level: str = "INFO", log_dir: str | Path = "logs") -> None:

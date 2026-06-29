@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
 
 async def main_async() -> int:
     """Run term statistics rebuild."""
+    from app.db.supabase_client import SupabaseRequestError
     from app.db.supabase_client import SupabaseClient
 
     args = parse_args()
@@ -33,17 +34,30 @@ async def main_async() -> int:
         if not workspace_id:
             raise SystemExit(f"Workspace not found: {args.workspace}")
 
-        rows = await supabase.rpc("refresh_term_statistics", {"p_workspace_id": workspace_id})
+        try:
+            rows = await supabase.rpc("refresh_term_statistics", {"p_workspace_id": workspace_id})
+        except SupabaseRequestError as exc:
+            if exc.is_missing_relation:
+                print("term_statistics: missing")
+                print("Apply app/db/schema.sql to create public.term_statistics and refresh_term_statistics().")
+                return 2
+            raise
         refreshed = _rpc_count(rows)
-        sample = await supabase.select(
-            "term_statistics",
-            params={
-                "select": "term,document_frequency,chunk_frequency,term_type_guess",
-                "workspace_id": f"eq.{workspace_id}",
-                "order": "document_frequency.desc",
-                "limit": "10",
-            },
-        )
+        try:
+            sample = await supabase.select(
+                "term_statistics",
+                params={
+                    "select": "term,document_frequency,chunk_frequency,term_type_guess",
+                    "workspace_id": f"eq.{workspace_id}",
+                    "order": "document_frequency.desc",
+                    "limit": "10",
+                },
+            )
+        except SupabaseRequestError as exc:
+            if exc.is_missing_relation:
+                sample = []
+            else:
+                raise
 
     print(f"workspace_id={workspace_id}")
     print(f"refreshed_terms={refreshed}")

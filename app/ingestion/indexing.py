@@ -72,6 +72,7 @@ class IngestionResult:
     sections_count: int = 0
     chunks_count: int = 0
     content_hash: str = ""
+    term_statistics_status: str = "skipped"
 
 
 class IndexingService:
@@ -208,7 +209,7 @@ class IndexingService:
 
         await self._repository.archive_active_documents(workspace_id, key)
         await self._repository.activate_document(document.id)
-        await self._refresh_term_statistics(workspace_id)
+        term_statistics_status = await self._refresh_term_statistics(workspace_id)
 
         return IngestionResult(
             path=path,
@@ -219,16 +220,21 @@ class IndexingService:
             sections_count=len(sections),
             chunks_count=len(chunks),
             content_hash=content_hash,
+            term_statistics_status=term_statistics_status,
         )
 
-    async def _refresh_term_statistics(self, workspace_id: str) -> None:
+    async def _refresh_term_statistics(self, workspace_id: str) -> str:
         refresh = getattr(self._repository, "refresh_term_statistics", None)
         if refresh is None:
-            return
+            return "skipped"
         try:
-            await refresh(workspace_id)
+            refreshed = await refresh(workspace_id)
         except Exception as exc:  # noqa: BLE001 - optional stats refresh should not break ingestion
             LOGGER.warning("term statistics refresh failed after ingestion: %s", exc)
+            return "skipped"
+        if isinstance(refreshed, int) and refreshed < 0:
+            return "missing fallback" if refreshed == -1 else "skipped"
+        return "updated"
 
     async def _embed_sections(self, sections: tuple[SectionDraft, ...]) -> list[list[float]]:
         texts = [

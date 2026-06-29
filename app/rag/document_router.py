@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
+from app.db.supabase_client import SupabaseRequestError
 from app.rag import term_scoring
 from app.rag.types import ContentType, DocumentCandidate, QuestionAnalysis, QueryFacet
 
@@ -139,6 +140,7 @@ class SupabaseDocumentCardStore:
 
     def __init__(self, client: Any) -> None:
         self._client = client
+        self._term_statistics_available: bool | None = None
 
     async def list_document_cards(
         self,
@@ -197,18 +199,28 @@ class SupabaseDocumentCardStore:
     ) -> list[dict[str, Any]]:
         """Return corpus term statistics for workspace-level rarity scoring."""
         del course
-        return await self._client.select(
-            "term_statistics",
-            params={
-                "select": (
-                    "term,normalized_term,document_frequency,chunk_frequency,course_frequency,"
-                    "first_seen_at,last_seen_at,examples,term_type_guess,metadata"
-                ),
-                "workspace_id": f"eq.{workspace_id}",
-                "order": "document_frequency.desc",
-                "limit": str(limit),
-            },
-        )
+        if self._term_statistics_available is False:
+            return []
+        try:
+            rows = await self._client.select(
+                "term_statistics",
+                params={
+                    "select": (
+                        "term,normalized_term,document_frequency,chunk_frequency,course_frequency,"
+                        "first_seen_at,last_seen_at,examples,term_type_guess,metadata"
+                    ),
+                    "workspace_id": f"eq.{workspace_id}",
+                    "order": "document_frequency.desc",
+                    "limit": str(limit),
+                },
+            )
+        except SupabaseRequestError as exc:
+            if exc.is_missing_relation:
+                self._term_statistics_available = False
+                return []
+            raise
+        self._term_statistics_available = True
+        return rows
 
     async def _cards_for_documents(self, documents: list[dict[str, Any]]) -> list[DocumentCardRecord]:
         if not documents:

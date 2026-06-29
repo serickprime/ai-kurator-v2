@@ -104,12 +104,16 @@ create table if not exists public.term_statistics (
     examples jsonb not null default '[]'::jsonb,
     term_type_guess text not null default 'term',
     metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
     constraint term_statistics_workspace_term_key unique (workspace_id, normalized_term),
     constraint term_statistics_document_frequency_check check (document_frequency >= 0),
     constraint term_statistics_chunk_frequency_check check (chunk_frequency >= 0),
     constraint term_statistics_course_frequency_check check (course_frequency >= 0)
 );
+
+alter table public.term_statistics
+    add column if not exists created_at timestamptz not null default now();
 
 create table if not exists public.evidence_logs (
     id uuid primary key default gen_random_uuid(),
@@ -243,6 +247,8 @@ create index if not exists term_statistics_workspace_term_idx
     on public.term_statistics (workspace_id, normalized_term);
 create index if not exists term_statistics_workspace_document_frequency_idx
     on public.term_statistics (workspace_id, document_frequency desc);
+create index if not exists term_statistics_workspace_chunk_frequency_idx
+    on public.term_statistics (workspace_id, chunk_frequency desc);
 create index if not exists term_statistics_type_idx
     on public.term_statistics (workspace_id, term_type_guess);
 create index if not exists term_statistics_metadata_gin_idx

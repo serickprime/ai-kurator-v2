@@ -103,11 +103,13 @@ python scripts/smoke_telegram_config.py
 python scripts/smoke_supabase.py
 python scripts/smoke_openrouter.py
 python scripts/smoke_rag_runtime.py
+python scripts/smoke_telegram_upload_ingestion.py
 ```
 
 `smoke_supabase.py` is read-only and checks that `DEFAULT_WORKSPACE_ID` exists in `workspaces`.
 `smoke_openrouter.py` sends a tiny completion request to `OPENROUTER_DEFAULT_MODEL`.
 `smoke_rag_runtime.py` only builds runtime dependencies and prints missing `.env` settings when RAG v2 is disabled.
+`smoke_telegram_upload_ingestion.py` writes a tiny txt material through the same ingestion service used by Telegram upload mode.
 
 ## Telegram UX
 
@@ -118,6 +120,8 @@ The bot has a compact persistent reply keyboard:
 - `Настройки`
 
 Questions, captions, and image context are combined into one user intake before RAG. Vision text is context only, not a standalone question. Upload mode is explicit: files outside `Загрузить материал` are not indexed automatically, and text sent during upload mode does not go to RAG.
+
+Telegram material uploads are described in [Telegram Upload Ingestion](docs/telegram_upload_ingestion.md).
 
 Answer model routing is controlled by per-user settings and the `OPENROUTER_*_MODELS` environment lists. Free mode never silently falls back to paid models. Quality can fall back to cheap only when `ALLOW_QUALITY_TO_CHEAP_FALLBACK=true`.
 
