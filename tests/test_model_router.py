@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from app.config import Settings
 from app.llm.model_router import (
     ModelRoutedAnswerClient,
     ModelRouter,
@@ -112,3 +113,31 @@ def test_answer_client_reads_mode_from_dialog_context() -> None:
     assert text == "free answer"
     assert client.text_attempts == ["free-a"]
 
+
+def test_abstract_openrouter_model_id_is_not_used_as_concrete_model() -> None:
+    settings = Settings(
+        _env_file=None,
+        openrouter_default_model="openrouter/free",
+        openrouter_cheap_text_models="openai/gpt-4.1-mini,openrouter/free",
+    )
+
+    config = ModelRouterConfig.from_settings(settings)
+
+    assert config.cheap_text == ("openai/gpt-4.1-mini",)
+
+
+def test_router_sanitizes_provider_errors_and_tries_next_model() -> None:
+    client = FakeRoutedClient(
+        {
+            "cheap-a": RuntimeError("400 bad request Authorization: Bearer secret-token"),
+            "cheap-b": "safe answer",
+        }
+    )
+    router = ModelRouter(client, ModelRouterConfig(cheap_text=("cheap-a", "cheap-b")))
+
+    result = asyncio.run(router.complete_text([], "cheap"))
+
+    assert result.text == "safe answer"
+    assert client.text_attempts == ["cheap-a", "cheap-b"]
+    assert "secret-token" not in " ".join(result.metadata.provider_errors)
+    assert "Bearer <redacted>" in " ".join(result.metadata.provider_errors)

@@ -4,6 +4,7 @@ from collections.abc import Sequence
 import re
 
 from app.rag import term_scoring
+from app.rag.source_labels import SourceLabelBuilder
 from app.rag.types import EvidenceDecision, EvidencePack, EvidenceSpan, QuestionAnalysis, SourceRef
 
 TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
@@ -35,7 +36,7 @@ class EvidencePackBuilder:
         return EvidencePack(
             items=selected,
             answer_mode=answer_mode,
-            source_matches=_source_matches(selected, answer_mode),
+            source_matches=_source_matches(selected, answer_mode, decisions),
             missing_requirements=missing,
             decisions=tuple(decision for decision in decisions if decision.status in {"accepted", "partial"}),
         )
@@ -46,18 +47,15 @@ def build_sources(evidence_pack: EvidencePack) -> list[str]:
     if evidence_pack.answer_mode not in {"answer_from_materials", "partial_answer"}:
         return []
 
+    label_builder = SourceLabelBuilder()
     sources: list[str] = []
-    seen: set[tuple[str, str | None, str | None, str | None]] = set()
+    seen: set[str] = set()
     for source in evidence_pack.source_matches:
-        key = (source.document_id, source.locator, source.source_uri, source.evidence_id)
+        label = label_builder.build(source)
+        key = label.casefold()
         if key in seen:
             continue
         seen.add(key)
-        label = source.document_title or source.document_id
-        if source.locator:
-            label = f"{label}, {source.locator}"
-        if source.source_uri:
-            label = f"{label} ({source.source_uri})"
         sources.append(label)
     return sources
 
@@ -72,14 +70,22 @@ def _answer_mode(
         return "ask_for_missing_data"
     if not selected:
         return "out_of_base"
+    accepted_count = sum(1 for span in selected if _selected_status(span) == "accepted")
+    if accepted_count < min(2, len(selected)):
+        return "partial_answer"
     if analysis is not None and _has_uncovered_points(selected, analysis):
         return "partial_answer"
     return "answer_from_materials"
 
 
-def _source_matches(selected: tuple[EvidenceSpan, ...], answer_mode: str) -> tuple[SourceRef, ...]:
+def _source_matches(
+    selected: tuple[EvidenceSpan, ...],
+    answer_mode: str,
+    decisions: list[EvidenceDecision],
+) -> tuple[SourceRef, ...]:
     if answer_mode not in {"answer_from_materials", "partial_answer"}:
         return ()
+    accepted_ids = {decision.evidence_id for decision in decisions if decision.status == "accepted"}
     return tuple(
         SourceRef(
             document_id=span.document_id,
@@ -87,9 +93,10 @@ def _source_matches(selected: tuple[EvidenceSpan, ...], answer_mode: str) -> tup
             locator=span.locator,
             source_uri=span.source_uri,
             evidence_id=span.evidence_id,
+            metadata=span.metadata,
         )
         for span in selected
-        if span.is_source
+        if span.is_source and span.evidence_id in accepted_ids
     )
 
 
@@ -115,33 +122,64 @@ def _select_spans(
     accepted: list[EvidenceSpan] = []
     partial: list[EvidenceSpan] = []
     decisions: list[EvidenceDecision] = []
+    selected_signatures: list[set[str]] = []
     for span in spans:
         decision = _decision_for_span(span, analysis, term_scorer)
+        if decision.status in {"accepted", "partial"} and _is_redundant(span, selected_signatures):
+            decision = _decision(span, "discarded", [*decision.reasons, "duplicate_or_redundant"])
         decisions.append(decision)
         if decision.status == "accepted":
-            accepted.append(span)
+            tagged = _with_status(span, "accepted")
+            accepted.append(tagged)
+            selected_signatures.append(_signature(tagged))
         elif decision.status == "partial":
-            partial.append(span)
+            partial.append(_with_status(span, "partial"))
 
     selected = accepted[:max_items]
-    if len(selected) < min(3, max_items):
+    if not selected and partial:
         selected_ids = {span.evidence_id for span in selected}
         partial_decisions = {decision.evidence_id: decision for decision in decisions if decision.status == "partial"}
-        for span in partial:
+        partial_ranked = sorted(
+            partial,
+            key=lambda span: _partial_sort_key(span, partial_decisions.get(span.evidence_id)),
+        )
+        for span in partial_ranked:
             if span.evidence_id in selected_ids:
                 continue
             decision = partial_decisions.get(span.evidence_id)
             if selected and decision is not None and _partial_is_not_needed(decision):
                 continue
             selected.append(span)
-            if len(selected) >= max_items:
+            if len(selected) >= min(2, max_items):
                 break
     return tuple(selected), decisions
 
 
 def _partial_is_not_needed(decision: EvidenceDecision) -> bool:
-    weak_reasons = {"common_term_only", "content_type_mismatch", "weak_support"}
+    weak_reasons = {"common_terms_only", "wrong_content_type", "insufficient_support", "too_generic"}
     return bool(set(decision.reasons) & weak_reasons)
+
+
+def _partial_sort_key(span: EvidenceSpan, decision: EvidenceDecision | None) -> tuple[float, float, str]:
+    reasons = set(decision.reasons if decision is not None else ())
+    priority = 0.0
+    if "covers_requirement" in reasons:
+        priority += 3.0
+    if "exact_anchor_match" in reasons:
+        priority += 2.0
+    if "actionability" in reasons:
+        priority += 2.0
+    if "heading_match" in reasons:
+        priority += 1.0
+    if "common_terms_only" in reasons:
+        priority -= 4.0
+    if "wrong_content_type" in reasons:
+        priority -= 3.0
+    if "too_generic" in reasons:
+        priority -= 1.0
+    if "insufficient_support" in reasons:
+        priority -= 1.0
+    return (-priority, -(span.score or 0.0), span.evidence_id)
 
 
 def _decision_for_span(
@@ -160,6 +198,7 @@ def _decision_for_span(
     text = " ".join([span.document_title, span.locator or "", span.text])
     metadata = span.metadata or {}
     breakdown = metadata.get("score_breakdown") if isinstance(metadata.get("score_breakdown"), dict) else {}
+    reranker = metadata.get("reranker_score_breakdown") if isinstance(metadata.get("reranker_score_breakdown"), dict) else {}
     object_match = _match_ratio(analysis.object_terms, text)
     action_match = _match_ratio(tuple([analysis.requested_action]) if analysis.requested_action else (), text)
     symptom_match = _match_ratio(analysis.symptom_terms, text)
@@ -188,20 +227,26 @@ def _decision_for_span(
     if constraint_match:
         reasons.append("constraint_match")
     if anchor_match:
-        reasons.append("rare_anchor_match")
+        reasons.append("exact_anchor_match")
     if _covers_evidence_requirement(span, analysis):
-        reasons.append("covers_evidence_requirement")
+        reasons.append("covers_requirement")
+    if float(reranker.get("actionability", 0.0) or 0.0) >= 0.25:
+        reasons.append("actionability")
+    if float(reranker.get("heading_match", 0.0) or 0.0) > 0:
+        reasons.append("heading_match")
+    if _too_generic(span, analysis):
+        reasons.append("too_generic")
     if span.is_source:
         reasons.append("marked_as_source")
 
     if _misses_object(span, analysis):
         return _decision(span, "discarded", [*reasons, "missing_object_terms"])
     if _content_type_mismatch(span, analysis):
-        reasons.append("content_type_mismatch")
+        reasons.append("wrong_content_type")
     if term_scorer.has_statistics and not _has_strong_term(span, analysis, term_scorer):
         if object_match or action_match or symptom_match:
-            return _decision(span, "partial", [*reasons, "common_term_only"])
-        return _decision(span, "discarded", [*reasons, "common_term_only"])
+            return _decision(span, "partial", [*reasons, "common_terms_only"])
+        return _decision(span, "discarded", [*reasons, "common_terms_only"])
 
     if not _has_required_query_terms(analysis):
         return _decision(span, "accepted", reasons or ["no_required_query_terms"])
@@ -219,13 +264,33 @@ def _decision_for_span(
     elif span.score is not None and span.score >= 0.24:
         support = max(support, 0.45)
 
-    if "content_type_mismatch" in reasons and support < 0.75:
+    support = max(
+        support,
+        float(reranker.get("requirement_coverage", 0.0) or 0.0),
+        float(reranker.get("exact_anchor", 0.0) or 0.0),
+    )
+    if float(reranker.get("actionability", 0.0) or 0.0) >= 0.5 and (object_match or anchor_match):
+        support = max(support, 0.7)
+
+    actionability = float(reranker.get("actionability", 0.0) or 0.0)
+    exact_anchor = float(reranker.get("exact_anchor", 0.0) or 0.0)
+    requirement_coverage = float(reranker.get("requirement_coverage", 0.0) or 0.0)
+    if (
+        "too_generic" in reasons
+        and actionability < 0.25
+        and exact_anchor < 0.2
+        and requirement_coverage < 0.25
+    ):
+        return _decision(span, "partial", [*reasons, "insufficient_support"])
+    if "wrong_content_type" in reasons and support < 0.75:
         return _decision(span, "discarded", reasons)
-    if support >= 0.58 or "covers_evidence_requirement" in reasons:
+    if "too_generic" in reasons and support < 0.7:
+        return _decision(span, "partial", [*reasons, "insufficient_support"])
+    if support >= 0.58 or "covers_requirement" in reasons:
         return _decision(span, "accepted", reasons or ["strong_support"])
     if support >= 0.35 or object_match or action_match or symptom_match:
         return _decision(span, "partial", reasons or ["partial_support"])
-    return _decision(span, "discarded", reasons or ["weak_support"])
+    return _decision(span, "discarded", reasons or ["insufficient_support"])
 
 
 def _decision(span: EvidenceSpan, status: str, reasons: list[str]) -> EvidenceDecision:
@@ -246,6 +311,17 @@ def _has_strong_term(
 ) -> bool:
     text = " ".join([span.document_title, span.locator or "", span.text])
     return term_scorer.has_strong_evidence_match(analysis, text)
+
+
+def _too_generic(span: EvidenceSpan, analysis: QuestionAnalysis) -> bool:
+    metadata = span.metadata or {}
+    reranker = metadata.get("reranker_score_breakdown") if isinstance(metadata.get("reranker_score_breakdown"), dict) else {}
+    if float(reranker.get("weak_chunk_penalty", 0.0) or 0.0) >= 0.18:
+        return True
+    text = span.text.strip()
+    if len(text) < 100 and _has_required_query_terms(analysis):
+        return True
+    return False
 
 
 def _misses_object(span: EvidenceSpan, analysis: QuestionAnalysis) -> bool:
@@ -302,6 +378,35 @@ def _content_type_mismatch(span: EvidenceSpan, analysis: QuestionAnalysis) -> bo
             values.append(value)
     actual = {re.sub(r"[\s-]+", "_", str(value).strip().casefold()) for value in values if str(value).strip()}
     return bool(actual and not (actual & expected))
+
+
+def _selected_status(span: EvidenceSpan) -> str:
+    status = str((span.metadata or {}).get("evidence_status") or "")
+    return status or "accepted"
+
+
+def _with_status(span: EvidenceSpan, status: str) -> EvidenceSpan:
+    from dataclasses import replace
+
+    metadata = dict(span.metadata or {})
+    metadata["evidence_status"] = status
+    return replace(span, metadata=metadata)
+
+
+def _is_redundant(span: EvidenceSpan, selected_signatures: list[set[str]]) -> bool:
+    signature = _signature(span)
+    if not signature:
+        return False
+    for existing in selected_signatures:
+        overlap = len(signature & existing) / max(len(signature | existing), 1)
+        if overlap >= 0.72:
+            return True
+    return False
+
+
+def _signature(span: EvidenceSpan) -> set[str]:
+    roots = _roots(_tokens(span.text))
+    return {root for root in roots if len(root) >= 4}
 
 
 def _tokens(text: str) -> list[str]:

@@ -18,7 +18,7 @@ class FailingDialogAwareClient:
         )
 
 
-def test_answer_generator_surfaces_model_router_user_message() -> None:
+def test_answer_generator_uses_evidence_fallback_when_router_fails() -> None:
     draft = asyncio.run(
         generate_answer(
             QuestionAnalysis(original_question="Как запустить n8n?"),
@@ -37,5 +37,7 @@ def test_answer_generator_surfaces_model_router_user_message() -> None:
         )
     )
 
-    assert draft.text == "Бесплатные модели сейчас не ответили."
-
+    assert "В материалах указано" in draft.text
+    assert "n8n can be started locally" in draft.text
+    assert draft.model_input["generation"]["fallback_used"] is True
+    assert draft.model_input["generation"]["llm_model_attempts"] == ("free-a",)

@@ -72,7 +72,7 @@ async def generate_answer(
             text=_ask_for_missing_data(question_analysis, evidence_pack),
             status=AnswerStatus.NEEDS_CLARIFICATION,
             answer_mode=evidence_pack.answer_mode,
-            model_input={"messages": messages},
+            model_input={"messages": messages, "generation": _generation_metadata(None)},
         )
 
     if evidence_pack.answer_mode == "out_of_base":
@@ -80,7 +80,7 @@ async def generate_answer(
             text=_out_of_base_answer(),
             status=AnswerStatus.NEEDS_CLARIFICATION,
             answer_mode=evidence_pack.answer_mode,
-            model_input={"messages": messages},
+            model_input={"messages": messages, "generation": _generation_metadata(None)},
         )
 
     if evidence_pack.answer_mode == "general_answer_without_sources" and not question_analysis.source_required:
@@ -88,37 +88,31 @@ async def generate_answer(
             text=_general_answer(question_analysis),
             status=AnswerStatus.ANSWERED,
             answer_mode=evidence_pack.answer_mode,
-            model_input={"messages": messages},
+            model_input={"messages": messages, "generation": _generation_metadata(None)},
         )
 
+    generation_debug: dict[str, object] = _generation_metadata(llm_client)
     if llm_client is not None:
         try:
-            text = (await _complete_text(llm_client, messages, dialog_context)).strip()
+            text = _clean_model_answer(await _complete_text(llm_client, messages, dialog_context)).strip()
+            generation_debug = _generation_metadata(llm_client)
             if text:
                 return AnswerDraft(
                     text=text,
                     status=_status_for_mode(evidence_pack.answer_mode),
                     used_evidence_ids=_used_evidence_ids(evidence_pack),
                     answer_mode=evidence_pack.answer_mode,
-                    model_input={"messages": messages},
+                    model_input={"messages": messages, "generation": generation_debug},
                 )
         except Exception as exc:
-            user_message = str(getattr(exc, "user_message", "")).strip()
-            if user_message:
-                return AnswerDraft(
-                    text=user_message,
-                    status=AnswerStatus.NEEDS_CLARIFICATION,
-                    used_evidence_ids=_used_evidence_ids(evidence_pack),
-                    answer_mode=evidence_pack.answer_mode,
-                    model_input={"messages": messages},
-                )
+            generation_debug = _generation_metadata(llm_client, error=exc, fallback_used=True)
 
     return AnswerDraft(
         text=_fallback_answer(question_analysis, evidence_pack),
         status=_status_for_mode(evidence_pack.answer_mode),
         used_evidence_ids=_used_evidence_ids(evidence_pack),
         answer_mode=evidence_pack.answer_mode,
-        model_input={"messages": messages},
+        model_input={"messages": messages, "generation": generation_debug | {"fallback_used": True}},
     )
 
 
@@ -198,15 +192,28 @@ def _fallback_answer(analysis: QuestionAnalysis, evidence: EvidencePack) -> str:
     return _answer_from_materials(analysis, evidence)
 
 
+def _clean_model_answer(text: str) -> str:
+    """Remove decorative markdown artifacts while preserving copyable commands."""
+    clean = str(text or "").replace("**", "").replace("__", "")
+    clean = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", clean)
+    clean = re.sub(r"(?m)^\s{0,3}>\s?", "", clean)
+    clean = re.sub(r"(?m)^1\.\s+(?=2\.)", "", clean)
+    return clean.strip()
+
+
 def _answer_from_materials(analysis: QuestionAnalysis, evidence: EvidencePack) -> str:
-    lines = ["Подтверждено в evidence pack:"]
-    for sentence in _evidence_sentences(evidence):
+    sentences = _evidence_sentences(evidence, limit=5)
+    if not sentences:
+        return _ask_for_missing_data(analysis, evidence)
+
+    lines = ["В материалах указано:"]
+    for sentence in sentences:
         lines.append(f"- {sentence}")
 
     uncovered = _uncovered_points(analysis, evidence)
     if uncovered:
         lines.append("")
-        lines.append("В evidence pack не нашел подтверждения для пунктов: " + ", ".join(uncovered) + ".")
+        lines.append("В найденных фрагментах нет подтверждения для: " + ", ".join(uncovered) + ".")
     return "\n".join(lines).strip()
 
 
@@ -245,23 +252,87 @@ def _general_answer(analysis: QuestionAnalysis) -> str:
 
 
 def _evidence_sentences(evidence: EvidencePack, limit: int = 6) -> list[str]:
-    sentences: list[str] = []
+    candidates: list[tuple[float, str]] = []
     for item in evidence.items:
         for sentence in _split_sentences(item.text):
-            if len(sentence) < 8:
+            clean = _clean_evidence_sentence(sentence)
+            if not clean or _is_low_value_sentence(clean):
                 continue
-            sentences.append(sentence)
-            if len(sentences) >= limit:
-                return sentences
-    return sentences
+            candidates.append((_fallback_sentence_score(clean), clean))
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for _, sentence in sorted(candidates, key=lambda item: (-item[0], item[1])):
+        key = _sentence_key(sentence)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(sentence)
+        if len(result) >= limit:
+            break
+    return result
 
 
 def _split_sentences(text: str) -> list[str]:
-    normalized = re.sub(r"\s+", " ", text).strip()
-    if not normalized:
-        return []
-    parts = re.split(r"(?<=[.!?])\s+", normalized)
+    parts: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts.extend(re.split(r"(?<=[.!?])\s+", line))
     return [part.strip(" -") for part in parts if part.strip(" -")]
+
+
+def _clean_evidence_sentence(sentence: str) -> str:
+    clean = re.sub(r"\s+", " ", sentence).strip(" -")
+    clean = re.sub(r"^#+\s*", "", clean)
+    clean = re.sub(r"^[0-9]+[.)]\s*", "", clean)
+    if len(clean) > 240:
+        clean = clean[:237].rstrip() + "..."
+    return clean
+
+
+def _is_low_value_sentence(sentence: str) -> bool:
+    lowered = sentence.casefold()
+    if len(sentence) < 18:
+        return True
+    if re.fullmatch(r"[=\-_\s]+", sentence):
+        return True
+    noisy_markers = (
+        "страница ",
+        "текст страницы",
+        "визуальные элементы",
+        "действия",
+        "нравится",
+        "подписаться",
+        "отправить",
+        "следующий урок",
+        "предыдущий урок",
+        "http://",
+        "https://",
+    )
+    return any(marker in lowered for marker in noisy_markers)
+
+
+def _fallback_sentence_score(sentence: str) -> float:
+    lowered = sentence.casefold()
+    score = 0.0
+    if re.search(r"\b[0-9]+[.)]\s+|(^|\s)[-•]\s+", sentence):
+        score += 0.25
+    if re.search(r"`[^`]+`|```|[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+", sentence):
+        score += 0.25
+    if re.search(r"\b(?:python|pip|npm|npx|docker|git|curl|touch|mkdir|cd)\b", lowered):
+        score += 0.25
+    if any(word in lowered for word in ("нужно", "используйте", "проверь", "создай", "добавь", "настрой", "укажи")):
+        score += 0.2
+    if any(word in lowered for word in ("пример", "формат", "параметр", "команда", "файл", "условие", "результат")):
+        score += 0.15
+    return score
+
+
+def _sentence_key(sentence: str) -> str:
+    words = re.findall(r"[\w#+.-]{3,}", sentence.casefold(), flags=re.UNICODE)
+    return " ".join(words[:18])
 
 
 def _uncovered_points(analysis: QuestionAnalysis, evidence: EvidencePack) -> list[str]:
@@ -301,8 +372,43 @@ def _compact_dialog_context(dialog_context: object | None) -> object | None:
             lowered = str(key).lower()
             if any(marker in lowered for marker in blocked):
                 continue
-            clean[str(key)] = str(value)[:400]
+            if isinstance(value, dict):
+                clean[str(key)] = {
+                    str(child_key): str(child_value)[:200]
+                    for child_key, child_value in value.items()
+                    if not any(marker in str(child_key).lower() for marker in blocked)
+                }
+            else:
+                clean[str(key)] = str(value)[:400]
         return clean
     if isinstance(dialog_context, (list, tuple)):
         return [str(item)[:400] for item in dialog_context[-6:]]
     return str(dialog_context)[:1200]
+
+
+def _generation_metadata(
+    llm_client: AnswerLlm | None,
+    *,
+    error: Exception | None = None,
+    fallback_used: bool = False,
+) -> dict[str, object]:
+    metadata = getattr(llm_client, "last_metadata", None) if llm_client is not None else None
+    if metadata is None and error is not None:
+        metadata = getattr(error, "metadata", None)
+    result: dict[str, object] = {
+        "llm_model_attempts": tuple(getattr(metadata, "attempted_models", ()) or ()),
+        "llm_errors_sanitized": tuple(getattr(metadata, "provider_errors", ()) or ()),
+        "final_model_used": getattr(metadata, "successful_model", None),
+        "fallback_used": fallback_used or llm_client is None,
+    }
+    if error is not None and not result["llm_errors_sanitized"]:
+        result["llm_errors_sanitized"] = (_safe_error(error),)
+    return result
+
+
+def _safe_error(error: Exception) -> str:
+    text = re.sub(r"\s+", " ", str(error)).strip()
+    text = re.sub(r"Bearer\s+[A-Za-z0-9._-]+", "Bearer <redacted>", text)
+    text = re.sub(r"bot[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]+", "bot<redacted>", text)
+    text = re.sub(r"sb_secret_[A-Za-z0-9_-]+", "sb_secret_<redacted>", text)
+    return text[:500]

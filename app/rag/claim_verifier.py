@@ -59,7 +59,7 @@ def verify_claims(draft: AnswerDraft, evidence: EvidencePack) -> VerificationRep
     safe_answer = _safe_answer(draft.text, unsupported, evidence)
     verdict = "rewrite" if safe_answer.strip() else "fail"
     if not safe_answer.strip():
-        safe_answer = "В evidence pack нет достаточного подтверждения для надежного ответа."
+        safe_answer = "В найденных фрагментах нет достаточно надежного подтверждения для ответа."
 
     return VerificationReport(
         is_supported=False,
@@ -124,10 +124,12 @@ def _safe_answer(answer: str, unsupported: tuple[str, ...], evidence: EvidencePa
 
     supported_sentences: list[str] = []
     for item in evidence.items:
-        supported_sentences.extend(_sentences(item.text))
+        supported_sentences.extend(_safe_evidence_sentences(item.text))
         if len(supported_sentences) >= 3:
             break
-    return "\n".join(supported_sentences[:3]).strip()
+    if not supported_sentences:
+        return "В найденных фрагментах нет достаточно надежного подтверждения для ответа."
+    return "В материалах указано:\n" + "\n".join(f"- {sentence}" for sentence in supported_sentences[:3]).strip()
 
 
 def _has_source_leakage(answer: str, evidence: EvidencePack) -> bool:
@@ -196,3 +198,38 @@ def _normalize_sentence(sentence: str) -> str:
 def _sentences(text: str) -> list[str]:
     normalized = re.sub(r"\s+", " ", text).strip()
     return [part.strip() for part in re.split(r"(?<=[.!?])\s+", normalized) if part.strip()]
+
+
+def _safe_evidence_sentences(text: str) -> list[str]:
+    result: list[str] = []
+    for sentence in _sentences(text):
+        clean = _clean_sentence(sentence)
+        if not clean or _is_low_value_sentence(clean):
+            continue
+        result.append(clean)
+        if len(result) >= 3:
+            break
+    return result
+
+
+def _clean_sentence(sentence: str) -> str:
+    clean = re.sub(r"\s+", " ", sentence).strip(" -")
+    clean = re.sub(r"^#+\s*", "", clean)
+    if len(clean) > 220:
+        clean = clean[:217].rstrip() + "..."
+    return clean
+
+
+def _is_low_value_sentence(sentence: str) -> bool:
+    lowered = sentence.casefold()
+    noisy_markers = (
+        "страница ",
+        "текст страницы",
+        "визуальные элементы",
+        "действия",
+        "нравится",
+        "подписаться",
+        "http://",
+        "https://",
+    )
+    return len(sentence) < 18 or any(marker in lowered for marker in noisy_markers)

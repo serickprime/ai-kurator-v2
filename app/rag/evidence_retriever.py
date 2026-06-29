@@ -456,6 +456,11 @@ def _span_from_record(
         locator_parts.append(f"p. {record.page}")
     locator = ", ".join(locator_parts) or None
     metadata = dict(record.metadata or {})
+    if record.heading:
+        metadata.setdefault("heading", record.heading)
+        metadata.setdefault("section_heading", record.heading)
+    if record.page is not None:
+        metadata.setdefault("page", record.page)
     reason = str(metadata.get("retrieval_reason") or "")
     return EvidenceSpan(
         evidence_id=record.chunk_id,
@@ -480,6 +485,7 @@ def _record_from_row(row: dict[str, Any]) -> EvidenceChunkRecord:
         document_id=str(row.get("document_id") or ""),
         section_id=_optional_str(row.get("section_id")),
         content=str(row.get("content") or ""),
+        document_title=str(row.get("document_title") or row.get("title") or row.get("filename") or ""),
         heading=_optional_str(row.get("heading")),
         page=_int_or_none(row.get("page")),
         source_uri=_optional_str(row.get("source_uri") or row.get("source_url") or metadata.get("source_uri")),
@@ -495,10 +501,21 @@ def _record_from_row(row: dict[str, Any]) -> EvidenceChunkRecord:
 def _document_titles(documents: tuple[DocumentCandidate, ...]) -> dict[str, str]:
     titles: dict[str, str] = {}
     for document in documents:
-        titles[document.document_id] = document.title or document.filename or document.document_id
+        title = _clean_document_title(document.title) or _clean_document_title(document.filename) or document.document_id
+        titles[document.document_id] = title
         if document.filename:
-            titles[document.filename] = document.title or document.filename
+            titles[document.filename] = title
     return titles
+
+
+def _clean_document_title(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    lowered = text.casefold().strip(" -–—,:;")
+    if lowered in {"название файла", "название файла:", "прочее", "unknown", "none"}:
+        return ""
+    return text
 
 
 def _trusted_document_ids(

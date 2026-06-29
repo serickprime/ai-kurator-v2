@@ -50,6 +50,7 @@ class RecordingRetriever:
                 document_id="doc-install",
                 document_title="Установка n8n",
                 text="Запуск n8n локально описан в материале.",
+                score=0.72,
             ),
         )
 

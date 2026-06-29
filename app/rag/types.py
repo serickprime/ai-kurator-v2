@@ -286,6 +286,10 @@ class SourceRef:
     locator: str | None = None
     source_uri: str | None = None
     evidence_id: str | None = None
+    metadata: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", dict(self.metadata))
 
 
 @dataclass(frozen=True)
@@ -408,6 +412,7 @@ def _sources_from_items(items: tuple[EvidenceSpan, ...]) -> tuple[SourceRef, ...
                 locator=item.locator,
                 source_uri=item.source_uri,
                 evidence_id=item.evidence_id,
+                metadata=item.metadata,
             )
         )
     return tuple(sources)

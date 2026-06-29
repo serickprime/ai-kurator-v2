@@ -13,6 +13,7 @@ from app.rag.evidence_pack import EvidencePackBuilder, build_sources
 from app.rag.evidence_retriever import EvidenceRetriever
 from app.rag.question_analysis import QuestionAnalyzer
 from app.rag.reranker import EvidenceReranker
+from app.rag.source_labels import SourceLabelBuilder
 from app.rag.types import AnswerStatus, DocumentCandidate, EvidencePack, PipelineResult
 
 LOGGER = logging.getLogger(__name__)
@@ -94,11 +95,15 @@ class EvidenceFirstRagPipeline:
             final_answer=final_answer,
             final_sources=source_strings,
             question_analysis=asdict(analysis),
+            generation_debug=_generation_debug(draft),
+            source_label_debug=SourceLabelBuilder().debug(evidence.source_matches),
         )
         debug_payload = self._debug_payload(
             analysis=analysis,
             documents=documents,
             evidence=evidence,
+            draft=draft,
+            source_label_debug=SourceLabelBuilder().debug(evidence.source_matches),
         )
 
         return PipelineResult(
@@ -133,6 +138,8 @@ class EvidenceFirstRagPipeline:
         analysis: object,
         documents: tuple[DocumentCandidate, ...],
         evidence: EvidencePack,
+        draft: object,
+        source_label_debug: list[dict[str, object]],
     ) -> dict[str, object]:
         query_plan = getattr(analysis, "query_plan", None)
         try:
@@ -148,6 +155,10 @@ class EvidenceFirstRagPipeline:
             if getattr(decision, "status", "") == "discarded"
         ]
         retriever_discarded = list(getattr(self._retriever, "last_discarded", ()))
+        generation = _generation_debug(draft)
+        accepted_count = sum(
+            1 for item in evidence.items if getattr(item, "metadata", {}).get("evidence_status") in {"accepted", None, ""}
+        )
         return {
             "query_plan": query_plan_dict,
             "course_hint": getattr(analysis, "course_hint", ""),
@@ -155,10 +166,20 @@ class EvidenceFirstRagPipeline:
             "selected_documents": [asdict(document) for document in documents],
             "rejected_documents": [],
             "answer_mode": evidence.answer_mode,
+            "llm_model_attempts": generation.get("llm_model_attempts", ()),
+            "llm_errors_sanitized": generation.get("llm_errors_sanitized", ()),
+            "final_model_used": generation.get("final_model_used"),
+            "fallback_used": generation.get("fallback_used", False),
+            "evidence_items_count": len(evidence.items),
+            "accepted_evidence_count": accepted_count,
+            "discarded_evidence_count": len(discarded_decisions) + len(retriever_discarded),
             "accepted_evidence": [asdict(item) for item in evidence.items],
             "accepted_decisions": [_decision_dict(decision) for decision in accepted_decisions],
             "discarded_evidence": [_discarded_evidence_dict(item) for item in retriever_discarded],
             "discarded_decisions": [_decision_dict(decision) for decision in discarded_decisions],
+            "evidence_decisions": [_decision_dict(decision) for decision in all_decisions],
+            "source_label_debug": source_label_debug,
+            "reranker_score_breakdown": [_reranker_breakdown(item) for item in evidence.items],
         }
 
     async def _log(
@@ -171,6 +192,8 @@ class EvidenceFirstRagPipeline:
         final_answer: str,
         final_sources: list[str],
         question_analysis: dict[str, object],
+        generation_debug: dict[str, object],
+        source_label_debug: list[dict[str, object]],
     ) -> None:
         if self._logger is None or not workspace_id:
             return
@@ -180,7 +203,11 @@ class EvidenceFirstRagPipeline:
                 question=question,
                 question_analysis=question_analysis,
                 document_candidates=[asdict(document) for document in documents],
-                evidence_pack=_evidence_pack_dict(evidence),
+                evidence_pack=_evidence_pack_dict(
+                    evidence,
+                    generation_debug=generation_debug,
+                    source_label_debug=source_label_debug,
+                ),
                 final_answer=final_answer,
                 final_sources=final_sources,
             )
@@ -189,13 +216,20 @@ class EvidenceFirstRagPipeline:
             return
 
 
-def _evidence_pack_dict(evidence: EvidencePack) -> dict[str, object]:
+def _evidence_pack_dict(
+    evidence: EvidencePack,
+    *,
+    generation_debug: dict[str, object] | None = None,
+    source_label_debug: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
     return {
         "answer_mode": evidence.answer_mode,
         "items": [asdict(item) for item in evidence.items],
         "source_matches": [asdict(source) for source in evidence.source_matches],
         "missing_requirements": list(evidence.missing_requirements),
         "decisions": [asdict(decision) for decision in evidence.decisions],
+        "generation": generation_debug or {},
+        "source_label_debug": source_label_debug or [],
     }
 
 
@@ -220,6 +254,34 @@ def _discarded_evidence_dict(item: object) -> dict[str, object]:
         "score": getattr(item, "score", 0.0),
         "reason": getattr(item, "reason", ""),
         "preview": getattr(item, "preview", ""),
+    }
+
+
+def _generation_debug(draft: object) -> dict[str, object]:
+    model_input = getattr(draft, "model_input", {})
+    if isinstance(model_input, dict):
+        generation = model_input.get("generation")
+        if isinstance(generation, dict):
+            return {
+                "llm_model_attempts": tuple(generation.get("llm_model_attempts") or ()),
+                "llm_errors_sanitized": tuple(generation.get("llm_errors_sanitized") or ()),
+                "final_model_used": generation.get("final_model_used"),
+                "fallback_used": bool(generation.get("fallback_used", False)),
+            }
+    return {"llm_model_attempts": (), "llm_errors_sanitized": (), "final_model_used": None, "fallback_used": False}
+
+
+def _reranker_breakdown(item: object) -> dict[str, object]:
+    metadata = getattr(item, "metadata", {})
+    if not isinstance(metadata, dict):
+        return {}
+    breakdown = metadata.get("reranker_score_breakdown")
+    if not isinstance(breakdown, dict):
+        return {}
+    return {
+        "evidence_id": getattr(item, "evidence_id", ""),
+        "score": getattr(item, "score", None),
+        "breakdown": breakdown,
     }
 
 

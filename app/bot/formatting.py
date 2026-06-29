@@ -7,6 +7,7 @@ import re
 from collections.abc import Sequence
 
 from app.db.repositories import UserSettings
+from app.rag.source_labels import SourceLabelBuilder
 from app.rag.types import SourceRef
 
 COMMAND_RE = re.compile(
@@ -37,10 +38,10 @@ def format_sources(sources: Sequence[SourceRef]) -> str:
     if not sources:
         return ""
 
+    label_builder = SourceLabelBuilder()
     lines = ["Источники:"]
     for index, source in enumerate(sources, start=1):
-        locator = f", {source.locator}" if source.locator else ""
-        lines.append(f"{index}. {source.document_title}{locator}")
+        lines.append(f"{index}. {label_builder.build(source)}")
     return "\n".join(lines)
 
 
