@@ -199,7 +199,7 @@ async def debug_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=main_menu_keyboard(),
         )
         return
-    await update.message.reply_text(str(state.last_debug)[:3500], reply_markup=main_menu_keyboard())
+    await update.message.reply_text(_format_debug_summary(state.last_debug)[:3500], reply_markup=main_menu_keyboard())
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -489,9 +489,10 @@ async def _answer_intake(update: Update, services: BotServices, intake: UserInta
             "status": str(getattr(result, "status", "")),
             "sources": [getattr(source, "document_title", "") for source in getattr(result, "sources", ())],
             "vision_errors": list(intake.vision_errors),
+            "rag": getattr(result, "debug", {}) or {},
         }
         if bool(intake.user_settings.get("debug_mode")):
-            await update.message.reply_text(str(state.last_debug)[:3500], reply_markup=main_menu_keyboard())
+            await update.message.reply_text(_format_debug_summary(state.last_debug)[:3500], reply_markup=main_menu_keyboard())
 
 
 async def _download_photo(update: Update, services: BotServices) -> Path:
@@ -562,6 +563,55 @@ def _dialog_context(intake: UserIntake) -> dict[str, object]:
         "user_settings": clean_settings,
         "vision_errors": intake.vision_errors,
     }
+
+
+def _format_debug_summary(debug: dict[str, Any]) -> str:
+    status = str(debug.get("status") or "unknown").replace("AnswerStatus.", "")
+    sources = [str(source) for source in debug.get("sources", []) if str(source).strip()]
+    vision_errors = [str(error) for error in debug.get("vision_errors", []) if str(error).strip()]
+    lines = [f"Debug: status={status}"]
+    lines.append("sources=" + (", ".join(sources) if sources else "none"))
+    if vision_errors:
+        lines.append("vision_errors=" + "; ".join(vision_errors[:3]))
+    rag = debug.get("rag")
+    if isinstance(rag, dict) and rag:
+        answer_mode = rag.get("answer_mode")
+        if answer_mode:
+            lines.append(f"answer_mode={answer_mode}")
+        query_plan = rag.get("query_plan") if isinstance(rag.get("query_plan"), dict) else {}
+        expected = rag.get("expected_content_types") or query_plan.get("expected_content_types", [])
+        if expected:
+            lines.append("expected_content_types=" + ", ".join(str(item) for item in expected[:5]))
+        course_hint = rag.get("course_hint") or query_plan.get("course_hint")
+        if course_hint:
+            lines.append(f"course_hint={course_hint}")
+        documents = rag.get("selected_documents")
+        if isinstance(documents, list) and documents:
+            lines.append("documents:")
+            for document in documents[:5]:
+                if not isinstance(document, dict):
+                    continue
+                title = document.get("title") or document.get("filename") or document.get("document_id")
+                score = document.get("score")
+                penalties = document.get("penalties") or []
+                penalty_text = f" penalties={','.join(str(item) for item in penalties[:3])}" if penalties else ""
+                lines.append(f"- {title} score={score}{penalty_text}")
+        decisions = rag.get("accepted_decisions")
+        if isinstance(decisions, list) and decisions:
+            lines.append("accepted_evidence:")
+            for decision in decisions[:5]:
+                if isinstance(decision, dict):
+                    lines.append(
+                        f"- {decision.get('evidence_id')} {decision.get('status')} "
+                        f"reasons={','.join(str(item) for item in (decision.get('reasons') or [])[:3])}"
+                    )
+        discarded = rag.get("discarded_decisions") or rag.get("discarded_evidence")
+        if isinstance(discarded, list) and discarded:
+            lines.append("discarded:")
+            for item in discarded[:5]:
+                if isinstance(item, dict):
+                    lines.append(f"- {item.get('evidence_id') or item.get('chunk_id')} reason={item.get('reason') or item.get('reasons')}")
+    return "\n".join(lines)
 
 
 def _settings_text(settings: UserSettings) -> str:

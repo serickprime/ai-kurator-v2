@@ -1,8 +1,11 @@
 """Logging setup."""
 
 import logging
+import re
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+_TELEGRAM_BOT_TOKEN_RE = re.compile(r"bot[0-9]{6,}:[A-Za-z0-9_-]+")
 
 
 def configure_logging(level: str = "INFO", log_dir: str | Path = "logs") -> None:
@@ -10,7 +13,7 @@ def configure_logging(level: str = "INFO", log_dir: str | Path = "logs") -> None
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
 
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    formatter = RedactingFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(_level(level))
@@ -44,3 +47,14 @@ def configure_logging(level: str = "INFO", log_dir: str | Path = "logs") -> None
 
 def _level(level: str) -> int:
     return getattr(logging, (level or "INFO").upper(), logging.INFO)
+
+
+class RedactingFormatter(logging.Formatter):
+    """Formatter that keeps secrets out of local logs."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _redact_secrets(super().format(record))
+
+
+def _redact_secrets(text: str) -> str:
+    return _TELEGRAM_BOT_TOKEN_RE.sub("bot<redacted>", text)

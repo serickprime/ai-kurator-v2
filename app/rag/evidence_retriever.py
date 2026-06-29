@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 from app.rag import term_scoring
@@ -94,6 +94,7 @@ class EvidenceChunkRecord:
     text_score: float = 0.0
     trigram_score: float = 0.0
     score: float = 0.0
+    score_breakdown: dict[str, float] = field(default_factory=dict)
     metadata: dict[str, object] | None = None
 
 
@@ -312,11 +313,13 @@ def score_evidence_record(
     object_roots = _roots(analysis.object_terms)
     action_roots = _roots([analysis.requested_action]) if analysis.requested_action else set()
     constraint_roots = _constraint_roots(analysis)
+    symptom_roots = _roots(analysis.symptom_terms)
 
     overlap = query_roots & text_roots
     object_overlap = object_roots & text_roots
     action_overlap = action_roots & text_roots
     constraint_overlap = constraint_roots & text_roots
+    symptom_overlap = symptom_roots & text_roots
     anchor_terms = (
         tuple(query_term_analysis.rare_anchor_terms)
         + tuple(query_term_analysis.exact_terms)
@@ -331,9 +334,11 @@ def score_evidence_record(
     overlap_score = len(overlap) / max(len(query_roots), 1) if query_roots else 0.0
     object_score = len(object_overlap) / max(len(object_roots), 1) if object_roots else 0.0
     constraint_score = len(constraint_overlap) / max(len(constraint_roots), 1) if constraint_roots else 0.0
+    symptom_score = len(symptom_overlap) / max(len(symptom_roots), 1) if symptom_roots else 0.0
     action_score = 1.0 if action_overlap else 0.0
     anchor_score = term_scorer.weighted_match_ratio(anchor_terms, text, role="rare_anchor") if anchor_terms else 0.0
     common_score = term_scorer.weighted_match_ratio(common_matches, text, role="common") if common_matches else 0.0
+    content_type_score = _content_type_score(analysis, record)
     fact_bonus = 0.16 if _has_fact_marker(record) else 0.0
     heading_bonus = 0.08 if _heading_supports_query(record, query_roots) else 0.0
 
@@ -343,8 +348,10 @@ def score_evidence_record(
         + object_score * 0.26
         + action_score * 0.08
         + constraint_score * 0.12
+        + symptom_score * 0.14
         + anchor_score * 0.20
         + common_score * 0.03
+        + content_type_score * 0.06
         + fact_bonus
         + heading_bonus
     )
@@ -357,19 +364,42 @@ def score_evidence_record(
         reason_parts.append("action match")
     if constraint_overlap:
         reason_parts.append("constraint match: " + ", ".join(sorted(constraint_overlap)[:5]))
+    if symptom_overlap:
+        reason_parts.append("symptom match: " + ", ".join(sorted(symptom_overlap)[:5]))
     if anchor_matches:
         reason_parts.append("anchor match: " + ", ".join(anchor_matches[:5]))
     if common_matches:
         reason_parts.append("common match: " + ", ".join(common_matches[:5]))
+    if content_type_score:
+        reason_parts.append("content type supports query")
     if _has_fact_marker(record):
         reason_parts.append("supporting fact marker")
 
+    score_breakdown = {
+        "rpc_score": round(record.score, 4),
+        "vector_score": round(record.vector_score, 4),
+        "fulltext_score": round(record.text_score, 4),
+        "trigram_score": round(record.trigram_score, 4),
+        "base_score": round(base, 4),
+        "query_overlap": round(overlap_score, 4),
+        "object_match": round(object_score, 4),
+        "action_match": round(action_score, 4),
+        "symptom_match": round(symptom_score, 4),
+        "constraint_match": round(constraint_score, 4),
+        "rare_anchor_match": round(anchor_score, 4),
+        "common_term_match": round(common_score, 4),
+        "content_type_match": round(content_type_score, 4),
+        "fact_bonus": round(fact_bonus, 4),
+        "heading_bonus": round(heading_bonus, 4),
+    }
     metadata = dict(record.metadata or {})
     metadata.update(
         {
             "base_score": round(base, 4),
+            "score_breakdown": score_breakdown,
             "query_overlap": sorted(overlap),
             "object_overlap": sorted(object_overlap),
+            "symptom_overlap": sorted(symptom_overlap),
             "constraint_overlap": sorted(constraint_overlap),
             "common_terms": list(common_matches),
             "anchor_terms": list(anchor_matches),
@@ -377,7 +407,12 @@ def score_evidence_record(
             "retrieval_reason": "; ".join(reason_parts) or "low lexical support",
         }
     )
-    return replace(record, score=round(min(score, 1.5), 4), metadata=metadata)
+    return replace(
+        record,
+        score=round(min(score, 1.5), 4),
+        score_breakdown=score_breakdown,
+        metadata=metadata,
+    )
 
 
 def _discard_reason(
@@ -402,6 +437,9 @@ def _discard_reason(
         return "missing strong evidence term"
     if constraint_roots and _requires_constraint(analysis) and not (constraint_roots & text_roots):
         return "missing requested constraint"
+    if symptom_roots := _roots(analysis.symptom_terms):
+        if analysis.task_type == "debug" and not (symptom_roots & text_roots):
+            return "missing requested symptom"
     if record.score < min_score:
         return "below evidence threshold"
     return ""
@@ -444,10 +482,12 @@ def _record_from_row(row: dict[str, Any]) -> EvidenceChunkRecord:
         content=str(row.get("content") or ""),
         heading=_optional_str(row.get("heading")),
         page=_int_or_none(row.get("page")),
+        source_uri=_optional_str(row.get("source_uri") or row.get("source_url") or metadata.get("source_uri")),
         vector_score=_float(row.get("vector_score")),
         text_score=_float(row.get("text_score")),
         trigram_score=_float(row.get("trigram_score")),
         score=_float(row.get("score")),
+        score_breakdown=_score_breakdown(row),
         metadata=metadata,
     )
 
@@ -511,6 +551,36 @@ def _constraint_roots(analysis: QuestionAnalysis) -> set[str]:
 
 def _requires_constraint(analysis: QuestionAnalysis) -> bool:
     return bool(analysis.constraints or analysis.task_type == "debug")
+
+
+def _content_type_score(analysis: QuestionAnalysis, record: EvidenceChunkRecord) -> float:
+    expected = {content_type for content_type in analysis.expected_content_types if content_type != "unknown"}
+    if not expected:
+        return 0.0
+    actual = _metadata_content_types(record.metadata)
+    if not actual:
+        return 0.0
+    if expected & actual:
+        return 1.0
+    return 0.0
+
+
+def _metadata_content_types(metadata: dict[str, object] | None) -> set[str]:
+    if not metadata:
+        return set()
+    values: list[object] = []
+    for key in ("content_type", "content_types", "material_type", "source_type"):
+        value = metadata.get(key)
+        if isinstance(value, list):
+            values.extend(value)
+        elif value:
+            values.append(value)
+    result: set[str] = set()
+    for value in values:
+        clean = re.sub(r"[\s-]+", "_", str(value or "").strip().casefold())
+        if clean:
+            result.add(clean)
+    return result
 
 
 def _heading_supports_query(record: EvidenceChunkRecord, query_roots: set[str]) -> bool:
@@ -643,6 +713,16 @@ def _float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _score_breakdown(row: dict[str, Any]) -> dict[str, float]:
+    raw = row.get("score_breakdown")
+    if isinstance(raw, dict):
+        parsed: dict[str, float] = {}
+        for key, value in raw.items():
+            parsed[str(key)] = _float(value)
+        return parsed
+    return {}
 
 
 def _int_or_none(value: Any) -> int | None:

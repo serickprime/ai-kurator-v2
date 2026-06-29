@@ -83,6 +83,14 @@ async def generate_answer(
             model_input={"messages": messages},
         )
 
+    if evidence_pack.answer_mode == "general_answer_without_sources" and not question_analysis.source_required:
+        return AnswerDraft(
+            text=_general_answer(question_analysis),
+            status=AnswerStatus.ANSWERED,
+            answer_mode=evidence_pack.answer_mode,
+            model_input={"messages": messages},
+        )
+
     if llm_client is not None:
         try:
             text = (await _complete_text(llm_client, messages, dialog_context)).strip()
@@ -226,6 +234,8 @@ def _out_of_base_answer() -> str:
 
 
 def _general_answer(analysis: QuestionAnalysis) -> str:
+    if not analysis.source_required and analysis.intent == "small_talk":
+        return "Привет! Я на связи. Задайте вопрос по материалам или загрузите материал, и я помогу разобраться."
     task = analysis.primary_intent if analysis.primary_intent != "unknown" else analysis.original_question
     if analysis.task_type == "setup":
         return f"В общем виде задача такая: {task}. Нужны способ запуска, конкретные действия и проверка результата."

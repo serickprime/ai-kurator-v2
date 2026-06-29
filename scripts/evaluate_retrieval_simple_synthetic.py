@@ -248,6 +248,7 @@ class CaseRun:
     raw_forbidden_documents: list[str]
     evidence_forbidden_documents: list[str]
     evidence_pack_items: list[dict[str, Any]]
+    evidence_decisions: list[dict[str, Any]]
     discarded_candidates: list[dict[str, Any]]
     actual_answer_mode: str
     final_score: float
@@ -722,6 +723,7 @@ async def evaluate_case(
         raw_forbidden_documents=raw_forbidden,
         evidence_forbidden_documents=evidence_forbidden,
         evidence_pack_items=[_evidence_item_dict(item) for item in evidence_pack.items],
+        evidence_decisions=[asdict(decision) for decision in pack_builder.last_decisions],
         discarded_candidates=discarded,
         actual_answer_mode=actual_answer_mode,
         final_score=score,
@@ -1103,6 +1105,12 @@ def _analysis_dict(analysis: QuestionAnalysis) -> dict[str, Any]:
         "original_question": analysis.original_question,
         "task_type": analysis.task_type,
         "primary_intent": analysis.primary_intent,
+        "query_plan": asdict(analysis.query_plan) if analysis.query_plan is not None else {},
+        "expected_content_types": list(analysis.expected_content_types),
+        "source_priority": list(analysis.source_priority),
+        "course_hint": analysis.course_hint,
+        "domain_hint": analysis.domain_hint,
+        "ambiguity": list(analysis.ambiguity),
         "query_facets": [asdict(facet) for facet in analysis.query_facets],
         "keywords": list(analysis.keywords),
         "primary_object": analysis.primary_object,
@@ -1134,6 +1142,9 @@ def _candidate_dict(candidate: DocumentCandidate) -> dict[str, Any]:
         "missing_object_terms": list(candidate.missing_object_terms),
         "answerability_score": candidate.answerability_score,
         "penalties": list(candidate.penalties),
+        "content_type": candidate.content_type,
+        "matched_content_types": list(candidate.matched_content_types),
+        "score_breakdown": dict(candidate.score_breakdown),
     }
 
 

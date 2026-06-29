@@ -2,6 +2,7 @@
 
 import logging
 
+from telegram.request import HTTPXRequest
 from telegram.ext import Application, ApplicationBuilder
 
 from app.bot.access import parse_telegram_ids
@@ -23,6 +24,8 @@ def build_application(settings: Settings) -> Application:
     application = (
         ApplicationBuilder()
         .token(settings.telegram_bot_token)
+        .request(_telegram_request())
+        .get_updates_request(_telegram_request())
         .post_shutdown(_shutdown_runtime_services)
         .build()
     )
@@ -69,6 +72,11 @@ def _build_services(settings: Settings) -> BotServices:
             "quality": model_config.quality_text,
         },
     )
+
+
+def _telegram_request() -> HTTPXRequest:
+    """Create Telegram HTTP client without inheriting system proxy settings."""
+    return HTTPXRequest(httpx_kwargs={"trust_env": False})
 
 
 async def _shutdown_runtime_services(application: Application) -> None:
