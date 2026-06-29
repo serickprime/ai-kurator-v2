@@ -1,5 +1,7 @@
 """Telegram application factory."""
 
+import logging
+
 from telegram.ext import Application, ApplicationBuilder
 
 from app.bot.access import parse_telegram_ids
@@ -8,6 +10,9 @@ from app.config import Settings
 from app.llm.model_router import ModelRouter, ModelRouterConfig
 from app.llm.openrouter_client import OpenRouterClient
 from app.llm.vision import VisionTextifier
+from app.rag.runtime import build_rag_runtime_from_settings, validate_runtime_config
+
+LOGGER = logging.getLogger(__name__)
 
 
 def build_application(settings: Settings) -> Application:
@@ -15,7 +20,12 @@ def build_application(settings: Settings) -> Application:
     if not settings.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required")
 
-    application = ApplicationBuilder().token(settings.telegram_bot_token).build()
+    application = (
+        ApplicationBuilder()
+        .token(settings.telegram_bot_token)
+        .post_shutdown(_shutdown_runtime_services)
+        .build()
+    )
     register_handlers(application, _build_services(settings))
     return application
 
@@ -28,7 +38,23 @@ def _build_services(settings: Settings) -> BotServices:
         model_router = ModelRouter(openrouter_client, model_config)
         vision_textifier = VisionTextifier(settings, model_router=model_router)
 
+    rag_runtime = build_rag_runtime_from_settings(settings)
+    validation = validate_runtime_config(settings)
+    rag_disabled_reason = ""
+    if rag_runtime is None:
+        rag_disabled_reason = (
+            "RAG v2 pipeline не подключён: не хватает настроек окружения. Проверьте .env."
+        )
+        if validation.missing:
+            rag_disabled_reason += " Не хватает: " + ", ".join(validation.missing) + "."
+        LOGGER.warning("RAG pipeline disabled: missing config %s", ", ".join(validation.missing) or "unknown")
+
     return BotServices(
+        rag_pipeline=rag_runtime.pipeline if rag_runtime is not None else None,
+        rag_runtime=rag_runtime,
+        rag_disabled_reason=rag_disabled_reason,
+        rag_missing_config=validation.missing,
+        conversation_repo=rag_runtime.conversation_repo if rag_runtime is not None else None,
         vision_textifier=vision_textifier,
         owner_ids=parse_telegram_ids(settings.owner_ids),
         admin_ids=parse_telegram_ids(settings.admin_ids),
@@ -43,3 +69,11 @@ def _build_services(settings: Settings) -> BotServices:
             "quality": model_config.quality_text,
         },
     )
+
+
+async def _shutdown_runtime_services(application: Application) -> None:
+    """Close runtime resources created for Telegram services."""
+    services = application.bot_data.get("services")
+    runtime = getattr(services, "rag_runtime", None)
+    if runtime is not None:
+        await runtime.close()

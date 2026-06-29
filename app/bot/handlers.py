@@ -72,6 +72,9 @@ class BotServices:
     settings_repo: Any = field(default_factory=InMemoryUserSettingsRepository)
     intake_buffer: MessageIntakeBuffer = field(default_factory=MessageIntakeBuffer)
     rag_pipeline: RagPipeline | None = None
+    rag_runtime: Any | None = None
+    rag_disabled_reason: str = ""
+    rag_missing_config: tuple[str, ...] = ()
     ingestion_service: IntakeIngestionService | None = None
     conversation_repo: Any | None = None
     vision_textifier: Any | None = None
@@ -462,15 +465,18 @@ async def _answer_intake(update: Update, services: BotServices, intake: UserInta
         await update.message.reply_text("Пришлите вопрос текстом или добавьте подпись к изображению.")
         return
     if services.rag_pipeline is None:
+        reason = services.rag_disabled_reason or (
+            "RAG v2 pipeline не подключён: не хватает настроек окружения. Проверьте .env."
+        )
         await update.message.reply_text(
-            "RAG v2 pipeline ещё не подключен к Telegram runtime. Вопрос собран, но отвечать пока нечем.",
+            reason,
             reply_markup=main_menu_keyboard(),
         )
         return
     result = await services.rag_pipeline.answer(
         question,
         workspace_id=str(intake.user_settings.get("selected_workspace_id") or services.default_workspace_id),
-        dialog_context={"user_settings": intake.user_settings, "vision_errors": intake.vision_errors},
+        dialog_context=_dialog_context(intake),
     )
     await update.message.reply_text(
         format_for_telegram(result.answer),
@@ -542,6 +548,19 @@ def _settings_dict(settings: UserSettings) -> dict[str, Any]:
         "vision_mode": settings.vision_mode,
         "debug_mode": settings.debug_mode,
         "selected_workspace_id": settings.selected_workspace_id,
+    }
+
+
+def _dialog_context(intake: UserIntake) -> dict[str, object]:
+    blocked = ("candidate", "discarded", "raw", "retrieval")
+    clean_settings = {
+        str(key): value
+        for key, value in intake.user_settings.items()
+        if not any(marker in str(key).lower() for marker in blocked)
+    }
+    return {
+        "user_settings": clean_settings,
+        "vision_errors": intake.vision_errors,
     }
 
 
