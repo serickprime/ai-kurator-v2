@@ -78,3 +78,41 @@ def test_external_docs_extractor_removes_markdown_anchor_html_and_copy_buttons()
     assert "available as Markdown" not in extracted.structured_text
     assert "```\nCopy\n```" not in extracted.structured_text
     assert "npm install n8n -g" in extracted.structured_text
+
+
+def test_external_docs_extractor_removes_generated_previous_next_footer_tail() -> None:
+    html = """
+    <html>
+      <head><title>Credentials</title></head>
+      <body>
+        <main>
+          <h1>Credentials</h1>
+          <p>Credentials store authentication details for external services.</p>
+          <p>Previous Model Selector Next Action Network credentials</p>
+          <p>Last updated 7 days ago</p>
+          <p>Was this helpful?</p>
+          <ul>
+            <li>Overview</li>
+            <li>Setup</li>
+          </ul>
+        </main>
+      </body>
+    </html>
+    """
+    page = CrawledPage(
+        source_name="docs",
+        url="https://docs.example.com/credentials",
+        html=html,
+        status_code=200,
+        content_type="text/html",
+        fetched_at=datetime.now(timezone.utc),
+    )
+
+    extracted = ExternalDocsExtractor().extract(page)
+
+    assert "Credentials store authentication details" in extracted.structured_text
+    assert "Previous Model Selector" not in extracted.structured_text
+    assert "Next Action Network" not in extracted.structured_text
+    assert "Last updated" not in extracted.structured_text
+    assert "Was this helpful" not in extracted.structured_text
+    assert "- Overview" not in extracted.structured_text

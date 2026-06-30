@@ -20,6 +20,8 @@ GENERATOR_BOILERPLATE_RE = re.compile(
     r"|\bThis page is also available as Markdown\s*\.\s*",
     re.IGNORECASE,
 )
+PREVIOUS_NEXT_NAV_RE = re.compile(r"\bPrevious\b.+\bNext\b", re.IGNORECASE)
+FOOTER_START_RE = re.compile(r"^(?:Last updated\b.*|Was this helpful\??)$", re.IGNORECASE)
 
 
 class ExternalDocsExtractor:
@@ -157,7 +159,25 @@ def _strip_generated_markup_noise(text: str) -> str:
     """Remove docs-generator markup that is not useful evidence."""
     cleaned = EMPTY_ANCHOR_RE.sub(" ", text or "")
     cleaned = COPY_ONLY_FENCE_RE.sub(" ", cleaned)
-    return GENERATOR_BOILERPLATE_RE.sub(" ", cleaned)
+    cleaned = GENERATOR_BOILERPLATE_RE.sub(" ", cleaned)
+    return _strip_generated_navigation_tail(cleaned)
+
+
+def _strip_generated_navigation_tail(text: str) -> str:
+    """Remove generic docs navigation/footer blocks from extracted text."""
+    lines: list[str] = []
+    dropping_footer = False
+    for line in str(text or "").splitlines():
+        clean = _clean_inline(line)
+        if dropping_footer:
+            continue
+        if clean and FOOTER_START_RE.match(clean):
+            dropping_footer = True
+            continue
+        if clean and PREVIOUS_NEXT_NAV_RE.search(clean):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _title_from_url(url: str) -> str:
