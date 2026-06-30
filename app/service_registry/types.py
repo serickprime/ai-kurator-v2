@@ -82,6 +82,8 @@ class ServiceDocsStatus:
     docs_status: ServiceDocsFinalStatus
     active_docs_count: int = 0
     active_chunks_count: int = 0
+    detected_documents_count: int = 0
+    detected_chunks_count: int = 0
     quality_status: str = "none"
     mention_count: int | None = None
     docs_source_configured: bool = False
@@ -98,6 +100,8 @@ class ServiceDocsStatus:
             "docs_status": self.docs_status,
             "active_docs": self.active_docs_count,
             "active_chunks": self.active_chunks_count,
+            "detected_documents": self.detected_documents_count,
+            "detected_chunks": self.detected_chunks_count,
             "quality": self.quality_status,
             "mention_count": self.mention_count,
             "docs_source_configured": self.docs_source_configured,

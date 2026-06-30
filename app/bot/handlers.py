@@ -34,6 +34,7 @@ from app.bot.keyboards import (
 from app.bot.user_state import InMemoryBotUserStateStore, InMemoryUserSettingsRepository
 from app.db.repositories import UserSettings
 from app.rag.source_labels import SourceLabelBuilder
+from app.service_registry.types import ServiceDocsStatus
 
 
 class RagPipeline(Protocol):
@@ -65,6 +66,18 @@ class IntakeIngestionService(Protocol):
         """Ingest one file or directory."""
 
 
+class ServiceDocsStatusReader(Protocol):
+    """Read-only service docs status provider."""
+
+    async def list_statuses(
+        self,
+        *,
+        scan_corpus: bool = False,
+        service: str | None = None,
+    ) -> tuple[ServiceDocsStatus, ...]:
+        """Return service/docs status rows."""
+
+
 @dataclass
 class BotServices:
     """Telegram handler dependencies."""
@@ -80,6 +93,7 @@ class BotServices:
     ingestion_runtime: Any | None = None
     ingestion_disabled_reason: str = ""
     ingestion_missing_config: tuple[str, ...] = ()
+    service_docs_status_provider: ServiceDocsStatusReader | None = None
     conversation_repo: Any | None = None
     vision_textifier: Any | None = None
     download_dir: Path = Path("data/uploads/telegram")
@@ -188,6 +202,28 @@ async def materials_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ),
         reply_markup=main_menu_keyboard(),
     )
+
+
+async def services_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/services`."""
+    services = _services(context)
+    if update.message is None:
+        return
+    if services.service_docs_status_provider is None:
+        await update.message.reply_text(
+            "Список сервисов пока недоступен: не подключено чтение Supabase или registry.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    try:
+        statuses = await services.service_docs_status_provider.list_statuses(scan_corpus=True)
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        await update.message.reply_text(
+            "Не получилось получить список сервисов: " + _safe_error(exc),
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await update.message.reply_text(_format_services_status(statuses), reply_markup=main_menu_keyboard())
 
 
 async def debug_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -353,6 +389,7 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("done", done_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("materials", materials_command))
+    application.add_handler(CommandHandler("services", services_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
     application.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r"^settings:"))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -577,10 +614,47 @@ def _format_upload_result(result: Any) -> str:
     )
 
 
+def _format_services_status(statuses: tuple[ServiceDocsStatus, ...]) -> str:
+    if not statuses:
+        return "Сервисы пока не настроены."
+    lines = ["Сервисы:"]
+    for status in statuses:
+        found = _service_found_in_base(status)
+        docs = _service_docs_phrase(status)
+        quality = f", {status.quality_status}" if status.quality_status not in {"", "none"} else ""
+        lines.append(f"{status.display_name} — {'найден в базе' if found else 'не найден в базе'}, {docs}{quality}")
+    return "\n".join(lines)
+
+
+def _service_found_in_base(status: ServiceDocsStatus) -> bool:
+    return any(
+        value > 0
+        for value in (
+            int(status.detected_documents_count or 0),
+            int(status.detected_chunks_count or 0),
+            int(status.mention_count or 0),
+            int(status.active_docs_count or 0),
+        )
+    )
+
+
+def _service_docs_phrase(status: ServiceDocsStatus) -> str:
+    if status.docs_status == "indexed":
+        return "документация подключена"
+    if status.docs_status == "not_configured":
+        return "документация не подключена"
+    if status.docs_status == "configured_not_indexed":
+        return "документация настроена, но не проиндексирована"
+    if status.docs_status == "disabled":
+        return "документация отключена"
+    return "документация требует проверки"
+
+
 def _safe_error(exc: Exception) -> str:
     text = re.sub(r"\s+", " ", str(exc)).strip() or exc.__class__.__name__
     text = re.sub(r"bot[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]+", "bot<redacted>", text)
     text = re.sub(r"Bearer\s+[A-Za-z0-9._-]+", "Bearer <redacted>", text)
+    text = re.sub(r"sb_secret_[A-Za-z0-9_-]+", "sb_secret_<redacted>", text)
     return text[:700]
 
 

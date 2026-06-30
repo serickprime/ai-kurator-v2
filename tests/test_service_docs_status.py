@@ -1,6 +1,11 @@
 import json
 
-from app.service_registry.status import build_service_docs_statuses, count_service_mentions, status_payload
+from app.service_registry.status import (
+    build_service_docs_statuses,
+    count_service_mentions,
+    count_service_metadata,
+    status_payload,
+)
 from app.service_registry.types import ServiceDefinition
 
 
@@ -145,6 +150,22 @@ def test_service_docs_status_counts_mentions() -> None:
     )
 
     assert counts == {"supabase": 2}
+
+
+def test_service_docs_status_counts_service_metadata() -> None:
+    document_counts, chunk_counts = count_service_metadata(
+        documents=[
+            {"metadata": {"service_ids": ["n8n"]}},
+            {"metadata": {"service_mentions": [{"service_id": "supabase"}]}},
+        ],
+        chunks=[
+            {"metadata": {"service_ids": ["n8n", "supabase"]}},
+            {"metadata": {}},
+        ],
+    )
+
+    assert document_counts == {"n8n": 1, "supabase": 1}
+    assert chunk_counts == {"n8n": 1, "supabase": 1}
 
 
 def _doc(document_id: str, source_name: str) -> dict[str, object]:

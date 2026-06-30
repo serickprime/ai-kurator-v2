@@ -13,6 +13,7 @@ from app.llm.model_router import ModelRouter, ModelRouterConfig
 from app.llm.openrouter_client import OpenRouterClient
 from app.llm.vision import VisionTextifier
 from app.rag.runtime import build_rag_runtime_from_settings, validate_runtime_config
+from app.service_registry.provider import ServiceDocsStatusProvider
 
 LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +47,14 @@ def _build_services(settings: Settings) -> BotServices:
     validation = validate_runtime_config(settings)
     ingestion_runtime = build_ingestion_runtime_from_settings(settings, vision_describer=vision_textifier)
     ingestion_validation = validate_ingestion_config(settings)
+    service_docs_status_provider = None
+    status_client = None
+    if rag_runtime is not None:
+        status_client = rag_runtime.resources.supabase
+    elif ingestion_runtime is not None:
+        status_client = ingestion_runtime.resources.supabase
+    if status_client is not None:
+        service_docs_status_provider = ServiceDocsStatusProvider(status_client)
     rag_disabled_reason = ""
     if rag_runtime is None:
         rag_disabled_reason = (
@@ -76,6 +85,7 @@ def _build_services(settings: Settings) -> BotServices:
         ingestion_runtime=ingestion_runtime,
         ingestion_disabled_reason=ingestion_disabled_reason,
         ingestion_missing_config=ingestion_validation.missing,
+        service_docs_status_provider=service_docs_status_provider,
         conversation_repo=rag_runtime.conversation_repo if rag_runtime is not None else None,
         vision_textifier=vision_textifier,
         owner_ids=parse_telegram_ids(settings.owner_ids),

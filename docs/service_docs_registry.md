@@ -53,7 +53,20 @@ The script reports:
 - active external docs and chunks count;
 - quality gate status;
 - optional mention count in indexed corpus rows;
+- detected documents/chunks tagged by ingestion metadata when `--scan-corpus` is enabled;
 - final docs status.
+
+## Ingestion Discovery
+
+When new local materials are ingested, the indexing pipeline loads `config/service_docs_registry.yaml`, detects service
+aliases in the loaded document, sections, and chunks, and stores safe JSON metadata:
+
+- `service_ids`;
+- `service_mentions`.
+
+No database schema change is required because the values are stored in existing `metadata` JSONB fields for documents,
+document cards, sections, and chunks. Existing materials are not rewritten automatically; reingest is needed if old rows
+should receive service metadata.
 
 ## Status Meanings
 
@@ -65,5 +78,6 @@ The script reports:
 
 ## Telegram Use Later
 
-The Telegram layer can later expose this registry as an admin/debug command. For now, it should remain a script-only
-status layer so the RAG pipeline and user UX stay stable.
+The Telegram layer exposes `/services` as a compact read-only status command. It does not crawl docs and does not add
+new sources. It shows whether a service is found in the indexed base, whether official docs are connected, and the
+quality gate result when available.

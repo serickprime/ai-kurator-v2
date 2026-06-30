@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -12,6 +12,9 @@ from app.db.repositories import DocumentRecord, DocumentRepository
 from app.ingestion.chunker import ChunkDraft, ParentChildChunker, SectionDraft
 from app.ingestion.document_cards import DocumentCardBuilder
 from app.ingestion.loaders import FileLoader, LoadedDocument, is_supported_file
+from app.service_registry.config import ServiceRegistryConfigError, load_service_registry_config
+from app.service_registry.detector import ServiceDetector
+from app.service_registry.types import ServiceMention
 
 LOGGER = logging.getLogger(__name__)
 INGESTION_PIPELINE_VERSION = "text-cleanup-2026-06-30"
@@ -87,12 +90,14 @@ class IndexingService:
         loader: FileLoader | None = None,
         chunker: ParentChildChunker | None = None,
         card_builder: DocumentCardBuilder | None = None,
+        service_detector: ServiceDetector | None = None,
     ) -> None:
         self._repository = repository
         self._embedding_client = embedding_client
         self._loader = loader or FileLoader()
         self._chunker = chunker or ParentChildChunker()
         self._card_builder = card_builder or DocumentCardBuilder()
+        self._service_detector = service_detector if service_detector is not None else _default_service_detector()
 
     async def ingest_path(
         self,
@@ -170,6 +175,15 @@ class IndexingService:
         sections = self._chunker.split_sections(loaded)
         chunks = self._chunker.split_chunks(sections)
         card = await self._card_builder.build(loaded, sections)
+        discovery = _discover_services(
+            loaded=loaded,
+            sections=sections,
+            chunks=chunks,
+            detector=self._service_detector,
+        )
+        sections = _sections_with_service_metadata(sections, discovery)
+        chunks = _chunks_with_service_metadata(chunks, discovery)
+        card = replace(card, metadata={**card.metadata, **discovery.document_metadata})
 
         document = await self._repository.create_document(
             workspace_id=workspace_id,
@@ -183,7 +197,11 @@ class IndexingService:
             version=version,
             status="draft",
             content_hash=content_hash,
-            metadata=_document_metadata(loaded, ingestion_signature=ingestion_signature),
+            metadata=_document_metadata(
+                loaded,
+                ingestion_signature=ingestion_signature,
+                service_metadata=discovery.document_metadata,
+            ),
         )
 
         card_embedding = await self._embedding_client.embed(card.to_embedding_text())
@@ -300,12 +318,18 @@ def _document_key(path: Path, base_path: Path | None = None) -> str:
     return path.resolve().relative_to(base_path.resolve()).as_posix()
 
 
-def _document_metadata(document: LoadedDocument, *, ingestion_signature: str) -> dict[str, object]:
+def _document_metadata(
+    document: LoadedDocument,
+    *,
+    ingestion_signature: str,
+    service_metadata: dict[str, object] | None = None,
+) -> dict[str, object]:
     return {
         "path": str(document.path),
         "source_type": document.source_type,
         "loader": document.metadata,
         "page_count": len(document.pages),
+        **(service_metadata or {}),
         "ingestion": {
             "pipeline_version": INGESTION_PIPELINE_VERSION,
             "signature": ingestion_signature,
@@ -314,11 +338,100 @@ def _document_metadata(document: LoadedDocument, *, ingestion_signature: str) ->
     }
 
 
+@dataclass(frozen=True)
+class _ServiceDiscoveryMetadata:
+    document_metadata: dict[str, object]
+    sections: dict[int, dict[str, object]]
+    chunks: dict[int, dict[str, object]]
+
+
+def _discover_services(
+    *,
+    loaded: LoadedDocument,
+    sections: tuple[SectionDraft, ...],
+    chunks: tuple[ChunkDraft, ...],
+    detector: ServiceDetector | None,
+) -> _ServiceDiscoveryMetadata:
+    if detector is None:
+        return _ServiceDiscoveryMetadata(document_metadata={}, sections={}, chunks={})
+
+    document_text = "\n".join(
+        part
+        for part in (
+            loaded.title,
+            loaded.filename,
+            loaded.structured_text,
+        )
+        if part
+    )
+    document_mentions = detector.detect(document_text)
+    section_metadata = {
+        section.section_index: _mentions_metadata(detector.detect(f"{section.heading}\n{section.content}"))
+        for section in sections
+    }
+    chunk_metadata = {
+        chunk.chunk_index: _mentions_metadata(detector.detect(f"{chunk.heading}\n{chunk.content}"))
+        for chunk in chunks
+    }
+    return _ServiceDiscoveryMetadata(
+        document_metadata=_mentions_metadata(document_mentions),
+        sections={index: metadata for index, metadata in section_metadata.items() if metadata},
+        chunks={index: metadata for index, metadata in chunk_metadata.items() if metadata},
+    )
+
+
+def _mentions_metadata(mentions: tuple[ServiceMention, ...]) -> dict[str, object]:
+    service_ids = tuple(dict.fromkeys(mention.service_id for mention in mentions))
+    if not service_ids:
+        return {}
+    return {
+        "service_ids": list(service_ids),
+        "service_mentions": [
+            {
+                "service_id": mention.service_id,
+                "display_name": mention.display_name,
+                "matched_alias": mention.matched_alias,
+                "confidence": mention.confidence,
+            }
+            for mention in mentions
+        ],
+    }
+
+
+def _sections_with_service_metadata(
+    sections: tuple[SectionDraft, ...],
+    discovery: _ServiceDiscoveryMetadata,
+) -> tuple[SectionDraft, ...]:
+    return tuple(
+        replace(section, metadata={**section.metadata, **discovery.sections.get(section.section_index, {})})
+        for section in sections
+    )
+
+
+def _chunks_with_service_metadata(
+    chunks: tuple[ChunkDraft, ...],
+    discovery: _ServiceDiscoveryMetadata,
+) -> tuple[ChunkDraft, ...]:
+    return tuple(
+        replace(chunk, metadata={**chunk.metadata, **discovery.chunks.get(chunk.chunk_index, {})})
+        for chunk in chunks
+    )
+
+
+def _default_service_detector() -> ServiceDetector | None:
+    try:
+        return ServiceDetector(load_service_registry_config().services)
+    except (ServiceRegistryConfigError, OSError) as exc:
+        LOGGER.info("Service discovery disabled during ingestion: %s", exc)
+        return None
+
+
 def build_default_indexing_service(
     repository: DocumentRepository,
     embedding_client: EmbeddingClient,
     loader: FileLoader | None = None,
     card_builder: DocumentCardBuilder | None = None,
+    service_detector: ServiceDetector | None = None,
 ) -> IndexingService:
     """Build the default indexing service."""
     return IndexingService(
@@ -326,4 +439,5 @@ def build_default_indexing_service(
         embedding_client=embedding_client,
         loader=loader,
         card_builder=card_builder,
+        service_detector=service_detector,
     )

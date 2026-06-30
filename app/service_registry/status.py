@@ -17,6 +17,8 @@ def build_service_docs_statuses(
     documents: Iterable[dict[str, Any]],
     chunks: Iterable[dict[str, Any]],
     mention_counts: dict[str, int] | None = None,
+    detected_document_counts: dict[str, int] | None = None,
+    detected_chunk_counts: dict[str, int] | None = None,
 ) -> tuple[ServiceDocsStatus, ...]:
     """Build one status row for each service definition."""
     service_rows = tuple(services)
@@ -35,6 +37,8 @@ def build_service_docs_statuses(
             active_chunks_by_source=active_chunks_by_source,
             quality_by_source=quality_by_source,
             mention_counts=mention_counts or {},
+            detected_document_counts=detected_document_counts or {},
+            detected_chunk_counts=detected_chunk_counts or {},
         )
         for service in service_rows
     ]
@@ -54,6 +58,21 @@ def count_service_mentions(
         seen = {mention.service_id for mention in detector.detect(text)}
         counts.update(seen)
     return dict(counts)
+
+
+def count_service_metadata(
+    *,
+    documents: Iterable[dict[str, Any]],
+    chunks: Iterable[dict[str, Any]],
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Count documents and chunks tagged with service_ids metadata."""
+    document_counts: Counter[str] = Counter()
+    chunk_counts: Counter[str] = Counter()
+    for row in documents:
+        document_counts.update(_service_ids_from_metadata(row))
+    for row in chunks:
+        chunk_counts.update(_service_ids_from_metadata(row))
+    return dict(document_counts), dict(chunk_counts)
 
 
 def status_payload(statuses: Iterable[ServiceDocsStatus]) -> dict[str, object]:
@@ -83,13 +102,29 @@ def _service_status(
     active_chunks_by_source: dict[str, list[dict[str, Any]]],
     quality_by_source: dict[str, str],
     mention_counts: dict[str, int],
+    detected_document_counts: dict[str, int],
+    detected_chunk_counts: dict[str, int],
 ) -> ServiceDocsStatus:
     docs_source = service.docs_source
     notes: list[str] = []
     if service.status == "disabled":
-        return _status(service, "disabled", mention_counts=mention_counts, notes=("service disabled in registry",))
+        return _status(
+            service,
+            "disabled",
+            mention_counts=mention_counts,
+            detected_document_counts=detected_document_counts,
+            detected_chunk_counts=detected_chunk_counts,
+            notes=("service disabled in registry",),
+        )
     if not docs_source:
-        return _status(service, "not_configured", mention_counts=mention_counts, notes=("docs_source is not configured",))
+        return _status(
+            service,
+            "not_configured",
+            mention_counts=mention_counts,
+            detected_document_counts=detected_document_counts,
+            detected_chunk_counts=detected_chunk_counts,
+            notes=("docs_source is not configured",),
+        )
 
     source_configured = docs_source in configured_docs_sources
     active_docs = active_docs_by_source.get(docs_source, [])
@@ -118,6 +153,8 @@ def _service_status(
         docs_status=final_status,  # type: ignore[arg-type]
         active_docs_count=len(active_docs),
         active_chunks_count=len(active_chunks),
+        detected_documents_count=detected_document_counts.get(service.service_id, 0),
+        detected_chunks_count=detected_chunk_counts.get(service.service_id, 0),
         quality_status=quality,
         mention_count=mention_counts.get(service.service_id),
         docs_source_configured=source_configured,
@@ -130,6 +167,8 @@ def _status(
     docs_status: str,
     *,
     mention_counts: dict[str, int],
+    detected_document_counts: dict[str, int],
+    detected_chunk_counts: dict[str, int],
     notes: tuple[str, ...],
 ) -> ServiceDocsStatus:
     return ServiceDocsStatus(
@@ -139,6 +178,8 @@ def _status(
         docs_source=service.docs_source,
         configured_status=service.status,
         docs_status=docs_status,  # type: ignore[arg-type]
+        detected_documents_count=detected_document_counts.get(service.service_id, 0),
+        detected_chunks_count=detected_chunk_counts.get(service.service_id, 0),
         quality_status="none",
         mention_count=mention_counts.get(service.service_id),
         docs_source_configured=False,
@@ -214,6 +255,23 @@ def _row_text(row: dict[str, Any]) -> str:
         if isinstance(value, list):
             values.extend(str(item) for item in value if str(item).strip())
     return "\n".join(values)
+
+
+def _service_ids_from_metadata(row: dict[str, Any]) -> list[str]:
+    metadata = _metadata(row)
+    values = metadata.get("service_ids")
+    if isinstance(values, list):
+        return [str(value).strip() for value in values if str(value).strip()]
+    if isinstance(values, tuple):
+        return [str(value).strip() for value in values if str(value).strip()]
+    mentions = metadata.get("service_mentions")
+    if isinstance(mentions, list):
+        result: list[str] = []
+        for item in mentions:
+            if isinstance(item, dict) and str(item.get("service_id") or "").strip():
+                result.append(str(item["service_id"]).strip())
+        return result
+    return []
 
 
 def _metadata(row: dict[str, Any]) -> dict[str, Any]:
