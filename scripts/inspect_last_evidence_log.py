@@ -95,6 +95,10 @@ async def main_async() -> int:
         "llm_errors_sanitized": generation.get("llm_errors_sanitized") or [],
         "final_model_used": generation.get("final_model_used"),
         "fallback_used": bool(generation.get("fallback_used", False)),
+        "answer_fallback_used": bool(evidence_pack.get("answer_fallback_used", generation.get("fallback_used", False))),
+        "weak_llm_answer_reason": evidence_pack.get("weak_llm_answer_reason") or generation.get("weak_llm_answer_reason") or "",
+        "primary_definition_evidence_id": evidence_pack.get("primary_definition_evidence_id") or "",
+        "evidence_order_reason": evidence_pack.get("evidence_order_reason") or "",
         "warnings": warnings,
         "answer_preview": _preview(row.get("final_answer"), limit=500),
     }

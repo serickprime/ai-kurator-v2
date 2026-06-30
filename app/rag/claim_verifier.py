@@ -106,7 +106,10 @@ def _is_supported(claim: str, evidence: EvidencePack) -> bool:
 
 def _safe_answer(answer: str, unsupported: tuple[str, ...], evidence: EvidencePack) -> str:
     if not unsupported:
-        return _remove_source_lines(answer)
+        safe = _remove_source_lines(answer)
+        if safe.strip():
+            return safe
+        return _supported_evidence_answer(evidence)
 
     unsupported_keys = {_normalize_sentence(claim) for claim in unsupported}
     kept: list[str] = []
@@ -122,14 +125,7 @@ def _safe_answer(answer: str, unsupported: tuple[str, ...], evidence: EvidencePa
     if safe:
         return _remove_source_lines(safe)
 
-    supported_sentences: list[str] = []
-    for item in evidence.items:
-        supported_sentences.extend(_safe_evidence_sentences(item.text))
-        if len(supported_sentences) >= 3:
-            break
-    if not supported_sentences:
-        return "В найденных фрагментах нет достаточно надежного подтверждения для ответа."
-    return "В материалах указано:\n" + "\n".join(f"- {sentence}" for sentence in supported_sentences[:3]).strip()
+    return _supported_evidence_answer(evidence)
 
 
 def _has_source_leakage(answer: str, evidence: EvidencePack) -> bool:
@@ -156,9 +152,17 @@ def _remove_source_lines(answer: str) -> str:
     lines = [
         line
         for line in answer.splitlines()
-        if not line.strip().lower().startswith(("источник:", "источники:", "sources:", "source:"))
+        if not _looks_like_source_line(line)
     ]
     return "\n".join(lines).strip()
+
+
+def _looks_like_source_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    normalized = stripped.lstrip(" ([{«\"'").lower()
+    return normalized.startswith(("источник:", "источники:", "sources:", "source:"))
 
 
 def _meaningful_roots(text: str) -> set[str]:
@@ -210,6 +214,17 @@ def _safe_evidence_sentences(text: str) -> list[str]:
         if len(result) >= 3:
             break
     return result
+
+
+def _supported_evidence_answer(evidence: EvidencePack) -> str:
+    supported_sentences: list[str] = []
+    for item in evidence.items:
+        supported_sentences.extend(_safe_evidence_sentences(item.text))
+        if len(supported_sentences) >= 3:
+            break
+    if not supported_sentences:
+        return "В найденных фрагментах нет достаточно надежного подтверждения для ответа."
+    return "В материалах указано:\n" + "\n".join(f"- {sentence}" for sentence in supported_sentences[:3]).strip()
 
 
 def _clean_sentence(sentence: str) -> str:

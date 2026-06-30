@@ -79,6 +79,12 @@ class EvidenceFirstRagPipeline:
             evidence = self._pack_builder.build(reranked, analysis=analysis)
         draft = await self._answer_generator.generate(analysis, evidence, dialog_context=dialog_context)
         verification = self._verifier.verify(draft, evidence)
+        generation_debug = _generation_debug(draft)
+        if verification.source_leakage and verification.verdict in {"rewrite", "fail"}:
+            generation_debug = generation_debug | {
+                "fallback_used": True,
+                "weak_llm_answer_reason": generation_debug.get("weak_llm_answer_reason") or "source_label_only",
+            }
 
         final_answer = verification.safe_answer if verification.verdict in {"rewrite", "fail"} else draft.text
         status = _final_status(draft.status, verification.verdict)
@@ -95,7 +101,7 @@ class EvidenceFirstRagPipeline:
             final_answer=final_answer,
             final_sources=source_strings,
             question_analysis=asdict(analysis),
-            generation_debug=_generation_debug(draft),
+            generation_debug=generation_debug,
             source_label_debug=SourceLabelBuilder().debug(evidence.source_matches),
         )
         debug_payload = self._debug_payload(
@@ -103,6 +109,7 @@ class EvidenceFirstRagPipeline:
             documents=documents,
             evidence=evidence,
             draft=draft,
+            generation_debug=generation_debug,
             source_label_debug=SourceLabelBuilder().debug(evidence.source_matches),
         )
 
@@ -139,6 +146,7 @@ class EvidenceFirstRagPipeline:
         documents: tuple[DocumentCandidate, ...],
         evidence: EvidencePack,
         draft: object,
+        generation_debug: dict[str, object] | None = None,
         source_label_debug: list[dict[str, object]],
     ) -> dict[str, object]:
         query_plan = getattr(analysis, "query_plan", None)
@@ -155,7 +163,9 @@ class EvidenceFirstRagPipeline:
             if getattr(decision, "status", "") == "discarded"
         ]
         retriever_discarded = list(getattr(self._retriever, "last_discarded", ()))
-        generation = _generation_debug(draft)
+        generation = generation_debug or _generation_debug(draft)
+        primary_definition_id = _primary_definition_evidence_id(evidence)
+        evidence_order_reason = _evidence_order_reason(evidence)
         accepted_count = sum(
             1 for item in evidence.items if getattr(item, "metadata", {}).get("evidence_status") in {"accepted", None, ""}
         )
@@ -170,6 +180,10 @@ class EvidenceFirstRagPipeline:
             "llm_errors_sanitized": generation.get("llm_errors_sanitized", ()),
             "final_model_used": generation.get("final_model_used"),
             "fallback_used": generation.get("fallback_used", False),
+            "answer_fallback_used": generation.get("fallback_used", False),
+            "weak_llm_answer_reason": generation.get("weak_llm_answer_reason", ""),
+            "primary_definition_evidence_id": primary_definition_id,
+            "evidence_order_reason": evidence_order_reason,
             "evidence_items_count": len(evidence.items),
             "accepted_evidence_count": accepted_count,
             "discarded_evidence_count": len(discarded_decisions) + len(retriever_discarded),
@@ -228,6 +242,7 @@ def _evidence_pack_dict(
     source_label_debug: list[dict[str, object]] | None = None,
     discarded_decisions: list[object] | None = None,
 ) -> dict[str, object]:
+    generation = generation_debug or {}
     return {
         "answer_mode": evidence.answer_mode,
         "items": [asdict(item) for item in evidence.items],
@@ -235,8 +250,12 @@ def _evidence_pack_dict(
         "missing_requirements": list(evidence.missing_requirements),
         "decisions": [asdict(decision) for decision in evidence.decisions],
         "discarded_decisions": [_decision_log_dict(decision) for decision in discarded_decisions or []],
-        "generation": generation_debug or {},
+        "generation": generation,
         "source_label_debug": source_label_debug or [],
+        "primary_definition_evidence_id": _primary_definition_evidence_id(evidence),
+        "answer_fallback_used": bool(generation.get("fallback_used", False)),
+        "weak_llm_answer_reason": generation.get("weak_llm_answer_reason", ""),
+        "evidence_order_reason": _evidence_order_reason(evidence),
     }
 
 
@@ -286,8 +305,32 @@ def _generation_debug(draft: object) -> dict[str, object]:
                 "llm_errors_sanitized": tuple(generation.get("llm_errors_sanitized") or ()),
                 "final_model_used": generation.get("final_model_used"),
                 "fallback_used": bool(generation.get("fallback_used", False)),
+                "weak_llm_answer_reason": generation.get("weak_llm_answer_reason", ""),
             }
-    return {"llm_model_attempts": (), "llm_errors_sanitized": (), "final_model_used": None, "fallback_used": False}
+    return {
+        "llm_model_attempts": (),
+        "llm_errors_sanitized": (),
+        "final_model_used": None,
+        "fallback_used": False,
+        "weak_llm_answer_reason": "",
+    }
+
+
+def _primary_definition_evidence_id(evidence: EvidencePack) -> str:
+    for item in evidence.items:
+        metadata = getattr(item, "metadata", {})
+        if isinstance(metadata, dict) and metadata.get("primary_definition_candidate"):
+            return str(getattr(item, "evidence_id", "") or "")
+    return ""
+
+
+def _evidence_order_reason(evidence: EvidencePack) -> str:
+    if not evidence.items:
+        return ""
+    metadata = getattr(evidence.items[0], "metadata", {})
+    if isinstance(metadata, dict):
+        return str(metadata.get("evidence_order_reason") or "")
+    return ""
 
 
 def _reranker_breakdown(item: object) -> dict[str, object]:

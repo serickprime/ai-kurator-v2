@@ -7,7 +7,38 @@ import re
 from dataclasses import asdict
 from typing import Any, Protocol
 
+from app.rag.source_labels import SourceLabelBuilder
 from app.rag.types import AnswerDraft, AnswerStatus, EvidencePack, QuestionAnalysis
+
+TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
+SOURCE_MARKER_RE = re.compile(
+    r"\b(?:source|sources)\b|"
+    r"\u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a(?:\u0438|\u043e\u0432)?",
+    re.IGNORECASE,
+)
+DEFINITION_MARKERS = (
+    "what is",
+    "what are",
+    "what does",
+    "explain",
+    "overview",
+    "\u0447\u0442\u043e \u0442\u0430\u043a\u043e\u0435",
+    "\u0447\u0442\u043e \u0437\u043d\u0430\u0447\u0438\u0442",
+    "\u043e\u0431\u044a\u044f\u0441\u043d\u0438",
+)
+DEFINITION_TARGET_STOPWORDS = {
+    "according",
+    "docs",
+    "documentation",
+    "external",
+    "official",
+    "\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442",
+    "\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u0438",
+    "\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u044f",
+    "\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d\u0430\u044f",
+    "\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d\u043e\u0439",
+    "\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d\u044b\u0435",
+}
 
 ANSWER_GENERATION_SYSTEM_PROMPT = """
 Ты отвечаешь в evidence-first RAG pipeline.
@@ -96,7 +127,8 @@ async def generate_answer(
         try:
             text = _clean_model_answer(await _complete_text(llm_client, messages, dialog_context)).strip()
             generation_debug = _generation_metadata(llm_client)
-            if text and not _looks_like_source_only_answer(text):
+            weak_reason = _weak_model_answer_reason(text, evidence_pack)
+            if text and not weak_reason:
                 return AnswerDraft(
                     text=text,
                     status=_status_for_mode(evidence_pack.answer_mode),
@@ -104,6 +136,11 @@ async def generate_answer(
                     answer_mode=evidence_pack.answer_mode,
                     model_input={"messages": messages, "generation": generation_debug},
                 )
+            if weak_reason:
+                generation_debug = generation_debug | {
+                    "fallback_used": True,
+                    "weak_llm_answer_reason": weak_reason,
+                }
         except Exception as exc:
             generation_debug = _generation_metadata(llm_client, error=exc, fallback_used=True)
 
@@ -201,29 +238,70 @@ def _clean_model_answer(text: str) -> str:
     return clean.strip()
 
 
-def _looks_like_source_only_answer(text: str) -> bool:
-    clean = re.sub(r"\s+", " ", str(text or "")).strip()
-    if not clean:
+def _weak_model_answer_reason(text: str, evidence: EvidencePack) -> str:
+    if _looks_like_source_only_answer(text, evidence):
+        return "source_label_only"
+    return ""
+
+
+def _looks_like_source_only_answer(text: str, evidence: EvidencePack) -> bool:
+    raw = str(text or "").strip()
+    if not raw:
         return False
+    clean = re.sub(r"\s+", " ", raw).strip()
     lowered = clean.casefold()
-    if len(clean) <= 120 and ("docs" in lowered or "источник" in lowered or "source" in lowered or "http" in lowered):
-        meaningful = [
-            token
-            for token in re.findall(r"[\w#+.-]{2,}", lowered, flags=re.UNICODE)
-            if token not in {"docs", "source", "sources", "источник", "источники", "http", "https"}
-        ]
-        if len(meaningful) <= 5:
-            return True
+    sourceish = bool(SOURCE_MARKER_RE.search(clean) or "http://" in lowered or "https://" in lowered or "docs" in lowered)
+    factual_body = _strip_source_references(raw, evidence)
+    body_tokens = _meaningful_tokens(factual_body)
+    overlap = _evidence_overlap_roots(factual_body, evidence)
+    if not body_tokens and sourceish:
+        return True
+    if sourceish and len(body_tokens) <= 6 and len(overlap) < 2:
+        return True
+    if len(clean) <= 160 and sourceish and len(overlap) < 2:
+        return True
     source_lines = [
         line.strip()
-        for line in clean.splitlines()
-        if line.strip().casefold().startswith(("источник", "источники", "source", "sources", "- http", "- https"))
+        for line in raw.splitlines()
+        if SOURCE_MARKER_RE.search(line) or line.strip().casefold().startswith(("- http", "- https"))
     ]
-    return bool(source_lines and len(source_lines) == len([line for line in clean.splitlines() if line.strip()]))
+    non_empty_lines = [line for line in raw.splitlines() if line.strip()]
+    return bool(source_lines and len(source_lines) == len(non_empty_lines))
+
+
+def _strip_source_references(text: str, evidence: EvidencePack) -> str:
+    source_labels = SourceLabelBuilder().build_many(evidence.source_matches, max_per_document=10, max_labels=20)
+    source_bits = [
+        *source_labels,
+        *(source.document_title for source in evidence.source_matches if source.document_title),
+        *(source.locator or "" for source in evidence.source_matches),
+        *(source.source_uri or "" for source in evidence.source_matches),
+    ]
+    source_bits = [bit for bit in source_bits if str(bit).strip()]
+    lines: list[str] = []
+    in_source_block = False
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if SOURCE_MARKER_RE.search(stripped) and len(_meaningful_tokens(stripped)) <= 8:
+            in_source_block = True
+            continue
+        if in_source_block and stripped.startswith(("-", "*")):
+            continue
+        in_source_block = False
+        lines.append(stripped)
+    body = "\n".join(lines)
+    body = re.sub(r"https?://\S+", " ", body)
+    for bit in sorted(source_bits, key=len, reverse=True):
+        body = re.sub(re.escape(str(bit)), " ", body, flags=re.IGNORECASE)
+    body = SOURCE_MARKER_RE.sub(" ", body)
+    body = re.sub(r"[()\[\]|:;,\-]+", " ", body)
+    return re.sub(r"\s+", " ", body).strip()
 
 
 def _answer_from_materials(analysis: QuestionAnalysis, evidence: EvidencePack) -> str:
-    sentences = _evidence_sentences(evidence, limit=5)
+    sentences = _evidence_sentences(evidence, limit=5, analysis=analysis)
     if not sentences:
         return _ask_for_missing_data(analysis, evidence)
 
@@ -240,7 +318,7 @@ def _answer_from_materials(analysis: QuestionAnalysis, evidence: EvidencePack) -
 
 def _partial_answer(analysis: QuestionAnalysis, evidence: EvidencePack) -> str:
     lines = ["В материалах есть только частичная информация."]
-    for sentence in _evidence_sentences(evidence, limit=4):
+    for sentence in _evidence_sentences(evidence, limit=4, analysis=analysis):
         lines.append(f"- {sentence}")
 
     missing = list(evidence.missing_requirements) or _uncovered_points(analysis, evidence)
@@ -316,18 +394,25 @@ def _general_answer(analysis: QuestionAnalysis) -> str:
     return f"Коротко: {task}."
 
 
-def _evidence_sentences(evidence: EvidencePack, limit: int = 6) -> list[str]:
-    candidates: list[tuple[float, str]] = []
-    for item in evidence.items:
-        for sentence in _split_sentences(item.text):
+def _evidence_sentences(
+    evidence: EvidencePack,
+    limit: int = 6,
+    analysis: QuestionAnalysis | None = None,
+) -> list[str]:
+    candidates: list[tuple[float, int, str]] = []
+    for evidence_index, item in enumerate(evidence.items):
+        for sentence_index, sentence in enumerate(_split_sentences(item.text)):
             clean = _clean_evidence_sentence(sentence)
             if not clean or _is_low_value_sentence(clean):
                 continue
-            candidates.append((_fallback_sentence_score(clean), clean))
+            score = _fallback_sentence_score(clean)
+            score += _definition_sentence_bonus(clean, item.metadata, analysis, sentence_index)
+            score += max(0.0, 0.12 - evidence_index * 0.02)
+            candidates.append((score, evidence_index, clean))
 
     result: list[str] = []
     seen: set[str] = set()
-    for _, sentence in sorted(candidates, key=lambda item: (-item[0], item[1])):
+    for _, _, sentence in sorted(candidates, key=lambda item: (-item[0], item[1], item[2])):
         key = _sentence_key(sentence)
         if key in seen:
             continue
@@ -393,6 +478,143 @@ def _fallback_sentence_score(sentence: str) -> float:
     if any(word in lowered for word in ("пример", "формат", "параметр", "команда", "файл", "условие", "результат")):
         score += 0.15
     return score
+
+
+def _definition_sentence_bonus(
+    sentence: str,
+    metadata: dict[str, object],
+    analysis: QuestionAnalysis | None,
+    sentence_index: int,
+) -> float:
+    if analysis is None or not _is_definition_question(analysis):
+        return 0.0
+    target_roots = _definition_target_roots(analysis)
+    if not target_roots:
+        return 0.0
+    roots = _roots(_tokens(sentence))
+    if not (roots & target_roots):
+        return 0.0
+    bonus = 0.25
+    if metadata.get("primary_definition_candidate"):
+        bonus += 0.45
+    if sentence_index <= 1:
+        bonus += 0.16
+    lowered = sentence.casefold()
+    if re.search(r"\b(?:is|are|means|refers\s+to|lets|allows|provides|calls)\b", lowered):
+        bonus += 0.22
+    if any(lowered.startswith(term.casefold()) for term in _definition_target_terms(analysis)):
+        bonus += 0.18
+    return bonus
+
+
+def _is_definition_question(analysis: QuestionAnalysis) -> bool:
+    lowered = " ".join([analysis.original_question, analysis.primary_intent]).casefold()
+    return bool(
+        analysis.conceptual
+        or analysis.task_type == "explain"
+        or any(marker in lowered for marker in DEFINITION_MARKERS)
+    )
+
+
+def _definition_target_terms(analysis: QuestionAnalysis) -> tuple[str, ...]:
+    blocked = {term.casefold() for term in DEFINITION_TARGET_STOPWORDS}
+    platform = {term.casefold() for term in analysis.platform_terms}
+    result: list[str] = []
+    for term in (analysis.primary_object, *analysis.object_terms, *analysis.config_terms, *analysis.strongest_evidence_terms):
+        clean = str(term or "").strip()
+        if not clean or clean.casefold() in blocked or clean.casefold() in platform:
+            continue
+        result.append(clean)
+    return tuple(dict.fromkeys(result))
+
+
+def _definition_target_roots(analysis: QuestionAnalysis) -> set[str]:
+    return _roots(_tokens(" ".join(_definition_target_terms(analysis))))
+
+
+def _evidence_overlap_roots(text: str, evidence: EvidencePack) -> set[str]:
+    answer_roots = _meaningful_roots(text)
+    if not answer_roots:
+        return set()
+    evidence_roots = _meaningful_roots(" ".join(item.text for item in evidence.items))
+    return answer_roots & evidence_roots
+
+
+def _meaningful_tokens(text: str) -> list[str]:
+    return [
+        token
+        for token in _tokens(text)
+        if token not in {"docs", "source", "sources", "http", "https"} and len(token) >= 3
+    ]
+
+
+def _meaningful_roots(text: str) -> set[str]:
+    return _roots(_meaningful_tokens(text))
+
+
+def _tokens(text: str) -> list[str]:
+    return [token.casefold().replace("ё", "е").strip(".,:;!?()[]{}\"'`«»") for token in TOKEN_RE.findall(text)]
+
+
+def _roots(tokens: list[str] | tuple[str, ...]) -> set[str]:
+    return {_root(token) for token in tokens if token}
+
+
+def _root(token: str) -> str:
+    clean = token.casefold().replace("ё", "е").strip(".,:;!?()[]{}\"'`«»")
+    clean = _stem_ru(clean)
+    if len(clean) >= 8:
+        return clean[:7]
+    if len(clean) >= 6:
+        return clean[:5]
+    return clean
+
+
+def _stem_ru(token: str) -> str:
+    if not re.search(r"[а-я]", token):
+        return token
+    endings = (
+        "иями",
+        "ями",
+        "ами",
+        "ого",
+        "ему",
+        "ыми",
+        "ими",
+        "его",
+        "ая",
+        "яя",
+        "ое",
+        "ее",
+        "ые",
+        "ие",
+        "ый",
+        "ий",
+        "ой",
+        "ом",
+        "ем",
+        "ах",
+        "ях",
+        "ов",
+        "ев",
+        "ам",
+        "ям",
+        "ою",
+        "ею",
+        "ей",
+        "у",
+        "ю",
+        "а",
+        "я",
+        "ы",
+        "и",
+        "е",
+        "ь",
+    )
+    for ending in endings:
+        if len(token) > len(ending) + 3 and token.endswith(ending):
+            return token[: -len(ending)]
+    return token
 
 
 def _sentence_key(sentence: str) -> str:

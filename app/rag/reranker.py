@@ -7,6 +7,29 @@ import re
 from app.rag.types import EvidenceSpan, QuestionAnalysis
 
 TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
+_DEFINITION_MARKERS = (
+    "what is",
+    "what are",
+    "what does",
+    "explain",
+    "overview",
+    "\u0447\u0442\u043e \u0442\u0430\u043a\u043e\u0435",
+    "\u0447\u0442\u043e \u0437\u043d\u0430\u0447\u0438\u0442",
+    "\u043e\u0431\u044a\u044f\u0441\u043d\u0438",
+)
+_DEFINITION_TARGET_STOPWORDS = {
+    "according",
+    "docs",
+    "documentation",
+    "external",
+    "official",
+    "\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442",
+    "\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u0438",
+    "\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u044f",
+    "\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d\u0430\u044f",
+    "\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d\u043e\u0439",
+    "\u043e\u0444\u0438\u0446\u0438\u0430\u043b\u044c\u043d\u044b\u0435",
+}
 
 
 class EvidenceReranker:
@@ -37,6 +60,7 @@ def _with_reranker_score(span: EvidenceSpan, analysis: QuestionAnalysis) -> Evid
     exact_anchor_score = _exact_anchor_score(span, analysis)
     heading_match_score = _match_ratio(_query_terms(analysis), heading)
     weak_penalty = _weak_chunk_penalty(span, analysis)
+    definition_priority = _definition_priority_score(span, analysis)
 
     score = base_score
     if object_roots and object_roots & text_roots:
@@ -49,6 +73,7 @@ def _with_reranker_score(span: EvidenceSpan, analysis: QuestionAnalysis) -> Evid
     score += actionability_score * 0.22
     score += exact_anchor_score * 0.20
     score += heading_match_score * 0.10
+    score += definition_priority * 0.50
     if span.metadata.get("fact_ids") or "FACT-ID:" in span.text:
         score += 0.12
     if _near_miss_not_about(span, analysis):
@@ -56,6 +81,13 @@ def _with_reranker_score(span: EvidenceSpan, analysis: QuestionAnalysis) -> Evid
     score -= weak_penalty
 
     metadata = dict(span.metadata or {})
+    if definition_priority >= 0.45:
+        metadata["primary_definition_candidate"] = True
+        metadata["evidence_order_reason"] = "primary_definition"
+    elif definition_priority > 0:
+        metadata["evidence_order_reason"] = "definition_candidate"
+    else:
+        metadata.setdefault("evidence_order_reason", "score")
     metadata["reranker_score"] = round(score, 4)
     metadata["reranker_score_breakdown"] = {
         "base_score": round(base_score, 4),
@@ -63,6 +95,7 @@ def _with_reranker_score(span: EvidenceSpan, analysis: QuestionAnalysis) -> Evid
         "actionability": round(actionability_score, 4),
         "exact_anchor": round(exact_anchor_score, 4),
         "heading_match": round(heading_match_score, 4),
+        "definition_priority": round(definition_priority, 4),
         "weak_chunk_penalty": round(weak_penalty, 4),
     }
     return replace(span, score=round(max(score, 0.0), 4), metadata=metadata)
@@ -134,6 +167,129 @@ def _weak_chunk_penalty(span: EvidenceSpan, analysis: QuestionAnalysis) -> float
     if _actionability_score(text) == 0 and analysis.task_type in {"setup", "debug", "admin", "general"}:
         penalty += 0.08
     return min(penalty, 0.45)
+
+
+def _definition_priority_score(span: EvidenceSpan, analysis: QuestionAnalysis) -> float:
+    if not _is_definition_question(analysis):
+        return 0.0
+    target_roots = _definition_target_roots(analysis)
+    if not target_roots:
+        return 0.0
+
+    metadata = span.metadata or {}
+    title = span.document_title or ""
+    heading = " ".join([span.locator or "", str(metadata.get("heading") or "")])
+    title_heading = " ".join([title, heading])
+    title_heading_roots = _roots(_tokens(title_heading))
+    first_text = re.sub(r"\s+", " ", span.text).strip()[:520]
+    first_roots = _roots(_tokens(first_text))
+
+    score = 0.0
+    if target_roots & title_heading_roots:
+        score += 0.18
+        if _heading_is_broad_definition_target(title_heading, target_roots, analysis):
+            score += 0.24
+    if target_roots & first_roots:
+        score += 0.12
+    if _has_definition_phrase(first_text, analysis, target_roots):
+        score += 0.34
+    if int(metadata.get("section_index", 99) or 99) == 0:
+        score += 0.10
+    if int(metadata.get("part_index", 99) or 99) == 1:
+        score += 0.06
+    if _heading_is_narrow_subsection(heading, target_roots, analysis):
+        score -= 0.14
+    return min(max(score, 0.0), 1.0)
+
+
+def _is_definition_question(analysis: QuestionAnalysis) -> bool:
+    lowered = " ".join([analysis.original_question, analysis.primary_intent]).casefold()
+    return bool(
+        analysis.conceptual
+        or analysis.task_type == "explain"
+        or any(marker in lowered for marker in _DEFINITION_MARKERS)
+    )
+
+
+def _definition_target_roots(analysis: QuestionAnalysis) -> set[str]:
+    blocked = _roots(
+        _tokens(
+            " ".join(
+                [
+                    *analysis.platform_terms,
+                    *analysis.common_terms,
+                    *analysis.generic_terms,
+                    analysis.requested_action,
+                    " ".join(_DEFINITION_TARGET_STOPWORDS),
+                ]
+            )
+        )
+    )
+    candidates = [
+        analysis.primary_object,
+        *analysis.object_terms,
+        *analysis.config_terms,
+        *analysis.strongest_evidence_terms,
+    ]
+    roots: set[str] = set()
+    for candidate in candidates:
+        for root in _roots(_tokens(candidate)):
+            if len(root) >= 3 and root not in blocked:
+                roots.add(root)
+    return roots
+
+
+def _heading_is_broad_definition_target(
+    heading: str,
+    target_roots: set[str],
+    analysis: QuestionAnalysis,
+) -> bool:
+    heading_roots = _roots(_tokens(heading))
+    if not (heading_roots & target_roots):
+        return False
+    platform_roots = _roots(_tokens(" ".join(analysis.platform_terms)))
+    non_target_roots = {
+        root for root in heading_roots if root not in target_roots and root not in platform_roots and root != "docs"
+    }
+    return len(non_target_roots) <= 3
+
+
+def _heading_is_narrow_subsection(
+    heading: str,
+    target_roots: set[str],
+    analysis: QuestionAnalysis,
+) -> bool:
+    if not heading:
+        return False
+    heading_roots = _roots(_tokens(heading))
+    if not (heading_roots & target_roots):
+        return False
+    platform_roots = _roots(_tokens(" ".join(analysis.platform_terms)))
+    extra_roots = {
+        root for root in heading_roots if root not in target_roots and root not in platform_roots and root != "docs"
+    }
+    return len(extra_roots) >= 4
+
+
+def _has_definition_phrase(text: str, analysis: QuestionAnalysis, target_roots: set[str]) -> bool:
+    lowered = text.casefold()
+    target_terms = [
+        term
+        for term in (analysis.primary_object, *analysis.object_terms, *analysis.config_terms)
+        if _roots(_tokens(term)) & target_roots
+    ]
+    for term in target_terms:
+        clean = re.escape(str(term).strip().casefold())
+        if not clean:
+            continue
+        if re.search(
+            rf"\b{clean}\b\s+(?:is|are|means|refers\s+to|lets|allows|provides|calls|can|workflows)\b",
+            lowered,
+        ):
+            return True
+    if re.search(r"\b(?:is|are|means|refers\s+to|lets|allows|provides|calls)\b", lowered):
+        return bool(target_roots & _roots(_tokens(lowered[:260])))
+    return False
 
 
 def _query_terms(analysis: QuestionAnalysis) -> tuple[str, ...]:

@@ -203,6 +203,104 @@ def test_answer_generator_rejects_source_only_model_answer() -> None:
     assert draft.text != "(Build | n8n Docs)"
 
 
+def test_answer_generator_rejects_source_block_only_model_answer() -> None:
+    class SourceBlockOnlyLlm:
+        async def complete_text(self, messages: list[dict[str, str]]) -> str:
+            del messages
+            return (
+                "(Source: Workflow docs)\n\n"
+                "Sources:\n"
+                "- Workflow docs -- Definition (https://docs.example.com/workflows)"
+            )
+
+    analysis = QuestionAnalysis(
+        original_question="According to official docs, what is Workflow?",
+        task_type="explain",
+        conceptual=True,
+        object_terms=("Workflow",),
+        strongest_evidence_terms=("Workflow",),
+        needs_external_docs=True,
+        expected_content_types=("official_docs", "external_docs"),
+        expected_source_kinds=("external_docs",),
+    )
+    evidence = EvidencePack(
+        items=(
+            EvidenceSpan(
+                evidence_id="ev-definition",
+                document_id="doc-workflows",
+                document_title="Workflow docs",
+                locator="Workflow docs",
+                source_uri="https://docs.example.com/workflows",
+                text="Workflows are automated processes made of connected steps. They define how data moves through a task.",
+                metadata={"primary_definition_candidate": True, "evidence_order_reason": "primary_definition"},
+            ),
+        ),
+        source_matches=(
+            SourceRef(
+                document_id="doc-workflows",
+                document_title="Workflow docs",
+                locator="Workflow docs",
+                source_uri="https://docs.example.com/workflows",
+                evidence_id="ev-definition",
+            ),
+        ),
+    )
+
+    draft = asyncio.run(AnswerGenerator(SourceBlockOnlyLlm()).generate(analysis, evidence))
+
+    assert draft.model_input["generation"]["fallback_used"] is True
+    assert draft.model_input["generation"]["weak_llm_answer_reason"] == "source_label_only"
+    assert "Workflows are automated processes" in draft.text
+    assert "https://docs.example.com/workflows" not in draft.text
+
+
+def test_reranker_prefers_primary_definition_over_narrow_subsection() -> None:
+    analysis = QuestionAnalysis(
+        original_question="According to official docs, what is Workflow?",
+        task_type="explain",
+        conceptual=True,
+        object_terms=("Workflow",),
+        strongest_evidence_terms=("Workflow",),
+        needs_external_docs=True,
+        expected_content_types=("official_docs", "external_docs"),
+        expected_source_kinds=("external_docs",),
+    )
+    definition = EvidenceSpan(
+        evidence_id="definition",
+        document_id="doc-workflows",
+        document_title="Workflow docs",
+        locator="Workflow docs",
+        text=(
+            "# Workflow docs\n"
+            "Workflows are automated processes made of connected steps. "
+            "They define how data moves through a task."
+        ),
+        score=0.54,
+        metadata={"section_index": 0, "part_index": 1},
+    )
+    narrow = EvidenceSpan(
+        evidence_id="narrow-subsection",
+        document_id="doc-workflows",
+        document_title="Workflow docs",
+        locator="Credential-only workflow operations and custom settings",
+        text=(
+            "Credential-only workflow operations describe authentication settings for a narrow integration case. "
+            "Use them when a built-in operation does not cover the service."
+        ),
+        score=0.72,
+        metadata={"section_index": 3, "part_index": 1},
+    )
+
+    reranked = EvidenceReranker().rerank((narrow, definition), analysis=analysis)
+    pack = EvidencePackBuilder().build(reranked, analysis=analysis)
+
+    assert reranked[0].evidence_id == "definition"
+    assert reranked[0].metadata["primary_definition_candidate"] is True
+    assert reranked[0].metadata["evidence_order_reason"] == "primary_definition"
+    assert reranked[0].metadata["reranker_score_breakdown"]["definition_priority"] > 0
+    assert pack.items[0].evidence_id == "definition"
+
+
 def test_answer_generator_strips_decorative_markdown_from_model_answer() -> None:
     class MarkdownLlm:
         async def complete_text(self, messages: list[dict[str, str]]) -> str:
