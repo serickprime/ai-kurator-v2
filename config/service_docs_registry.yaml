@@ -1,0 +1,27 @@
+services:
+  - service_id: n8n
+    display_name: n8n
+    aliases:
+      - n8n
+      - н8н
+      - нейтн
+    docs_source: n8n_docs
+    status: enabled
+
+  - service_id: supabase
+    display_name: Supabase
+    aliases:
+      - supabase
+      - супабейс
+      - супабейз
+    docs_source: supabase_docs
+    status: enabled
+
+  - service_id: flutterflow
+    display_name: FlutterFlow
+    aliases:
+      - flutterflow
+      - flutter flow
+      - флаттерфлоу
+    docs_source: null
+    status: not_configured
