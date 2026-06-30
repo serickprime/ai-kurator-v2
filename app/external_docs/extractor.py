@@ -13,6 +13,13 @@ from app.ingestion.text_normalizer import TextNormalizer, clean_heading
 
 SKIP_TAGS = {"aside", "footer", "form", "header", "nav", "noscript", "script", "style", "svg"}
 BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "td", "th"}
+EMPTY_ANCHOR_RE = re.compile(r"\s*<a\b[^>]*>\s*</a>\s*", re.IGNORECASE)
+COPY_ONLY_FENCE_RE = re.compile(r"```\s*Copy\s*```", re.IGNORECASE)
+GENERATOR_BOILERPLATE_RE = re.compile(
+    r"\bFor the complete documentation index,\s*see\s+llms\.txt\s*\.\s*"
+    r"|\bThis page is also available as Markdown\s*\.\s*",
+    re.IGNORECASE,
+)
 
 
 class ExternalDocsExtractor:
@@ -27,7 +34,7 @@ class ExternalDocsExtractor:
         blocks = parser.blocks
         if title and (not blocks or blocks[0] != f"# {title}"):
             blocks = [f"# {title}", *blocks]
-        structured_text = TextNormalizer().normalize("\n\n".join(blocks))
+        structured_text = TextNormalizer().normalize(_strip_generated_markup_noise("\n\n".join(blocks)))
         content_hash = _content_hash(title=title, canonical_url=canonical_url, structured_text=structured_text)
         return ExtractedPage(
             source_name=page.source_name,
@@ -101,7 +108,7 @@ class _HtmlTextParser(HTMLParser):
             return
         if tag == "pre" and self._in_pre:
             code = "\n".join(line.rstrip() for line in "".join(self._code_buffer).splitlines()).strip()
-            if code:
+            if code and code.casefold() != "copy":
                 self.blocks.append(f"```\n{code}\n```")
             self._code_buffer = []
             self._in_pre = False
@@ -144,6 +151,13 @@ class _HtmlTextParser(HTMLParser):
 
 def _clean_inline(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _strip_generated_markup_noise(text: str) -> str:
+    """Remove docs-generator markup that is not useful evidence."""
+    cleaned = EMPTY_ANCHOR_RE.sub(" ", text or "")
+    cleaned = COPY_ONLY_FENCE_RE.sub(" ", cleaned)
+    return GENERATOR_BOILERPLATE_RE.sub(" ", cleaned)
 
 
 def _title_from_url(url: str) -> str:
