@@ -40,8 +40,8 @@ def format_sources(sources: Sequence[SourceRef]) -> str:
 
     label_builder = SourceLabelBuilder()
     lines = ["Источники:"]
-    for index, source in enumerate(sources, start=1):
-        lines.append(f"{index}. {label_builder.build(source)}")
+    for index, label in enumerate(label_builder.build_many(sources), start=1):
+        lines.append(f"{index}. {label}")
     return "\n".join(lines)
 
 

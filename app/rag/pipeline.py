@@ -163,7 +163,7 @@ class EvidenceFirstRagPipeline:
             "query_plan": query_plan_dict,
             "course_hint": getattr(analysis, "course_hint", ""),
             "expected_content_types": list(getattr(analysis, "expected_content_types", ())),
-            "selected_documents": [asdict(document) for document in documents],
+            "selected_documents": [_document_debug_dict(document) for document in documents],
             "rejected_documents": [],
             "answer_mode": evidence.answer_mode,
             "llm_model_attempts": generation.get("llm_model_attempts", ()),
@@ -202,7 +202,7 @@ class EvidenceFirstRagPipeline:
                 workspace_id=workspace_id,
                 question=question,
                 question_analysis=question_analysis,
-                document_candidates=[asdict(document) for document in documents],
+                document_candidates=[_document_debug_dict(document) for document in documents],
                 evidence_pack=_evidence_pack_dict(
                     evidence,
                     generation_debug=generation_debug,
@@ -255,6 +255,12 @@ def _discarded_evidence_dict(item: object) -> dict[str, object]:
         "reason": getattr(item, "reason", ""),
         "preview": getattr(item, "preview", ""),
     }
+
+
+def _document_debug_dict(document: DocumentCandidate) -> dict[str, object]:
+    row = asdict(document)
+    row["clean_label"] = SourceLabelBuilder().build_document_label(row)
+    return row
 
 
 def _generation_debug(draft: object) -> dict[str, object]:

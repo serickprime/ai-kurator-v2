@@ -14,6 +14,8 @@ if str(ROOT) not in sys.path:
 
 from app.config import get_settings  # noqa: E402
 from app.db.supabase_client import SupabaseClient  # noqa: E402
+from app.ingestion.text_normalizer import is_boilerplate_label  # noqa: E402
+from app.rag.source_labels import SourceLabelBuilder  # noqa: E402
 
 
 async def main_async() -> int:
@@ -43,6 +45,7 @@ async def main_async() -> int:
     items = [_dict(item) for item in evidence_pack.get("items") or []]
     decisions = [_dict(item) for item in evidence_pack.get("decisions") or []]
     labels = [_dict(item) for item in evidence_pack.get("source_label_debug") or []]
+    label_builder = SourceLabelBuilder()
     warnings = _warnings(row, evidence_pack)
     payload = {
         "created_at": row.get("created_at"),
@@ -51,7 +54,7 @@ async def main_async() -> int:
         "document_candidates": [
             {
                 "filename": candidate.get("filename"),
-                "title": candidate.get("title"),
+                "title": candidate.get("clean_label") or label_builder.build_document_label(candidate),
                 "score": candidate.get("score"),
                 "route": candidate.get("route"),
             }
@@ -113,7 +116,7 @@ def _looks_like_raw_dump(answer: str) -> bool:
 
 def _bad_source_label(label: str) -> bool:
     lowered = label.casefold()
-    return "название файла" in lowered or "прочее" in lowered or "unknown" in lowered
+    return is_boilerplate_label(label) or "unknown" in lowered
 
 
 def _preview(value: object, limit: int = 180) -> str:

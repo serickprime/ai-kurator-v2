@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from app.ingestion.text_normalizer import TextNormalizer, join_pdf_spans, title_from_text_or_filename
+
 
 TEXT_EXTENSIONS = {".txt", ".md", ".markdown"}
 JSON_EXTENSIONS = {".json"}
@@ -83,13 +85,11 @@ class FileLoader:
         raise UnsupportedFileTypeError(f"Unsupported file type: {path.suffix}")
 
     def _load_text(self, path: Path) -> LoadedDocument:
-        text = load_text_file(path)
+        text = TextNormalizer().normalize(load_text_file(path))
         title = _title_from_text_or_filename(text, path)
         structured_text = "\n".join(
             [
                 f"# {title}",
-                "",
-                f"Source file: {path.name}",
                 "",
                 text.strip(),
             ]
@@ -114,14 +114,13 @@ class FileLoader:
             metadata["json_valid"] = False
             metadata["json_error"] = str(exc)
             title = path.stem.replace("_", " ").replace("-", " ").strip() or path.name
+            normalized_raw = TextNormalizer().normalize(raw)
             structured_text = "\n".join(
                 [
                     f"# {title}",
                     "",
-                    f"Source file: {path.name}",
-                    "",
                     "## Raw JSON-like text",
-                    raw,
+                    normalized_raw,
                 ]
             ).strip()
             return LoadedDocument(
@@ -130,23 +129,23 @@ class FileLoader:
                 filename=path.name,
                 title=title,
                 structured_text=structured_text,
-                pages=(LoadedPage(page_number=None, text=raw, metadata={"json_valid": False}),),
+                pages=(LoadedPage(page_number=None, text=normalized_raw, metadata={"json_valid": False}),),
                 metadata=metadata,
             )
 
         if isinstance(data, dict) and isinstance(data.get("nodes"), list):
             metadata["looks_like_n8n_workflow"] = True
         title = _json_title(data) or path.stem.replace("_", " ").replace("-", " ").strip()
-        lines = [f"# {title}", "", f"Source file: {path.name}", "", "## Structured JSON"]
+        lines = [f"# {title}", "", "## Structured JSON"]
         lines.extend(_flatten_json(data))
-        structured_text = "\n".join(lines).strip()
+        structured_text = TextNormalizer().normalize("\n".join(lines))
         return LoadedDocument(
             path=path,
             source_type="json",
             filename=path.name,
             title=title,
             structured_text=structured_text,
-            pages=(LoadedPage(page_number=None, text="\n".join(lines[4:])),),
+            pages=(LoadedPage(page_number=None, text="\n".join(lines[3:])),),
             metadata=metadata,
         )
 
@@ -162,10 +161,10 @@ class FileLoader:
 
         reader = PdfReader(str(path))
         pages: list[LoadedPage] = []
-        parts = [f"# {path.stem}", "", f"Source file: {path.name}", ""]
+        parts = [f"# {path.stem}", ""]
 
         for index, page in enumerate(reader.pages, start=1):
-            text = (page.extract_text() or "").strip()
+            text = TextNormalizer().normalize(page.extract_text() or "")
             image_descriptions = await self._describe_pdf_images(page, index)
             page_parts = [f"[[page:{index}]]", f"## Page {index}"]
             if text:
@@ -176,7 +175,7 @@ class FileLoader:
             if not text and not image_descriptions:
                 page_parts.append("[No text layer extracted on this page.]")
 
-            page_text = "\n\n".join(page_parts)
+            page_text = TextNormalizer().normalize("\n\n".join(page_parts))
             pages.append(
                 LoadedPage(
                     page_number=index,
@@ -198,7 +197,7 @@ class FileLoader:
             source_type="pdf",
             filename=path.name,
             title=path.stem,
-            structured_text="\n\n".join(parts).strip(),
+            structured_text=TextNormalizer().normalize("\n\n".join(parts)),
             pages=tuple(pages),
             metadata=metadata,
         )
@@ -236,18 +235,16 @@ class FileLoader:
         if self._vision_enabled and self._vision_describer is not None:
             description = (await self._vision_describer.describe_image(path)).strip()
 
-        body = description or "Image file without a vision description."
+        body = TextNormalizer().normalize(description or "Image file without a vision description.")
         structured_text = "\n".join(
             [
                 f"# {title}",
-                "",
-                f"Source file: {path.name}",
                 "",
                 "[[page:1]]",
                 "## Image 1",
                 body,
             ]
-        )
+        ).strip()
         return LoadedDocument(
             path=path,
             source_type="image",
@@ -269,7 +266,7 @@ class FileLoader:
             return None
 
         pages: list[LoadedPage] = []
-        parts = [f"# {path.stem}", "", f"Source file: {path.name}", ""]
+        parts = [f"# {path.stem}", ""]
         metadata: dict[str, Any] = {
             "extension": ".pdf",
             "original_filename": path.name,
@@ -296,6 +293,7 @@ class FileLoader:
                         describe_images=page_number <= pages_to_process,
                         metadata=metadata,
                     )
+                    page_text = TextNormalizer().normalize(page_text)
                     if not page_text.strip():
                         page_text = "[No text layer extracted on this page.]"
                     page_body = f"[[page:{page_number}]]\n## Page {page_number}\n\n{page_text}".strip()
@@ -315,7 +313,7 @@ class FileLoader:
             source_type="pdf",
             filename=path.name,
             title=path.stem,
-            structured_text="\n\n".join(parts).strip(),
+            structured_text=TextNormalizer().normalize("\n\n".join(parts)),
             pages=tuple(pages),
             metadata=metadata,
         )
@@ -356,8 +354,8 @@ class FileLoader:
                 if description:
                     parts.append(description)
         if not parts:
-            return page.get_text("text", sort=True).strip()
-        return "\n\n".join(parts)
+            return TextNormalizer().normalize(page.get_text("text", sort=True))
+        return TextNormalizer().normalize("\n\n".join(parts))
 
     async def _describe_pymupdf_image(
         self,
@@ -425,13 +423,7 @@ def load_text_file(path: Path) -> str:
 
 
 def _title_from_text_or_filename(text: str, path: Path) -> str:
-    for line in text.splitlines():
-        clean = line.strip()
-        if clean.startswith("#"):
-            return clean.lstrip("#").strip() or path.stem
-        if clean:
-            return clean[:120]
-    return path.stem.replace("_", " ").replace("-", " ").strip() or path.name
+    return title_from_text_or_filename(text, path)
 
 
 def _json_title(data: Any) -> str | None:
@@ -470,10 +462,10 @@ def _extract_text_block(block: dict[str, Any]) -> str:
     lines: list[str] = []
     for line in block.get("lines") or []:
         spans = line.get("spans") or []
-        line_text = "".join(span.get("text") or "" for span in spans).strip()
+        line_text = join_pdf_spans(spans)
         if line_text:
             lines.append(line_text)
-    return "\n".join(lines).strip()
+    return TextNormalizer().normalize("\n".join(lines))
 
 
 def _is_significant_image_block(page: Any, bbox: list[float], min_area_ratio: float) -> bool:

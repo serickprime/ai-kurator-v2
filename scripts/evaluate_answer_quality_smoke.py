@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from app.config import get_settings  # noqa: E402
 from app.db.supabase_client import SupabaseClient  # noqa: E402
+from app.ingestion.text_normalizer import is_boilerplate_label  # noqa: E402
 
 
 async def main_async() -> int:
@@ -74,7 +75,7 @@ def _looks_like_raw_dump(answer: str) -> bool:
 
 def _bad_source_label(label: str) -> bool:
     lowered = label.casefold()
-    return "название файла" in lowered or "прочее" in lowered or "unknown" in lowered
+    return is_boilerplate_label(label) or "unknown" in lowered
 
 
 def main() -> None:

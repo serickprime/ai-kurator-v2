@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 from typing import Iterable
 
+from app.ingestion.text_normalizer import clean_heading, is_boilerplate_label
 from app.rag.types import SourceRef
 
 BAD_LABELS = {
@@ -53,6 +54,38 @@ class SourceLabelBuilder:
         if source.source_uri:
             label = f"{label} ({source.source_uri})"
         return _truncate(label, 140)
+
+    def build_many(self, sources: Iterable[SourceRef], *, max_per_document: int = 3) -> list[str]:
+        """Return deduplicated clean labels for a source list."""
+        labels: list[str] = []
+        seen_labels: set[str] = set()
+        counts_by_document: dict[str, int] = {}
+        for source in sources:
+            label = self.build(source)
+            label_key = label.casefold()
+            document_key = _document_key(source, label)
+            if label_key in seen_labels:
+                continue
+            if counts_by_document.get(document_key, 0) >= max_per_document:
+                continue
+            seen_labels.add(label_key)
+            counts_by_document[document_key] = counts_by_document.get(document_key, 0) + 1
+            labels.append(label)
+        return labels
+
+    def build_document_label(self, document: dict[str, object]) -> str:
+        """Return a clean label for selected document debug output."""
+        source = SourceRef(
+            document_id=str(document.get("document_id") or document.get("id") or ""),
+            document_title=str(document.get("title") or ""),
+            metadata={
+                "filename": document.get("filename"),
+                "course": document.get("course"),
+                "module": document.get("module"),
+                "lesson": document.get("lesson"),
+            },
+        )
+        return self.build(source)
 
     def debug(self, sources: Iterable[SourceRef]) -> list[dict[str, object]]:
         """Return compact source-label diagnostics."""
@@ -121,7 +154,7 @@ def _clean_part(value: object) -> str:
     text = re.sub(r"\s+", " ", text)
     text = text.strip(" -–—,:;")
     lowered = text.casefold()
-    if lowered in BAD_LABELS:
+    if lowered in BAD_LABELS or is_boilerplate_label(text):
         return ""
     if lowered.startswith("source file:"):
         text = text.split(":", 1)[1].strip()
@@ -129,7 +162,7 @@ def _clean_part(value: object) -> str:
         text = Path(text).name
     if text.endswith((".txt", ".md", ".pdf", ".json")):
         text = text.rsplit(".", 1)[0]
-    return text
+    return clean_heading(text)
 
 
 def _dedupe(parts: Iterable[str]) -> list[str]:
@@ -151,3 +184,11 @@ def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3].rstrip() + "..."
+
+
+def _document_key(source: SourceRef, label: str) -> str:
+    if source.document_id:
+        return source.document_id
+    metadata = source.metadata or {}
+    filename = _clean_part(metadata.get("filename") or metadata.get("source_file"))
+    return filename.casefold() or label.casefold()

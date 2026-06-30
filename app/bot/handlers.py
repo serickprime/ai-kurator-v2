@@ -33,6 +33,7 @@ from app.bot.keyboards import (
 )
 from app.bot.user_state import InMemoryBotUserStateStore, InMemoryUserSettingsRepository
 from app.db.repositories import UserSettings
+from app.rag.source_labels import SourceLabelBuilder
 
 
 class RagPipeline(Protocol):
@@ -498,7 +499,7 @@ async def _answer_intake(update: Update, services: BotServices, intake: UserInta
         state = services.state_store.get(user_id)
         state.last_debug = {
             "status": str(getattr(result, "status", "")),
-            "sources": [getattr(source, "document_title", "") for source in getattr(result, "sources", ())],
+            "sources": SourceLabelBuilder().build_many(getattr(result, "sources", ())),
             "vision_errors": list(intake.vision_errors),
             "rag": getattr(result, "debug", {}) or {},
         }
@@ -661,6 +662,7 @@ def _format_debug_summary(debug: dict[str, Any]) -> str:
                 if not isinstance(document, dict):
                     continue
                 title = document.get("title") or document.get("filename") or document.get("document_id")
+                title = document.get("clean_label") or SourceLabelBuilder().build_document_label(document) or title
                 score = document.get("score")
                 penalties = document.get("penalties") or []
                 penalty_text = f" penalties={','.join(str(item) for item in penalties[:3])}" if penalties else ""

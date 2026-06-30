@@ -47,17 +47,7 @@ def build_sources(evidence_pack: EvidencePack) -> list[str]:
     if evidence_pack.answer_mode not in {"answer_from_materials", "partial_answer"}:
         return []
 
-    label_builder = SourceLabelBuilder()
-    sources: list[str] = []
-    seen: set[str] = set()
-    for source in evidence_pack.source_matches:
-        label = label_builder.build(source)
-        key = label.casefold()
-        if key in seen:
-            continue
-        seen.add(key)
-        sources.append(label)
-    return sources
+    return SourceLabelBuilder().build_many(evidence_pack.source_matches)
 
 
 def _answer_mode(
