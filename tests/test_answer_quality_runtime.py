@@ -179,6 +179,30 @@ def test_answer_generator_prompt_still_excludes_raw_candidates() -> None:
     assert "must not enter" not in prompt
 
 
+def test_answer_generator_rejects_source_only_model_answer() -> None:
+    class SourceOnlyLlm:
+        async def complete_text(self, messages: list[dict[str, str]]) -> str:
+            del messages
+            return "(Build | n8n Docs)"
+
+    evidence = EvidencePack(
+        items=(
+            EvidenceSpan(
+                evidence_id="ev-1",
+                document_id="doc-1",
+                document_title="Build | n8n Docs",
+                text="Build workflows in n8n, from first draft to production. Use this space to learn workflow basics.",
+            ),
+        )
+    )
+
+    draft = asyncio.run(AnswerGenerator(SourceOnlyLlm()).generate(_setup_analysis(), evidence))
+
+    assert draft.model_input["generation"]["fallback_used"] is True
+    assert "Build workflows in n8n" in draft.text
+    assert draft.text != "(Build | n8n Docs)"
+
+
 def test_answer_generator_strips_decorative_markdown_from_model_answer() -> None:
     class MarkdownLlm:
         async def complete_text(self, messages: list[dict[str, str]]) -> str:

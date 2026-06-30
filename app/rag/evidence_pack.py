@@ -8,6 +8,29 @@ from app.rag.source_labels import SourceLabelBuilder
 from app.rag.types import EvidenceDecision, EvidencePack, EvidenceSpan, QuestionAnalysis, SourceRef
 
 TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
+_EXTERNAL_DOC_TYPES = {"official_docs", "external_docs"}
+_STRICT_OBJECT_STOPWORDS = {
+    "according",
+    "current",
+    "docs",
+    "documentation",
+    "external",
+    "official",
+    "latest",
+    "work",
+    "works",
+    "working",
+    "документации",
+    "документация",
+    "документ",
+    "официальная",
+    "официальной",
+    "официальные",
+    "работает",
+    "работа",
+    "последней",
+    "последняя",
+}
 
 
 class EvidencePackBuilder:
@@ -93,6 +116,8 @@ def _source_matches(
 def _has_uncovered_points(selected: tuple[EvidenceSpan, ...], analysis: QuestionAnalysis) -> bool:
     if not analysis.must_answer_points:
         return False
+    if _external_docs_object_is_covered(selected, analysis):
+        return False
     evidence_text = " ".join(span.text.lower() for span in selected)
     covered = 0
     for point in analysis.must_answer_points:
@@ -100,6 +125,12 @@ def _has_uncovered_points(selected: tuple[EvidenceSpan, ...], analysis: Question
         if any(term[:5] in evidence_text for term in point_terms):
             covered += 1
     return covered < max(1, len(analysis.must_answer_points) // 2)
+
+
+def _external_docs_object_is_covered(selected: tuple[EvidenceSpan, ...], analysis: QuestionAnalysis) -> bool:
+    if not _expects_external_docs(analysis) or not _strict_object_roots(analysis):
+        return False
+    return any(_is_external_doc_span(span) and not _missing_external_docs_object_coverage(span, analysis) for span in selected)
 
 
 def _select_spans(
@@ -229,6 +260,17 @@ def _decision_for_span(
     if span.is_source:
         reasons.append("marked_as_source")
 
+    if _missing_external_docs_object_coverage(span, analysis):
+        return _decision(
+            span,
+            "discarded",
+            [
+                *reasons,
+                "missing_exact_object_evidence",
+                "missing_external_docs_object_coverage",
+                "broad_official_doc_without_requested_object",
+            ],
+        )
     if _misses_object(span, analysis):
         return _decision(span, "discarded", [*reasons, "missing_object_terms"])
     if _content_type_mismatch(span, analysis):
@@ -303,6 +345,76 @@ def _has_strong_term(
     return term_scorer.has_strong_evidence_match(analysis, text)
 
 
+def _missing_external_docs_object_coverage(span: EvidenceSpan, analysis: QuestionAnalysis) -> bool:
+    if not _expects_external_docs(analysis) or not _is_external_doc_span(span):
+        return False
+    required_roots = _strict_object_roots(analysis)
+    if not required_roots:
+        return False
+    text_roots = _roots(_tokens(" ".join([span.document_title, span.locator or "", span.text])))
+    return not required_roots.issubset(text_roots)
+
+
+def _expects_external_docs(analysis: QuestionAnalysis) -> bool:
+    expected_types = {
+        _normalize_content_label(value)
+        for value in (
+            *analysis.expected_content_types,
+            *analysis.source_priority,
+            *analysis.expected_source_kinds,
+        )
+    }
+    return bool(
+        analysis.needs_official_docs
+        or analysis.needs_external_docs
+        or expected_types & _EXTERNAL_DOC_TYPES
+    )
+
+
+def _is_external_doc_span(span: EvidenceSpan) -> bool:
+    metadata = span.metadata or {}
+    values: list[object] = []
+    for key in ("source_kind", "content_type", "content_types", "material_type", "source_type"):
+        value = metadata.get(key)
+        if isinstance(value, list):
+            values.extend(value)
+        elif value:
+            values.append(value)
+    return bool({_normalize_content_label(value) for value in values} & _EXTERNAL_DOC_TYPES)
+
+
+def _strict_object_roots(analysis: QuestionAnalysis) -> set[str]:
+    blocked_roots = _roots(
+        _tokens(
+            " ".join(
+                [
+                    *analysis.platform_terms,
+                    *analysis.generic_terms,
+                    *analysis.common_terms,
+                    *analysis.ignored_weak_terms,
+                    analysis.requested_action,
+                    " ".join(_STRICT_OBJECT_STOPWORDS),
+                ]
+            )
+        )
+    )
+    terms = term_scoring.dedupe(
+        [
+            *analysis.config_terms,
+            *analysis.object_terms,
+            *analysis.exact_terms,
+            *analysis.rare_anchor_terms,
+        ],
+        limit=16,
+    )
+    roots: set[str] = set()
+    for term in terms:
+        term_roots = _roots(_tokens(term))
+        useful_roots = {root for root in term_roots if root and root not in blocked_roots and len(root) >= 3}
+        roots.update(useful_roots)
+    return roots
+
+
 def _too_generic(span: EvidenceSpan, analysis: QuestionAnalysis) -> bool:
     metadata = span.metadata or {}
     reranker = metadata.get("reranker_score_breakdown") if isinstance(metadata.get("reranker_score_breakdown"), dict) else {}
@@ -368,6 +480,10 @@ def _content_type_mismatch(span: EvidenceSpan, analysis: QuestionAnalysis) -> bo
             values.append(value)
     actual = {re.sub(r"[\s-]+", "_", str(value).strip().casefold()) for value in values if str(value).strip()}
     return bool(actual and not (actual & expected))
+
+
+def _normalize_content_label(value: object) -> str:
+    return re.sub(r"[\s-]+", "_", str(value or "").strip().casefold())
 
 
 def _selected_status(span: EvidenceSpan) -> str:

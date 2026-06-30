@@ -77,7 +77,7 @@ async def generate_answer(
 
     if evidence_pack.answer_mode == "out_of_base":
         return AnswerDraft(
-            text=_out_of_base_answer(),
+            text=_out_of_base_answer(question_analysis),
             status=AnswerStatus.NEEDS_CLARIFICATION,
             answer_mode=evidence_pack.answer_mode,
             model_input={"messages": messages, "generation": _generation_metadata(None)},
@@ -96,7 +96,7 @@ async def generate_answer(
         try:
             text = _clean_model_answer(await _complete_text(llm_client, messages, dialog_context)).strip()
             generation_debug = _generation_metadata(llm_client)
-            if text:
+            if text and not _looks_like_source_only_answer(text):
                 return AnswerDraft(
                     text=text,
                     status=_status_for_mode(evidence_pack.answer_mode),
@@ -186,7 +186,7 @@ def _fallback_answer(analysis: QuestionAnalysis, evidence: EvidencePack) -> str:
     if evidence.answer_mode == "partial_answer":
         return _partial_answer(analysis, evidence)
     if evidence.answer_mode == "out_of_base":
-        return _out_of_base_answer()
+        return _out_of_base_answer(analysis)
     if evidence.is_empty:
         return _ask_for_missing_data(analysis, evidence)
     return _answer_from_materials(analysis, evidence)
@@ -199,6 +199,27 @@ def _clean_model_answer(text: str) -> str:
     clean = re.sub(r"(?m)^\s{0,3}>\s?", "", clean)
     clean = re.sub(r"(?m)^1\.\s+(?=2\.)", "", clean)
     return clean.strip()
+
+
+def _looks_like_source_only_answer(text: str) -> bool:
+    clean = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not clean:
+        return False
+    lowered = clean.casefold()
+    if len(clean) <= 120 and ("docs" in lowered or "источник" in lowered or "source" in lowered or "http" in lowered):
+        meaningful = [
+            token
+            for token in re.findall(r"[\w#+.-]{2,}", lowered, flags=re.UNICODE)
+            if token not in {"docs", "source", "sources", "источник", "источники", "http", "https"}
+        ]
+        if len(meaningful) <= 5:
+            return True
+    source_lines = [
+        line.strip()
+        for line in clean.splitlines()
+        if line.strip().casefold().startswith(("источник", "источники", "source", "sources", "- http", "- https"))
+    ]
+    return bool(source_lines and len(source_lines) == len([line for line in clean.splitlines() if line.strip()]))
 
 
 def _answer_from_materials(analysis: QuestionAnalysis, evidence: EvidencePack) -> str:
@@ -236,8 +257,52 @@ def _ask_for_missing_data(analysis: QuestionAnalysis, evidence: EvidencePack) ->
     return "Нужно уточнить: " + ", ".join(missing) + "."
 
 
-def _out_of_base_answer() -> str:
+def _out_of_base_answer(analysis: QuestionAnalysis | None = None) -> str:
+    if analysis is not None and _expects_indexed_external_docs(analysis):
+        target = _missing_target_label(analysis)
+        if target:
+            return f"В проиндексированной официальной документации пока не нашел подтвержденного фрагмента про {target}."
+        return "В проиндексированной официальной документации пока не нашел подтвержденного фрагмента по этому вопросу."
     return "В материалах не нашел подтвержденного фрагмента по этому вопросу."
+
+
+def _expects_indexed_external_docs(analysis: QuestionAnalysis) -> bool:
+    expected = {
+        re.sub(r"[\s-]+", "_", str(value or "").strip().casefold())
+        for value in (
+            *analysis.expected_content_types,
+            *analysis.source_priority,
+            *analysis.expected_source_kinds,
+        )
+    }
+    return bool(analysis.needs_official_docs or analysis.needs_external_docs or expected & {"official_docs", "external_docs"})
+
+
+def _missing_target_label(analysis: QuestionAnalysis) -> str:
+    blocked = {
+        "according",
+        "docs",
+        "documentation",
+        "external",
+        "official",
+        "work",
+        "works",
+        "документации",
+        "документация",
+        "официальная",
+        "официальной",
+        "работает",
+    }
+    platform_terms = {item.casefold() for item in analysis.platform_terms}
+    terms: list[str] = []
+    for term in (*analysis.config_terms, *analysis.object_terms):
+        clean = str(term or "").strip()
+        if not clean:
+            continue
+        if clean.casefold() in blocked or clean.casefold() in platform_terms:
+            continue
+        terms.append(clean)
+    return " ".join(dict.fromkeys(terms[:4]))
 
 
 def _general_answer(analysis: QuestionAnalysis) -> str:

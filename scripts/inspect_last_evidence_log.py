@@ -44,6 +44,7 @@ async def main_async() -> int:
     generation = _dict(evidence_pack.get("generation"))
     items = [_dict(item) for item in evidence_pack.get("items") or []]
     decisions = [_dict(item) for item in evidence_pack.get("decisions") or []]
+    discarded_decisions = [_dict(item) for item in evidence_pack.get("discarded_decisions") or []]
     labels = [_dict(item) for item in evidence_pack.get("source_label_debug") or []]
     label_builder = SourceLabelBuilder()
     warnings = _warnings(row, evidence_pack)
@@ -77,7 +78,16 @@ async def main_async() -> int:
                 "reasons": decision.get("reasons"),
                 "score": decision.get("score"),
             }
-            for decision in decisions
+            for decision in [*decisions, *discarded_decisions]
+        ],
+        "discarded_decisions": [
+            {
+                "evidence_id": decision.get("evidence_id"),
+                "status": decision.get("status"),
+                "reasons": decision.get("reasons"),
+                "score": decision.get("score"),
+            }
+            for decision in discarded_decisions
         ],
         "source_labels": [label.get("label") for label in labels],
         "final_sources": row.get("final_sources") or [],

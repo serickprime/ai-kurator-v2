@@ -207,6 +207,11 @@ class EvidenceFirstRagPipeline:
                     evidence,
                     generation_debug=generation_debug,
                     source_label_debug=source_label_debug,
+                    discarded_decisions=[
+                        decision
+                        for decision in getattr(self._pack_builder, "last_decisions", ())
+                        if getattr(decision, "status", "") == "discarded"
+                    ],
                 ),
                 final_answer=final_answer,
                 final_sources=final_sources,
@@ -221,6 +226,7 @@ def _evidence_pack_dict(
     *,
     generation_debug: dict[str, object] | None = None,
     source_label_debug: list[dict[str, object]] | None = None,
+    discarded_decisions: list[object] | None = None,
 ) -> dict[str, object]:
     return {
         "answer_mode": evidence.answer_mode,
@@ -228,6 +234,7 @@ def _evidence_pack_dict(
         "source_matches": [asdict(source) for source in evidence.source_matches],
         "missing_requirements": list(evidence.missing_requirements),
         "decisions": [asdict(decision) for decision in evidence.decisions],
+        "discarded_decisions": [_decision_log_dict(decision) for decision in discarded_decisions or []],
         "generation": generation_debug or {},
         "source_label_debug": source_label_debug or [],
     }
@@ -245,6 +252,12 @@ def _decision_dict(decision: object) -> dict[str, object]:
             "document_id": getattr(decision, "document_id", ""),
             "preview": getattr(decision, "preview", ""),
         }
+
+
+def _decision_log_dict(decision: object) -> dict[str, object]:
+    row = _decision_dict(decision)
+    row.pop("preview", None)
+    return row
 
 
 def _discarded_evidence_dict(item: object) -> dict[str, object]:

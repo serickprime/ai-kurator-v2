@@ -302,6 +302,45 @@ def test_evidence_pack_records_decisions_and_sources_only_selected_items() -> No
     assert all(decision.status != "discarded" for decision in pack.decisions)
 
 
+def test_broad_external_landing_page_without_requested_object_is_not_sufficient() -> None:
+    analysis = QuestionAnalysis(
+        original_question="According to official docs, how does test webhook work?",
+        needs_official_docs=True,
+        needs_external_docs=True,
+        expected_content_types=("official_docs", "external_docs"),
+        expected_source_kinds=("external_docs",),
+        object_terms=("test", "webhook"),
+    )
+    chunk_store = RecordingChunkStore(
+        [
+            EvidenceChunkRecord(
+                chunk_id="broad-doc",
+                document_id="external-build",
+                document_title="Build docs",
+                heading="Foundations",
+                content="Build workflows and test the data moving through workflows.",
+                score=0.9,
+                metadata={
+                    "source_kind": "external_docs",
+                    "content_type": ["official_docs", "external_docs"],
+                    "source_uri": "https://docs.example.com/build",
+                },
+            )
+        ]
+    )
+    documents = (DocumentCandidate(document_id="external-build", title="Build docs", score=0.9),)
+
+    spans = asyncio.run(EvidenceRetriever(chunk_store=chunk_store, workspace_id="ws").retrieve(analysis, documents))
+    builder = EvidencePackBuilder()
+    pack = builder.build(spans, analysis=analysis)
+
+    assert spans
+    assert pack.answer_mode == "out_of_base"
+    assert pack.sources() == ()
+    assert build_sources(pack) == []
+    assert any("broad_official_doc_without_requested_object" in decision.reasons for decision in builder.last_decisions)
+
+
 def test_no_evidence_modes_do_not_create_fake_sources() -> None:
     analysis = QuestionAnalysis(original_question="Unknown question", source_required=True)
     pack = EvidencePackBuilder().build((), analysis=analysis)

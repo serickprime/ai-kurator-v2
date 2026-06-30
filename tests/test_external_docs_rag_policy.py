@@ -1,8 +1,10 @@
+import asyncio
 from types import SimpleNamespace
 
 from app.external_docs.policy import freshness_required, should_use_external_docs
+from app.rag.answer_generator import generate_answer
 from app.rag.question_analysis import QuestionAnalyzer
-from app.rag.types import EvidencePack, EvidenceSpan, QuestionAnalysis
+from app.rag.types import AnswerStatus, EvidencePack, EvidenceSpan, QuestionAnalysis
 
 
 def test_local_evidence_has_priority_over_external_docs() -> None:
@@ -43,3 +45,22 @@ def test_question_analysis_keeps_course_material_questions_local_first() -> None
 
     assert not analysis.needs_external_docs
     assert not freshness_required(analysis.original_question)
+
+
+def test_external_out_of_base_answer_mentions_indexed_docs_object() -> None:
+    analysis = QuestionAnalysis(
+        original_question="According to official docs, how does Custom Widget work?",
+        needs_official_docs=True,
+        needs_external_docs=True,
+        expected_content_types=("official_docs", "external_docs"),
+        expected_source_kinds=("external_docs",),
+        object_terms=("Custom", "Widget"),
+    )
+    evidence = EvidencePack(answer_mode="out_of_base")
+
+    draft = asyncio.run(generate_answer(analysis, evidence))
+
+    assert draft.status == AnswerStatus.NEEDS_CLARIFICATION
+    assert draft.answer_mode == "out_of_base"
+    assert "Custom Widget" in draft.text
+    assert "проиндексированной официальной документации" in draft.text
