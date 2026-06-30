@@ -185,4 +185,5 @@ def _record(row: dict[str, Any]) -> DocumentRecord:
         version=int(row["version"]),
         status=str(row["status"]),
         content_hash=str(row["content_hash"]),
+        metadata=row.get("metadata") if isinstance(row.get("metadata"), dict) else {},
     )

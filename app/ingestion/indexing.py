@@ -14,6 +14,7 @@ from app.ingestion.document_cards import DocumentCardBuilder
 from app.ingestion.loaders import FileLoader, LoadedDocument, is_supported_file
 
 LOGGER = logging.getLogger(__name__)
+INGESTION_PIPELINE_VERSION = "text-cleanup-2026-06-30"
 
 
 class EmbeddingClient(Protocol):
@@ -142,13 +143,18 @@ class IndexingService:
         path = path.resolve()
         loaded = await self._loader.load(path)
         content_hash = file_content_hash(path)
+        ingestion_signature = ingestion_content_hash(loaded)
         key = document_key or _document_key(path)
 
         workspace_row = await self._repository.get_or_create_workspace(workspace)
         workspace_id = str(workspace_row["id"])
 
         active = await self._repository.get_active_document(workspace_id, key)
-        if active is not None and active.content_hash == content_hash:
+        if (
+            active is not None
+            and active.content_hash == content_hash
+            and _active_matches_ingestion_signature(active, ingestion_signature)
+        ):
             return IngestionResult(
                 path=path,
                 document_id=active.id,
@@ -177,7 +183,7 @@ class IndexingService:
             version=version,
             status="draft",
             content_hash=content_hash,
-            metadata=_document_metadata(loaded),
+            metadata=_document_metadata(loaded, ingestion_signature=ingestion_signature),
         )
 
         card_embedding = await self._embedding_client.embed(card.to_embedding_text())
@@ -264,18 +270,47 @@ def file_content_hash(path: Path) -> str:
     return digest.hexdigest()
 
 
+def ingestion_content_hash(document: LoadedDocument) -> str:
+    """Return SHA-256 hash for the text that will actually be indexed."""
+    digest = hashlib.sha256()
+    for value in (
+        INGESTION_PIPELINE_VERSION,
+        document.source_type,
+        document.title,
+        document.structured_text,
+    ):
+        digest.update(b"\0")
+        digest.update(str(value or "").encode("utf-8", errors="replace"))
+    return digest.hexdigest()
+
+
+def _active_matches_ingestion_signature(active: DocumentRecord, ingestion_signature: str) -> bool:
+    ingestion = active.metadata.get("ingestion") if isinstance(active.metadata, dict) else None
+    if not isinstance(ingestion, dict):
+        return False
+    return (
+        ingestion.get("pipeline_version") == INGESTION_PIPELINE_VERSION
+        and ingestion.get("signature") == ingestion_signature
+    )
+
+
 def _document_key(path: Path, base_path: Path | None = None) -> str:
     if base_path is None:
         return path.name
     return path.resolve().relative_to(base_path.resolve()).as_posix()
 
 
-def _document_metadata(document: LoadedDocument) -> dict[str, object]:
+def _document_metadata(document: LoadedDocument, *, ingestion_signature: str) -> dict[str, object]:
     return {
         "path": str(document.path),
         "source_type": document.source_type,
         "loader": document.metadata,
         "page_count": len(document.pages),
+        "ingestion": {
+            "pipeline_version": INGESTION_PIPELINE_VERSION,
+            "signature": ingestion_signature,
+            "signature_source": "structured_text",
+        },
     }
 
 

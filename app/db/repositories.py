@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +25,7 @@ class DocumentRecord:
     version: int
     status: str
     content_hash: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -84,7 +85,7 @@ class DocumentRepository:
         rows = await self._client.select(
             "documents",
             params={
-                "select": "id,version,status,content_hash",
+                "select": "id,version,status,content_hash,metadata",
                 "workspace_id": f"eq.{workspace_id}",
                 "document_key": f"eq.{document_key}",
                 "order": "version.desc",
@@ -102,7 +103,7 @@ class DocumentRepository:
         rows = await self._client.select(
             "documents",
             params={
-                "select": "id,version,status,content_hash",
+                "select": "id,version,status,content_hash,metadata",
                 "workspace_id": f"eq.{workspace_id}",
                 "document_key": f"eq.{document_key}",
                 "status": "eq.active",
@@ -489,11 +490,13 @@ class EvidenceLogRepository:
 
 
 def _document_record(row: dict[str, Any]) -> DocumentRecord:
+    metadata = row.get("metadata")
     return DocumentRecord(
         id=str(row["id"]),
         version=int(row["version"]),
         status=str(row["status"]),
         content_hash=str(row["content_hash"]),
+        metadata=metadata if isinstance(metadata, dict) else {},
     )
 
 
