@@ -1,6 +1,6 @@
 import asyncio
 
-from app.rag.evidence_retriever import EvidenceChunkRecord, EvidenceRetriever
+from app.rag.evidence_retriever import EvidenceChunkRecord, EvidenceRetriever, SupabaseEvidenceChunkStore
 from app.rag.question_analysis import QuestionAnalyzer
 from app.rag.types import DocumentCandidate
 
@@ -23,6 +23,40 @@ class FakeChunkStore:
         self.calls.append(document_ids)
         allowed = set(document_ids)
         return [record for record in self.records if record.document_id in allowed]
+
+
+class FakeSupabaseClient:
+    def __init__(self) -> None:
+        self.select_calls: list[tuple[str, dict[str, str]]] = []
+
+    async def rpc(self, name: str, payload: dict[str, object]) -> list[dict[str, object]]:
+        del payload
+        assert name == "hybrid_match_chunks_in_documents"
+        return [
+            {
+                "chunk_id": "chunk-1",
+                "document_id": "doc-1",
+                "section_id": "section-1",
+                "content": "Test webhook documentation.",
+                "heading": "Test webhook",
+                "score": 0.9,
+                "vector_score": 0.9,
+            }
+        ]
+
+    async def select(self, table: str, params: dict[str, str]) -> list[dict[str, object]]:
+        self.select_calls.append((table, params))
+        assert table == "chunks"
+        return [
+            {
+                "id": "chunk-1",
+                "metadata": {
+                    "source_kind": "external_docs",
+                    "source_uri": "https://docs.n8n.io/webhooks/test",
+                    "canonical_url": "https://docs.n8n.io/webhooks/test",
+                },
+            }
+        ]
 
 
 def test_evidence_retriever_uses_narrow_top_document_for_regular_questions() -> None:
@@ -77,3 +111,22 @@ def test_evidence_retriever_discards_chunks_without_question_object() -> None:
     assert spans == ()
     assert retriever.last_discarded
     assert retriever.last_discarded[0].reason == "missing primary object terms"
+
+
+def test_supabase_chunk_store_enriches_rpc_rows_with_chunk_metadata() -> None:
+    client = FakeSupabaseClient()
+    store = SupabaseEvidenceChunkStore(client)
+
+    records = asyncio.run(
+        store.match_chunks(
+            workspace_id="workspace-1",
+            document_ids=("doc-1",),
+            query_text="test webhook",
+            query_embedding=None,
+            match_count=5,
+        )
+    )
+
+    assert client.select_calls
+    assert records[0].source_uri == "https://docs.n8n.io/webhooks/test"
+    assert records[0].metadata["source_kind"] == "external_docs"

@@ -164,7 +164,51 @@ class SupabaseEvidenceChunkStore:
                     match_count=match_count,
                 )
 
+        rows = await self._enrich_chunk_rows(rows)
         return [_record_from_row(row) for row in rows]
+
+    async def _enrich_chunk_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Add chunk metadata omitted by match RPCs, keeping RPC failures non-fatal."""
+        chunk_ids = [_chunk_row_id(row) for row in rows]
+        chunk_ids = [chunk_id for chunk_id in dict.fromkeys(chunk_ids) if chunk_id]
+        if not chunk_ids:
+            return rows
+        try:
+            chunk_rows = await self._client.select(
+                "chunks",
+                params={
+                    "select": "id,metadata",
+                    "id": f"in.({','.join(chunk_ids)})",
+                    "limit": str(len(chunk_ids)),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - metadata improves labels but must not break retrieval
+            LOGGER.warning("chunk metadata enrichment failed: %s", exc)
+            return rows
+
+        metadata_by_id = {
+            str(row.get("id") or ""): row.get("metadata")
+            for row in chunk_rows
+            if str(row.get("id") or "")
+        }
+        enriched: list[dict[str, Any]] = []
+        for row in rows:
+            metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+            chunk_metadata = metadata_by_id.get(_chunk_row_id(row))
+            if isinstance(chunk_metadata, dict):
+                merged_metadata = {**chunk_metadata, **metadata}
+            else:
+                merged_metadata = dict(metadata)
+            enriched_row = dict(row)
+            enriched_row["metadata"] = merged_metadata
+            enriched_row.setdefault(
+                "source_uri",
+                merged_metadata.get("source_uri")
+                or merged_metadata.get("canonical_url")
+                or merged_metadata.get("source_url"),
+            )
+            enriched.append(enriched_row)
+        return enriched
 
     async def _select_scoped_chunks(
         self,
@@ -489,7 +533,13 @@ def _record_from_row(row: dict[str, Any]) -> EvidenceChunkRecord:
         document_title=str(row.get("document_title") or row.get("title") or row.get("filename") or ""),
         heading=_optional_str(row.get("heading")),
         page=_int_or_none(row.get("page")),
-        source_uri=_optional_str(row.get("source_uri") or row.get("source_url") or metadata.get("source_uri")),
+        source_uri=_optional_str(
+            row.get("source_uri")
+            or row.get("source_url")
+            or metadata.get("source_uri")
+            or metadata.get("canonical_url")
+            or metadata.get("source_url")
+        ),
         vector_score=_float(row.get("vector_score")),
         text_score=_float(row.get("text_score")),
         trigram_score=_float(row.get("trigram_score")),
@@ -743,6 +793,10 @@ def _score_breakdown(row: dict[str, Any]) -> dict[str, float]:
             parsed[str(key)] = _float(value)
         return parsed
     return {}
+
+
+def _chunk_row_id(row: dict[str, Any]) -> str:
+    return str(row.get("chunk_id") or row.get("id") or "")
 
 
 def _int_or_none(value: Any) -> int | None:
