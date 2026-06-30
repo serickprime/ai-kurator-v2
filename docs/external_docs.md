@@ -74,6 +74,51 @@ The status command shows configured sources, indexed document counts, active and
 archived counts, latest crawl time, latest content hash, and warnings for empty
 sources.
 
+## Automated Quality Gate
+
+Use the validator after every controlled sync. It reads already indexed active
+external docs from Supabase and does not crawl new pages.
+
+Validate one source:
+
+```powershell
+cd D:\Downloads\ai-kurator-v2; .\.venv\Scripts\python.exe scripts\external_docs_validate.py --source n8n_docs --sample 10
+```
+
+Validate all configured sources:
+
+```powershell
+cd D:\Downloads\ai-kurator-v2; .\.venv\Scripts\python.exe scripts\external_docs_validate.py --all --sample 10
+```
+
+Machine-readable output:
+
+```powershell
+cd D:\Downloads\ai-kurator-v2; .\.venv\Scripts\python.exe scripts\external_docs_validate.py --source n8n_docs --json
+```
+
+The gate reports `QUALITY: PASS`, `QUALITY: WARN`, or `QUALITY: FAIL`.
+
+`FAIL` means the source should not be expanded until the extractor/config is
+fixed. Failures include raw HTML in chunks, active docs without
+`source_url`/`canonical_url`, duplicate active document keys/canonical URLs,
+empty chunks, or source labels without URLs.
+
+`WARN` means the source can be reviewed with the printed samples before
+expanding. Warnings include high title-only chunk ratio, high very-short chunk
+ratio, high archived/active ratio, navigation/footer/generator markers,
+suspicious huge chunks, or zero preserved code blocks for a technical docs
+source.
+
+Recommended workflow for every new source:
+
+1. Add the source to `config\external_docs.yaml`.
+2. Run a small sync, for example `--limit 10`.
+3. Run `scripts\external_docs_validate.py --source <source_name> --sample 10`.
+4. If `PASS`, expand to `--limit 25` or `--limit 50`.
+5. If `WARN`, review the samples before expanding.
+6. If `FAIL`, fix the extractor or whitelist config before expanding.
+
 ## Metadata
 
 External docs are stored in existing tables using metadata:
