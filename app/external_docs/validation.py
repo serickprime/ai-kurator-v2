@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import re
 from typing import Any, Iterable, Literal
 
+from app.external_docs.chunk_quality import has_protected_technical_content, without_fenced_code
 from app.rag.source_labels import SourceLabelBuilder
 from app.rag.types import SourceRef
 
@@ -264,7 +265,7 @@ def _matching_chunks(
 
 
 def _has_raw_html(text: str) -> bool:
-    return bool(RAW_HTML_RE.search(_without_fenced_code(text)))
+    return bool(RAW_HTML_RE.search(without_fenced_code(text)))
 
 
 def _has_nav_footer_noise(text: str) -> bool:
@@ -281,10 +282,14 @@ def _has_generator_boilerplate(text: str) -> bool:
 
 
 def _is_very_short(text: str) -> bool:
+    if has_protected_technical_content(text):
+        return False
     return 0 < _useful_word_count(text) < VERY_SHORT_USEFUL_WORDS
 
 
 def _is_title_only(text: str, heading: str) -> bool:
+    if has_protected_technical_content(text):
+        return False
     if not heading.strip():
         return False
     normalized_text = _normalize_for_compare(text)
@@ -300,6 +305,8 @@ def _is_title_only(text: str, heading: str) -> bool:
 def _lacks_useful_text(text: str) -> bool:
     if not text.strip():
         return True
+    if has_protected_technical_content(text):
+        return False
     return _useful_word_count(text) < MIN_USEFUL_WORDS
 
 
@@ -348,7 +355,3 @@ def _normalize_for_compare(text: str) -> str:
 
 def _useful_word_count(text: str) -> int:
     return len([token for token in TOKEN_RE.findall(text) if len(token.strip("#.")) >= 2])
-
-
-def _without_fenced_code(text: str) -> str:
-    return re.sub(r"```.*?```", " ", str(text or ""), flags=re.DOTALL)

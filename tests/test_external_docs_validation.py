@@ -1,5 +1,6 @@
 import json
 
+from app.external_docs.chunk_quality import is_low_value_external_chunk
 from app.external_docs.validation import validate_external_docs
 
 
@@ -42,6 +43,26 @@ def test_external_docs_validation_allows_html_inside_fenced_code() -> None:
     assert result.quality == "PASS"
     assert result.metrics["raw_html_count"] == 0
     assert result.metrics["code_blocks_count"] == 1
+
+
+def test_external_docs_validation_does_not_warn_for_short_technical_chunks() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", "###### Terminal\n\n```\nnpm run dev\n```", heading="Terminal")],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["very_short_chunks"] == 0
+    assert result.metrics["chunks_without_useful_text"] == 0
+
+
+def test_external_docs_chunk_quality_is_source_agnostic() -> None:
+    assert is_low_value_external_chunk("### AI Tools", heading="AI Tools")
+    assert is_low_value_external_chunk("###### Project URL\n\nNo project found", heading="Project URL")
+    assert not is_low_value_external_chunk("```\nnpm run dev\n```", heading="Terminal")
+    assert not is_low_value_external_chunk("GET /rest/v1/items", heading="API")
+    assert not is_low_value_external_chunk("PUBLIC_API_URL=https://docs.example.com", heading="Config")
 
 
 def test_external_docs_validation_duplicate_active_versions_fail() -> None:

@@ -9,6 +9,7 @@ import re
 from urllib.parse import urlparse
 
 from app.db.repositories import DocumentRecord
+from app.external_docs.chunk_quality import is_low_value_external_chunk
 from app.external_docs.types import EXTERNAL_DOCS_VERSION, ExternalDocSource, ExternalDocsIndexResult, ExtractedPage
 from app.ingestion.chunker import ChunkDraft, ParentChildChunker, SectionDraft
 from app.ingestion.document_cards import DocumentCardBuilder
@@ -48,6 +49,9 @@ class ExternalDocsRepositoryProtocol:
 
     async def refresh_term_statistics(self, workspace_id: str) -> int:
         """Refresh term statistics."""
+
+
+EXTERNAL_CHUNK_QUALITY_VERSION = "external-chunk-quality-v1"
 
 
 class ExternalDocsIndexer:
@@ -99,7 +103,8 @@ class ExternalDocsIndexer:
         external_metadata = _external_metadata(page, source, signature=signature)
 
         sections = tuple(_section_with_metadata(section, external_metadata) for section in self._chunker.split_sections(loaded))
-        chunks = tuple(_chunk_with_metadata(chunk, external_metadata) for chunk in self._chunker.split_chunks(sections))
+        raw_chunks = tuple(_chunk_with_metadata(chunk, external_metadata) for chunk in self._chunker.split_chunks(sections))
+        chunks = _filter_low_value_chunks(raw_chunks)
         card = await self._card_builder.build(loaded, sections)
         card = replace(
             card,
@@ -206,7 +211,7 @@ def _loaded_document(page: ExtractedPage, source: ExternalDocSource) -> LoadedDo
 
 
 def _external_metadata(page: ExtractedPage, source: ExternalDocSource, *, signature: str) -> dict[str, object]:
-    return {
+        return {
         **page.metadata,
         "source_kind": "external_docs",
         "source_name": source.name,
@@ -218,6 +223,7 @@ def _external_metadata(page: ExtractedPage, source: ExternalDocSource, *, signat
         "content_hash": page.content_hash,
         "freshness_status": "fresh",
         "external_docs_version": EXTERNAL_DOCS_VERSION,
+        "external_chunk_quality_version": EXTERNAL_CHUNK_QUALITY_VERSION,
         "content_type": ["official_docs", "external_docs"],
         "content_types": ["official_docs", "external_docs"],
         "ingestion": {
@@ -236,9 +242,24 @@ def _chunk_with_metadata(chunk: ChunkDraft, metadata: dict[str, object]) -> Chun
     return replace(chunk, metadata={**chunk.metadata, **metadata})
 
 
+def _filter_low_value_chunks(chunks: tuple[ChunkDraft, ...]) -> tuple[ChunkDraft, ...]:
+    kept: list[ChunkDraft] = []
+    for chunk in chunks:
+        if is_low_value_external_chunk(chunk.content, heading=chunk.heading):
+            continue
+        kept.append(replace(chunk, chunk_index=len(kept)))
+    return tuple(kept) or chunks
+
+
 def _external_signature(page: ExtractedPage) -> str:
     digest = sha256()
-    for value in (EXTERNAL_DOCS_VERSION, page.canonical_url, page.content_hash, page.structured_text):
+    for value in (
+        EXTERNAL_DOCS_VERSION,
+        EXTERNAL_CHUNK_QUALITY_VERSION,
+        page.canonical_url,
+        page.content_hash,
+        page.structured_text,
+    ):
         digest.update(b"\0")
         digest.update(str(value or "").encode("utf-8", errors="replace"))
     return digest.hexdigest()

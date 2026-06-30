@@ -136,6 +136,30 @@ def test_external_docs_indexer_archives_old_version_when_page_changes() -> None:
     assert second.archived_old
 
 
+def test_external_docs_indexer_filters_low_value_chunks_without_dropping_technical_chunks() -> None:
+    repository = FakeRepository()
+    indexer = ExternalDocsIndexer(repository=repository, embedding_client=FakeEmbeddingClient())
+    page = _page(
+        content_hash="hash-1",
+        body=(
+            "This page explains setup with enough descriptive text for useful grounded answers."
+            "\n\n## AI Tools"
+            "\n\n## Terminal\n\nnpm run dev"
+            "\n\n## API\n\nGET /rest/v1/instruments"
+            "\n\n## Config\n\nPUBLIC_SUPABASE_URL=https://docs.example.com"
+        ),
+    )
+
+    result = asyncio.run(indexer.index_page(page, _source()))
+    contents = [str(row["content"]) for row in repository.chunks]
+
+    assert result.chunks_count == len(repository.chunks)
+    assert not any(content.strip() == "## AI Tools" for content in contents)
+    assert any("npm run dev" in content for content in contents)
+    assert any("GET /rest/v1/instruments" in content for content in contents)
+    assert any("PUBLIC_SUPABASE_URL=https://docs.example.com" in content for content in contents)
+
+
 def _source() -> ExternalDocSource:
     return ExternalDocSource(
         name="docs",
