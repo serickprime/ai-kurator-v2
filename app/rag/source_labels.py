@@ -51,8 +51,9 @@ class SourceLabelBuilder:
         label = " — ".join(base_parts)
         if page and page.casefold() not in label.casefold():
             label = f"{label}, {page}" if not context else f"{label} — {page}"
-        if source.source_uri:
-            label = f"{label} ({source.source_uri})"
+        source_uri = str(source.source_uri or metadata.get("canonical_url") or metadata.get("source_url") or "").strip()
+        if source_uri:
+            label = f"{label} ({source_uri})"
         return _truncate(label, 140)
 
     def build_many(

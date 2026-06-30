@@ -1,0 +1,32 @@
+sources:
+  - name: n8n_docs
+    source_kind: external_docs
+    allowed_domains:
+      - docs.n8n.io
+    start_urls:
+      - https://docs.n8n.io/
+    allow_patterns:
+      - "^https://docs\\.n8n\\.io/"
+    deny_patterns:
+      - "/api/"
+      - "/blog/"
+      - "/changelog/"
+    crawl_depth: 2
+    max_pages: 50
+    refresh_days: 14
+
+  - name: supabase_docs
+    source_kind: external_docs
+    allowed_domains:
+      - supabase.com
+    start_urls:
+      - https://supabase.com/docs
+    allow_patterns:
+      - "^https://supabase\\.com/docs"
+    deny_patterns:
+      - "/blog/"
+      - "/customers/"
+      - "/pricing/"
+    crawl_depth: 2
+    max_pages: 50
+    refresh_days: 14

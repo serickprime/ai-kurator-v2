@@ -1,0 +1,44 @@
+from datetime import datetime, timezone
+
+from app.external_docs.extractor import ExternalDocsExtractor
+from app.external_docs.types import CrawledPage
+
+
+def test_external_docs_extractor_removes_navigation_and_preserves_code() -> None:
+    html = """
+    <html>
+      <head>
+        <title>HTTP Request node</title>
+        <link rel="canonical" href="https://docs.example.com/integrations/http-request" />
+      </head>
+      <body>
+        <nav>Docs navigation should disappear</nav>
+        <main>
+          <h1>HTTP Request node</h1>
+          <p>Use this node to call an API.</p>
+          <pre><code>curl https://api.example.com/v1/items</code></pre>
+          <table><tr><th>Name</th><td>Authorization</td></tr></table>
+        </main>
+        <footer>Footer should disappear</footer>
+      </body>
+    </html>
+    """
+    page = CrawledPage(
+        source_name="docs",
+        url="https://docs.example.com/integrations/http-request?ref=nav",
+        html=html,
+        status_code=200,
+        content_type="text/html",
+        fetched_at=datetime.now(timezone.utc),
+    )
+
+    extracted = ExternalDocsExtractor().extract(page)
+
+    assert extracted.title == "HTTP Request node"
+    assert extracted.canonical_url == "https://docs.example.com/integrations/http-request"
+    assert "Docs navigation" not in extracted.structured_text
+    assert "Footer should disappear" not in extracted.structured_text
+    assert "Use this node to call an API." in extracted.structured_text
+    assert "```" in extracted.structured_text
+    assert "curl https://api.example.com/v1/items" in extracted.structured_text
+    assert extracted.content_hash

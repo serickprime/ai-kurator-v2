@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
+from app.external_docs.policy import freshness_required as external_docs_freshness_required
 from app.rag.course_resolver import CourseHintResolver
 from app.rag.term_scoring import exact_terms as extract_exact_terms
 from app.rag.term_scoring import guess_term_type
@@ -463,7 +464,12 @@ def analyze_question(
         lowered,
         ("official", "docs", "documentation", "официальн", "документац"),
     )
-    needs_external_docs = needs_official_docs or _has_any(lowered, _CONTENT_TYPE_MARKERS["external_docs"])
+    freshness_required = external_docs_freshness_required(lowered)
+    needs_external_docs = (
+        needs_official_docs
+        or freshness_required
+        or _has_any(lowered, _CONTENT_TYPE_MARKERS["external_docs"])
+    )
 
     facets = _build_facets(
         normalized,
@@ -531,6 +537,8 @@ def analyze_question(
         conceptual=conceptual,
         needs_official_docs=needs_official_docs,
         needs_external_docs=needs_external_docs,
+        expected_source_kinds=("external_docs",) if needs_external_docs else (),
+        freshness_required=freshness_required,
         answer_scope=answer_scope,
         must_answer_points=must_answer_points,
         evidence_questions=evidence_questions,

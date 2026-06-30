@@ -152,6 +152,8 @@ class QuestionAnalysis:
     evidence_requirements: tuple[str, ...] = ()
     ambiguity: tuple[str, ...] = ()
     needs_external_docs: bool = False
+    expected_source_kinds: tuple[str, ...] = ()
+    freshness_required: bool = False
     query_plan: QueryPlan | None = None
 
     def __post_init__(self) -> None:
@@ -222,6 +224,9 @@ class QuestionAnalysis:
         object.__setattr__(self, "evidence_requirements", evidence_requirements)
         object.__setattr__(self, "ambiguity", tuple(self.ambiguity))
         object.__setattr__(self, "needs_external_docs", needs_external_docs)
+        expected_source_kinds = tuple(self.expected_source_kinds or (("external_docs",) if needs_external_docs else ()))
+        object.__setattr__(self, "expected_source_kinds", expected_source_kinds)
+        object.__setattr__(self, "freshness_required", bool(self.freshness_required))
         object.__setattr__(self, "query_plan", query_plan)
 
 
