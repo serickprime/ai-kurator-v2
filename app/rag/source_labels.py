@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import re
 from typing import Iterable
 
-from app.ingestion.text_normalizer import clean_heading, is_boilerplate_label
+from app.ingestion.text_normalizer import clean_heading, is_boilerplate_label, is_generic_heading
 from app.rag.types import SourceRef
 
 BAD_LABELS = {
@@ -22,27 +23,26 @@ BAD_LABELS = {
 }
 
 
+@dataclass(frozen=True)
+class _SourceLabelCandidate:
+    label: str
+    document_key: str
+    detailed: bool
+
+
 class SourceLabelBuilder:
     """Build concise user-facing labels from evidence source refs."""
 
     def build(self, source: SourceRef) -> str:
         """Return a clean label for one source."""
         metadata = source.metadata or {}
-        title = _first_clean(
-            [
-                source.document_title,
-                metadata.get("document_title"),
-                metadata.get("title"),
-                metadata.get("filename"),
-                metadata.get("source_file"),
-            ]
-        )
+        title = _document_title(source, metadata)
         context = _first_clean(
             [
-                _course_lesson(metadata),
                 metadata.get("section_heading"),
                 metadata.get("heading"),
                 _section_locator(source.locator),
+                _course_lesson(metadata),
             ]
         )
         page = _page_label(metadata, source.locator)
@@ -55,22 +55,43 @@ class SourceLabelBuilder:
             label = f"{label} ({source.source_uri})"
         return _truncate(label, 140)
 
-    def build_many(self, sources: Iterable[SourceRef], *, max_per_document: int = 3) -> list[str]:
+    def build_many(
+        self,
+        sources: Iterable[SourceRef],
+        *,
+        max_per_document: int = 3,
+        max_labels: int = 3,
+    ) -> list[str]:
         """Return deduplicated clean labels for a source list."""
-        labels: list[str] = []
+        candidates: list[_SourceLabelCandidate] = []
         seen_labels: set[str] = set()
-        counts_by_document: dict[str, int] = {}
         for source in sources:
             label = self.build(source)
             label_key = label.casefold()
             document_key = _document_key(source, label)
             if label_key in seen_labels:
                 continue
-            if counts_by_document.get(document_key, 0) >= max_per_document:
-                continue
             seen_labels.add(label_key)
-            counts_by_document[document_key] = counts_by_document.get(document_key, 0) + 1
-            labels.append(label)
+            candidates.append(
+                _SourceLabelCandidate(
+                    label=label,
+                    document_key=document_key,
+                    detailed=_is_detailed_label(label),
+                )
+            )
+
+        detailed_documents = {candidate.document_key for candidate in candidates if candidate.detailed}
+        labels: list[str] = []
+        counts_by_document: dict[str, int] = {}
+        for candidate in candidates:
+            if candidate.document_key in detailed_documents and not candidate.detailed:
+                continue
+            if counts_by_document.get(candidate.document_key, 0) >= max_per_document:
+                continue
+            counts_by_document[candidate.document_key] = counts_by_document.get(candidate.document_key, 0) + 1
+            labels.append(candidate.label)
+            if len(labels) >= max_labels:
+                break
         return labels
 
     def build_document_label(self, document: dict[str, object]) -> str:
@@ -117,6 +138,26 @@ def _course_lesson(metadata: dict[str, object]) -> str:
     return " / ".join(parts)
 
 
+def _document_title(source: SourceRef, metadata: dict[str, object]) -> str:
+    title = _first_clean(
+        [
+            source.document_title,
+            metadata.get("document_title"),
+            metadata.get("title"),
+        ]
+    )
+    if title:
+        return title
+    return _first_clean(
+        [
+            _course_lesson(metadata),
+            metadata.get("filename"),
+            metadata.get("source_file"),
+            source.document_id,
+        ]
+    )
+
+
 def _page_label(metadata: dict[str, object], locator: str | None) -> str:
     page = metadata.get("page")
     if page is None and locator:
@@ -154,7 +195,7 @@ def _clean_part(value: object) -> str:
     text = re.sub(r"\s+", " ", text)
     text = text.strip(" -–—,:;")
     lowered = text.casefold()
-    if lowered in BAD_LABELS or is_boilerplate_label(text):
+    if lowered in BAD_LABELS or is_boilerplate_label(text) or is_generic_heading(text):
         return ""
     if lowered.startswith("source file:"):
         text = text.split(":", 1)[1].strip()
@@ -184,6 +225,10 @@ def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 3].rstrip() + "..."
+
+
+def _is_detailed_label(label: str) -> bool:
+    return " — " in label
 
 
 def _document_key(source: SourceRef, label: str) -> str:

@@ -39,3 +39,40 @@ def test_source_label_builder_builds_clean_document_debug_label() -> None:
     )
 
     assert label == "CLn02_text_double_deep"
+
+
+def test_source_label_builder_uses_filename_when_document_title_is_generic() -> None:
+    label = SourceLabelBuilder().build(
+        SourceRef(
+            document_id="doc-1",
+            document_title="Заголовок 1",
+            locator="Промпт: Генератор CLAUDE.md из личного дампа",
+            metadata={"filename": "CLn02_text_double_deep.txt"},
+        )
+    )
+
+    assert label == "CLn02_text_double_deep — Промпт: Генератор CLAUDE.md из личного дампа"
+    assert "Заголовок 1" not in label
+
+
+def test_source_label_builder_drops_generic_source_when_detailed_source_exists() -> None:
+    labels = SourceLabelBuilder().build_many(
+        [
+            SourceRef(
+                document_id="doc-1",
+                document_title="Заголовок 1",
+                locator="Заголовок 1",
+                metadata={"filename": "CLn02_text_double_deep.txt"},
+                evidence_id="generic",
+            ),
+            SourceRef(
+                document_id="doc-1",
+                document_title="Заголовок 1",
+                locator="Промпт: Генератор CLAUDE.md из личного дампа",
+                metadata={"filename": "CLn02_text_double_deep.txt"},
+                evidence_id="detailed",
+            ),
+        ]
+    )
+
+    assert labels == ["CLn02_text_double_deep — Промпт: Генератор CLAUDE.md из личного дампа"]

@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
+from app.ingestion.text_normalizer import is_generic_heading
 from app.rag import term_scoring
 from app.rag.types import DocumentCandidate, EvidenceSpan, QuestionAnalysis
 
@@ -514,6 +515,8 @@ def _clean_document_title(value: str | None) -> str:
         return ""
     lowered = text.casefold().strip(" -–—,:;")
     if lowered in {"название файла", "название файла:", "прочее", "unknown", "none"}:
+        return ""
+    if is_generic_heading(text):
         return ""
     return text
 

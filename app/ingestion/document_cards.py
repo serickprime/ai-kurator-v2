@@ -9,7 +9,7 @@ from typing import Any, Protocol
 
 from app.ingestion.chunker import SectionDraft
 from app.ingestion.loaders import LoadedDocument
-from app.ingestion.text_normalizer import clean_heading, is_boilerplate_label
+from app.ingestion.text_normalizer import clean_heading, is_boilerplate_label, is_generic_heading
 
 KEYWORD_RE = re.compile(r"[\w#+.-]{3,}", re.UNICODE)
 ENTITY_RE = re.compile(r"\b(?:[A-ZА-ЯЁ][\wА-Яа-яЁё-]{2,}|[A-Z0-9]{2,})\b")
@@ -131,7 +131,9 @@ class DocumentCardBuilder:
         headings = [
             clean_heading(section.heading)
             for section in sections
-            if clean_heading(section.heading) and not is_boilerplate_label(section.heading)
+            if clean_heading(section.heading)
+            and not is_boilerplate_label(section.heading)
+            and not is_generic_heading(section.heading)
         ]
         topic_candidates = headings + _top_keywords(document.structured_text, limit=36)
         topics = tuple(_dedupe(topic_candidates, limit=30))
@@ -204,7 +206,7 @@ def _questions_from_sections(
     questions: list[str] = []
     for section in sections:
         heading = clean_heading(section.heading)
-        if not heading or is_boilerplate_label(heading):
+        if not heading or is_boilerplate_label(heading) or is_generic_heading(heading):
             continue
         if heading.endswith("?"):
             questions.append(heading)

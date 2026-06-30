@@ -9,6 +9,10 @@ from typing import Iterable
 PAGE_MARKER_RE = re.compile(r"^\[\[page:\d+]]\s*$")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 CYRILLIC_TOKEN_RE = re.compile(r"[А-Яа-яЁё]{16,}")
+GENERIC_HEADING_RE = re.compile(
+    r"^(?:heading|header|section|page|заголовок|раздел|страница)\s*[\dIVXLCDM]+$",
+    re.IGNORECASE,
+)
 
 BOILERPLATE_LABELS = {
     "",
@@ -112,7 +116,7 @@ def clean_heading(value: object, *, fallback: str = "") -> str:
     text = re.sub(r"^#{1,6}\s+", "", text).strip()
     text = _strip_file_prefix(text)
     text = text.strip(" -–—,:;")
-    if not text or is_boilerplate_label(text):
+    if not text or is_boilerplate_label(text) or is_generic_heading(text):
         return fallback
     if _looks_like_page_marker(text):
         return fallback
@@ -158,6 +162,16 @@ def is_boilerplate_label(value: object) -> bool:
     if clean.startswith("source file:"):
         return True
     return False
+
+
+def is_generic_heading(value: object) -> bool:
+    """Return true for placeholder headings that are not useful as source labels."""
+    clean = _normalize_spaces(str(value or "")).strip(" -–—,:;").casefold()
+    if not clean:
+        return False
+    if is_boilerplate_label(clean):
+        return True
+    return bool(GENERIC_HEADING_RE.fullmatch(clean))
 
 
 def has_suspicious_glued_cyrillic_text(text: str) -> bool:

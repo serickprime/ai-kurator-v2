@@ -43,3 +43,25 @@ def test_meaningful_markdown_heading_becomes_title(tmp_path: Path) -> None:
 
     assert loaded.title == "Local setup"
     assert loaded.structured_text.startswith("# Local setup")
+
+
+def test_generic_markdown_headings_fall_back_to_filename(tmp_path: Path) -> None:
+    material = tmp_path / "CLn02_text_double_deep.txt"
+    material.write_text(
+        "\n".join(
+            [
+                "# Заголовок 1",
+                "",
+                "## Раздел 1",
+                "",
+                "Полезный текст урока про CLAUDE.md.",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = FileLoader()._load_text(material)
+    sections = ParentChildChunker().split_sections(loaded)
+
+    assert loaded.title == "CLn02 text double deep"
+    assert all(section.heading == "CLn02 text double deep" for section in sections)
