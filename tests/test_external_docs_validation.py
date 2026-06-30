@@ -27,6 +27,23 @@ def test_external_docs_validation_missing_url_fails() -> None:
     assert result.metrics["source_labels_without_url"] == 1
 
 
+def test_external_docs_validation_allows_html_inside_fenced_code() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                "Render the component with this example.\n\n```\n<div>Loading...</div>\n```",
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+    assert result.metrics["code_blocks_count"] == 1
+
+
 def test_external_docs_validation_duplicate_active_versions_fail() -> None:
     result = validate_external_docs(
         source_name="future_docs",

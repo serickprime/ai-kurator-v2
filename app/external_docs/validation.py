@@ -264,7 +264,7 @@ def _matching_chunks(
 
 
 def _has_raw_html(text: str) -> bool:
-    return bool(RAW_HTML_RE.search(text))
+    return bool(RAW_HTML_RE.search(_without_fenced_code(text)))
 
 
 def _has_nav_footer_noise(text: str) -> bool:
@@ -348,3 +348,7 @@ def _normalize_for_compare(text: str) -> str:
 
 def _useful_word_count(text: str) -> int:
     return len([token for token in TOKEN_RE.findall(text) if len(token.strip("#.")) >= 2])
+
+
+def _without_fenced_code(text: str) -> str:
+    return re.sub(r"```.*?```", " ", str(text or ""), flags=re.DOTALL)
