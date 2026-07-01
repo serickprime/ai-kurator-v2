@@ -41,6 +41,13 @@ from app.bot.materials import (
     format_material_card,
     format_materials_list,
 )
+from app.bot.source_last import (
+    find_last_answer_source,
+    format_last_answer_sources,
+    format_source_archived,
+    last_answer_sources_from_debug,
+    source_refs_to_debug_payload,
+)
 from app.bot.user_state import InMemoryBotUserStateStore, InMemoryUserSettingsRepository
 from app.db.repositories import UserSettings
 from app.rag.source_labels import SourceLabelBuilder
@@ -179,6 +186,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "- /materials — список загруженных материалов;",
                 "- /material <id> — карточка материала;",
                 "- /archive_material <id> — архивировать материал;",
+                "- /source_last — источники последнего ответа;",
+                "- /archive_source <id> — архивировать источник последнего ответа;",
                 "- /services — найденные сервисы и документация;",
                 "- /status — настройки и runtime-статус;",
                 "- /new — новая тема;",
@@ -344,6 +353,85 @@ async def archive_material_command(update: Update, context: ContextTypes.DEFAULT
     await update.message.reply_text(format_material_archived(material), reply_markup=main_menu_keyboard())
 
 
+async def source_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/source_last`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    if update.message is None or user_id is None:
+        return
+    state = services.state_store.get(user_id)
+    sources = last_answer_sources_from_debug(state.last_debug)
+    await update.message.reply_text(format_last_answer_sources(sources), reply_markup=main_menu_keyboard())
+
+
+async def archive_source_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/archive_source <id>`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    if update.message is None or user_id is None:
+        return
+    if not _can_archive_materials(services, user_id):
+        await update.message.reply_text(
+            "Архивирование доступно владельцу бота.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    source_id = _first_command_arg(update, context)
+    if not source_id:
+        await update.message.reply_text(
+            "Укажите id источника: /archive_source <id>",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    sources = last_answer_sources_from_debug(services.state_store.get(user_id).last_debug)
+    source = find_last_answer_source(sources, source_id)
+    if source is None:
+        await update.message.reply_text(
+            "Такого источника нет в последнем ответе.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    if source.is_external:
+        await update.message.reply_text(
+            "Официальную документацию нельзя архивировать через Telegram.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    if services.materials_provider is None or not services.default_workspace_id:
+        await update.message.reply_text(
+            "Архивирование пока недоступно: не подключено чтение Supabase.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    try:
+        material = await services.materials_provider.archive_material(services.default_workspace_id, source.document_id)
+    except ExternalDocsArchiveError:
+        await update.message.reply_text(
+            "Официальную документацию нельзя архивировать через Telegram.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    except MaterialAmbiguousError:
+        await update.message.reply_text(
+            "Нашёл несколько материалов с таким id. Уточните id.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    except MaterialNotFoundError:
+        await update.message.reply_text(
+            "Материал уже не найден среди активных материалов.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        await update.message.reply_text(
+            "Не получилось архивировать источник: " + _safe_error(exc),
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await update.message.reply_text(format_source_archived(material.title or source.title), reply_markup=main_menu_keyboard())
+
+
 async def services_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle `/services`."""
     services = _services(context)
@@ -416,6 +504,8 @@ _TEXT_COMMAND_HANDLERS: dict[str, CommandFallbackHandler] = {
     "materials": materials_command,
     "material": material_command,
     "archive_material": archive_material_command,
+    "source_last": source_last_command,
+    "archive_source": archive_source_command,
     "services": services_command,
     "base_status": base_status_command,
     "debug_last": debug_last_command,
@@ -601,6 +691,8 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("materials", materials_command))
     application.add_handler(CommandHandler("material", material_command))
     application.add_handler(CommandHandler("archive_material", archive_material_command))
+    application.add_handler(CommandHandler("source_last", source_last_command))
+    application.add_handler(CommandHandler("archive_source", archive_source_command))
     application.add_handler(CommandHandler("services", services_command))
     application.add_handler(CommandHandler("base_status", base_status_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
@@ -758,6 +850,7 @@ async def _answer_intake(update: Update, services: BotServices, intake: UserInta
         state.last_debug = {
             "status": str(getattr(result, "status", "")),
             "sources": SourceLabelBuilder().build_many(getattr(result, "sources", ())),
+            "source_refs": source_refs_to_debug_payload(getattr(result, "sources", ())),
             "vision_errors": list(intake.vision_errors),
             "rag": getattr(result, "debug", {}) or {},
         }

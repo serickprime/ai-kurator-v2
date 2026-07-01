@@ -19,6 +19,8 @@ Commands stay available:
 /materials
 /material <id>
 /archive_material <id>
+/source_last
+/archive_source <id>
 /services
 /base_status
 /debug_last
@@ -33,14 +35,24 @@ Read-only status commands:
 - `/base_status` shows compact knowledge base counts, external docs source status, service status, and recent uploads.
 - `/materials` lists recent uploaded/local materials, excluding external docs.
 - `/material <id>` shows one uploaded/local material card by full UUID or displayed short id.
+- `/source_last` shows documents/sources used by the last RAG answer.
 
 These commands do not start sync, do not crawl the internet, and do not mutate the database.
 
 Material management command:
 
 - `/archive_material <id>` archives one active uploaded/local material by setting `documents.status = archived`.
+- `/archive_source <id>` archives one uploaded/local source from the last RAG answer.
 
 It does not physically delete chunks, does not archive external/official docs, does not start sync, and is limited to owner/admin users.
+
+Quick cleanup workflow:
+
+1. Ask a question.
+2. If the answer used a bad source, run `/source_last`.
+3. Find the bad uploaded/local source id.
+4. Run `/archive_source <id>`.
+5. Ask the question again.
 
 `Новая тема` clears the local intake buffer, resets upload/follow-up state, and closes the active conversation when a conversation repository is wired.
 
