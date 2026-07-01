@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Awaitable, Callable, Protocol
 
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
@@ -276,12 +276,32 @@ async def debug_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text(_format_debug_summary(state.last_debug)[:3500], reply_markup=main_menu_keyboard())
 
 
+CommandFallbackHandler = Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[None]]
+
+_TEXT_COMMAND_HANDLERS: dict[str, CommandFallbackHandler] = {
+    "start": start,
+    "help": help_command,
+    "new": new_command,
+    "upload": upload_command,
+    "done": done_command,
+    "status": status_command,
+    "materials": materials_command,
+    "services": services_command,
+    "base_status": base_status_command,
+    "debug_last": debug_last_command,
+}
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle text messages and reply keyboard buttons."""
     if update.message is None or update.message.text is None:
         return
 
     text = update.message.text.strip()
+    if text.startswith("/"):
+        await _handle_text_command_fallback(update, context, text)
+        return
+
     if text == BTN_NEW_TOPIC:
         await _start_new_topic(update, context)
         return
@@ -361,6 +381,32 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         user_settings=_settings_dict(settings),
     )
     await _answer_intake(update, services, intake)
+
+
+async def _handle_text_command_fallback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    text: str,
+) -> None:
+    """Route slash commands that reached the text handler before RAG."""
+    if update.message is None:
+        return
+    command = _extract_text_command(text)
+    handler = _TEXT_COMMAND_HANDLERS.get(command)
+    if handler is None:
+        await update.message.reply_text(
+            "Неизвестная команда. Список команд — /help.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await handler(update, context)
+
+
+def _extract_text_command(text: str) -> str:
+    token = text.strip().split(maxsplit=1)[0]
+    command = token.removeprefix("/")
+    command = command.split("@", 1)[0]
+    return command.casefold()
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
