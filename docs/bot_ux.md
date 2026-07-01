@@ -68,6 +68,8 @@ Final Telegram answers should read as connected curator text, not as raw technic
 
 Manual Telegram RAG quality smoke suite: [RAG Quality Smoke Suite](rag_quality_smoke_suite.md).
 
+External Docs Registry v2 design: [External Docs Registry v2](external_docs_registry_v2.md).
+
 ## Settings
 
 The inline settings menu controls:
