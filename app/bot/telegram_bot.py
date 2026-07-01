@@ -6,6 +6,7 @@ from telegram.request import HTTPXRequest
 from telegram.ext import Application, ApplicationBuilder
 
 from app.bot.access import parse_telegram_ids
+from app.bot.base_status import BaseStatusProvider
 from app.bot.handlers import BotServices, register_handlers
 from app.config import Settings
 from app.ingestion.runtime import build_ingestion_runtime_from_settings, validate_ingestion_config
@@ -48,6 +49,7 @@ def _build_services(settings: Settings) -> BotServices:
     ingestion_runtime = build_ingestion_runtime_from_settings(settings, vision_describer=vision_textifier)
     ingestion_validation = validate_ingestion_config(settings)
     service_docs_status_provider = None
+    base_status_provider = None
     status_client = None
     if rag_runtime is not None:
         status_client = rag_runtime.resources.supabase
@@ -55,6 +57,10 @@ def _build_services(settings: Settings) -> BotServices:
         status_client = ingestion_runtime.resources.supabase
     if status_client is not None:
         service_docs_status_provider = ServiceDocsStatusProvider(status_client)
+        base_status_provider = BaseStatusProvider(
+            status_client,
+            service_status_provider=service_docs_status_provider,
+        )
     rag_disabled_reason = ""
     if rag_runtime is None:
         rag_disabled_reason = (
@@ -86,6 +92,7 @@ def _build_services(settings: Settings) -> BotServices:
         ingestion_disabled_reason=ingestion_disabled_reason,
         ingestion_missing_config=ingestion_validation.missing,
         service_docs_status_provider=service_docs_status_provider,
+        base_status_provider=base_status_provider,
         conversation_repo=rag_runtime.conversation_repo if rag_runtime is not None else None,
         vision_textifier=vision_textifier,
         owner_ids=parse_telegram_ids(settings.owner_ids),

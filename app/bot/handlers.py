@@ -11,6 +11,7 @@ from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from app.bot.access import UserAccessPolicy
+from app.bot.base_status import BaseStatus, format_base_status
 from app.bot.formatting import format_for_telegram, format_status
 from app.bot.intake_buffer import MessageIntakeBuffer, UserIntake
 from app.bot.keyboards import (
@@ -78,6 +79,13 @@ class ServiceDocsStatusReader(Protocol):
         """Return service/docs status rows."""
 
 
+class BaseStatusReader(Protocol):
+    """Read-only knowledge base status provider."""
+
+    async def get_status(self) -> BaseStatus:
+        """Return compact knowledge base status."""
+
+
 @dataclass
 class BotServices:
     """Telegram handler dependencies."""
@@ -94,6 +102,7 @@ class BotServices:
     ingestion_disabled_reason: str = ""
     ingestion_missing_config: tuple[str, ...] = ()
     service_docs_status_provider: ServiceDocsStatusReader | None = None
+    base_status_provider: BaseStatusReader | None = None
     conversation_repo: Any | None = None
     vision_textifier: Any | None = None
     download_dir: Path = Path("data/uploads/telegram")
@@ -224,6 +233,28 @@ async def services_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return
     await update.message.reply_text(_format_services_status(statuses), reply_markup=main_menu_keyboard())
+
+
+async def base_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/base_status`."""
+    services = _services(context)
+    if update.message is None:
+        return
+    if services.base_status_provider is None:
+        await update.message.reply_text(
+            "Статус базы пока недоступен: не подключено чтение Supabase.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    try:
+        status = await services.base_status_provider.get_status()
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        await update.message.reply_text(
+            "Не получилось получить статус базы: " + _safe_error(exc),
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await update.message.reply_text(format_base_status(status), reply_markup=main_menu_keyboard())
 
 
 async def debug_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -390,6 +421,7 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("materials", materials_command))
     application.add_handler(CommandHandler("services", services_command))
+    application.add_handler(CommandHandler("base_status", base_status_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
     application.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r"^settings:"))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
