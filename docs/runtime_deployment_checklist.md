@@ -125,9 +125,17 @@ Stop only the known old bot process. Do not run two local consoles and one serve
 
 ## 7. Start The Bot
 
+For day-to-day local or small-server operation, use the runner script:
+
 ```powershell
-cd D:\Downloads\ai-kurator-v2; .\.venv\Scripts\python.exe app\main.py
+cd D:\Downloads\ai-kurator-v2
+.\.venv\Scripts\python.exe scripts\runtime_healthcheck.py
+.\.venv\Scripts\python.exe scripts\run_telegram_bot.py
 ```
+
+`scripts\run_telegram_bot.py` runs the same read-only healthcheck before startup. If healthcheck returns `FAIL`, it does not start polling. If healthcheck returns `WARN`, it prints the warning and continues.
+
+The runner writes a local PID lock to `logs\telegram_bot.pid`. This prevents a second bot process started through the same runner from using the same Telegram polling token. It cannot reliably detect a bot already running on another server or one started manually through another entrypoint, so still stop known old processes before moving the bot between machines.
 
 Healthy startup writes runtime logs to:
 
@@ -141,13 +149,29 @@ Get-Content logs\app.log -Tail 80
 Get-Content logs\errors.log -Tail 80
 ```
 
+Stop the bot with `Ctrl+C` in the PowerShell window where it is running. A normal stop prints:
+
+```text
+Telegram bot stopped by Ctrl+C.
+```
+
+If startup reports an existing local lock, check local Python processes and stop the known old bot process before retrying:
+
+```powershell
+Get-Process python
+```
+
 ## 8. Telegram Runtime Acceptance
 
 In Telegram, check:
 
+- `/start` returns the main menu.
 - `/help` shows question, upload, `/base_status`, `/services`, `/status`, `/new`, and `/debug_last`.
-- `/base_status` shows document/chunk counts, external docs status, services, and recent uploads.
+- `/base_status` shows document/chunk counts, external docs status, services, and recent documents.
 - `/services` shows detected services and docs status.
+- `Загрузить материал` enters upload mode.
+- `Готово` exits upload mode.
+- `/debug_last` shows the latest debug summary after a question.
 - A normal greeting such as `привет` does not invent sources.
 - A local-material question uses local evidence.
 - An official-docs question uses external docs only when exact evidence is indexed.

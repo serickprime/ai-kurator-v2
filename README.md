@@ -88,12 +88,13 @@ Required first-run settings:
 ## Run
 
 ```powershell
-python app/main.py
+python scripts/run_telegram_bot.py
 ```
 
 Runtime logs are written to `logs/app.log` and `logs/errors.log`.
 For the full Telegram RAG v2 runtime checklist on Windows, see [Run Telegram RAG V2](docs/run_telegram_rag.md).
 For local/server startup verification, use the practical [Runtime Deployment Checklist](docs/runtime_deployment_checklist.md).
+`scripts/run_telegram_bot.py` runs the read-only healthcheck first and uses a local PID lock to avoid starting a second runner-managed polling process.
 
 ## Smoke Checks
 
@@ -131,7 +132,7 @@ Manual RAG quality smoke suite: [docs/rag_quality_smoke_suite.md](docs/rag_quali
 Useful read-only Telegram status commands:
 
 - `/services` shows detected services and whether their docs source is connected.
-- `/base_status` shows knowledge base counts, external docs status, service status, and recent uploads.
+- `/base_status` shows knowledge base counts, external docs status, service status, and recent documents.
 - `/materials` lists recent uploaded/local materials and excludes external docs.
 - `/material <id>` shows one uploaded/local material card by full UUID or short displayed id.
 - `/source_last` shows sources used by the last RAG answer.
