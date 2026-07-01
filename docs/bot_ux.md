@@ -17,6 +17,8 @@ Commands stay available:
 /help
 /status
 /materials
+/material <id>
+/archive_material <id>
 /services
 /base_status
 /debug_last
@@ -29,8 +31,16 @@ Read-only status commands:
 
 - `/services` shows services detected in the indexed base and whether their documentation source is connected.
 - `/base_status` shows compact knowledge base counts, external docs source status, service status, and recent uploads.
+- `/materials` lists recent uploaded/local materials, excluding external docs.
+- `/material <id>` shows one uploaded/local material card by full UUID or displayed short id.
 
 These commands do not start sync, do not crawl the internet, and do not mutate the database.
+
+Material management command:
+
+- `/archive_material <id>` archives one active uploaded/local material by setting `documents.status = archived`.
+
+It does not physically delete chunks, does not archive external/official docs, does not start sync, and is limited to owner/admin users.
 
 `Новая тема` clears the local intake buffer, resets upload/follow-up state, and closes the active conversation when a conversation repository is wired.
 
