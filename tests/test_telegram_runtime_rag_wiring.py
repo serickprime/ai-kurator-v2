@@ -43,6 +43,7 @@ def test_build_application_wires_rag_pipeline_when_config_is_complete() -> None:
         assert services.ingestion_runtime is not None
         assert services.service_docs_status_provider is not None
         assert services.base_status_provider is not None
+        assert services.materials_provider is not None
     finally:
         asyncio.run(services.rag_runtime.close())
         asyncio.run(services.ingestion_runtime.close())

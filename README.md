@@ -130,6 +130,14 @@ Useful read-only Telegram status commands:
 
 - `/services` shows detected services and whether their docs source is connected.
 - `/base_status` shows knowledge base counts, external docs status, service status, and recent uploads.
+- `/materials` lists recent uploaded/local materials and excludes external docs.
+- `/material <id>` shows one uploaded/local material card by full UUID or short displayed id.
+
+Owner/admin material management:
+
+- `/archive_material <id>` archives one active uploaded/local material by setting `documents.status = archived`.
+
+Archiving does not physically delete chunks and cannot be used for external/official docs.
 
 Answer model routing is controlled by per-user settings and the `OPENROUTER_*_MODELS` environment lists. Free mode never silently falls back to paid models. Quality can fall back to cheap only when `ALLOW_QUALITY_TO_CHEAP_FALLBACK=true`.
 
