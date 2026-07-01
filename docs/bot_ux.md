@@ -64,6 +64,10 @@ Files outside upload mode are not indexed automatically. The bot asks the user t
 
 Final Telegram answers should read as connected curator text, not as raw technical fragments copied from evidence. Empty numbered items, orphaned "see section" fragments, and headings without content should be cleaned before the answer is sent. Source blocks must stay separate at the end.
 
+## Ручная проверка качества
+
+Manual Telegram RAG quality smoke suite: [RAG Quality Smoke Suite](rag_quality_smoke_suite.md).
+
 ## Settings
 
 The inline settings menu controls:

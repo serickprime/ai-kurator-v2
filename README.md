@@ -126,6 +126,8 @@ Questions, captions, and image context are combined into one user intake before 
 
 Telegram material uploads are described in [Telegram Upload Ingestion](docs/telegram_upload_ingestion.md). Upload feedback shows processing status, document/section/chunk counts, and detected services when service discovery finds them.
 
+Manual RAG quality smoke suite: [docs/rag_quality_smoke_suite.md](docs/rag_quality_smoke_suite.md).
+
 Useful read-only Telegram status commands:
 
 - `/services` shows detected services and whether their docs source is connected.
