@@ -93,12 +93,14 @@ python app/main.py
 
 Runtime logs are written to `logs/app.log` and `logs/errors.log`.
 For the full Telegram RAG v2 runtime checklist on Windows, see [Run Telegram RAG V2](docs/run_telegram_rag.md).
+For local/server startup verification, use the practical [Runtime Deployment Checklist](docs/runtime_deployment_checklist.md).
 
 ## Smoke Checks
 
 Run these after filling `.env` and applying the Supabase schema:
 
 ```powershell
+python scripts/runtime_healthcheck.py
 python scripts/smoke_telegram_config.py
 python scripts/smoke_supabase.py
 python scripts/smoke_openrouter.py
@@ -106,6 +108,7 @@ python scripts/smoke_rag_runtime.py
 python scripts/smoke_telegram_upload_ingestion.py
 ```
 
+`runtime_healthcheck.py` is read-only: it checks required config, the default Supabase workspace, and service/docs status without starting Telegram polling or writing to Supabase.
 `smoke_supabase.py` is read-only and checks that `DEFAULT_WORKSPACE_ID` exists in `workspaces`.
 `smoke_openrouter.py` sends a tiny completion request to `OPENROUTER_DEFAULT_MODEL`.
 `smoke_rag_runtime.py` only builds runtime dependencies and prints missing `.env` settings when RAG v2 is disabled.
