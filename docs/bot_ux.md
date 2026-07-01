@@ -17,11 +17,20 @@ Commands stay available:
 /help
 /status
 /materials
+/services
+/base_status
 /debug_last
 /new
 /upload
 /done
 ```
+
+Read-only status commands:
+
+- `/services` shows services detected in the indexed base and whether their documentation source is connected.
+- `/base_status` shows compact knowledge base counts, external docs source status, service status, and recent uploads.
+
+These commands do not start sync, do not crawl the internet, and do not mutate the database.
 
 `Новая тема` clears the local intake buffer, resets upload/follow-up state, and closes the active conversation when a conversation repository is wired.
 

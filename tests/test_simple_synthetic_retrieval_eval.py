@@ -82,3 +82,14 @@ def test_incomplete_question_asks_for_missing_data() -> None:
     assert result["actual_answer_mode"] == "ask_for_missing_data"
     assert result["evidence_pack_items"] == []
     assert result["result"] == "pass"
+
+
+def test_simple_synthetic_quality_gate() -> None:
+    report = asyncio.run(run_benchmark())
+    metrics = report["metrics"]
+
+    assert metrics["forbidden_document_leakage"] == 0.0
+    assert metrics["document_top1_accuracy"] >= 0.95
+    assert metrics["chunk_fact_recall"] >= 0.95
+    assert metrics["answer_mode_accuracy"] == 1.0
+    assert all(result["result"] == "pass" for result in report["case_results"])

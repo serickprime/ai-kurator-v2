@@ -20,6 +20,8 @@ Question analysis extracts compact intent, keywords, entities, and constraints.
 
 Document routing compares the analysis with document cards and selects a small document set.
 
+Corpus-aware term scoring adjusts routing and evidence selection with term statistics from the active workspace. A term that appears in many documents is treated as a weak/common recall signal. A rare exact term, error, endpoint, command, config field, or function-like token can become a strong anchor without being manually added to a platform dictionary.
+
 Evidence retrieval searches only inside selected documents. It can use vector search, lexical search, page locators, or structured metadata, but it must not pass broad raw candidates to generation.
 
 The evidence pack is the only context visible to answer generation. It should contain short spans, source metadata, and stable locators.
@@ -57,3 +59,11 @@ The expected manual routing behavior:
 - a Supabase `match_documents` question should route to `supabase_match_documents.md`.
 
 If a broad term such as `n8n`, `Docker`, `API`, or `Supabase` pulls in an unrelated lesson as the final source, the pipeline has violated the evidence-first source contract.
+
+After large imports or reindexing, refresh corpus term statistics:
+
+```powershell
+python scripts/rebuild_term_statistics.py --workspace team
+```
+
+Regular ingestion also attempts this refresh after activating a new document.

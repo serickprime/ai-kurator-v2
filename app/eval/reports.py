@@ -164,7 +164,7 @@ def _case_regressions(
 
     if current_checks.get("sources_with_missing_data"):
         regressions.append(
-            _regression(case_id, "sources_for_missing_data", "sources appeared for ask_for_missing_data")
+            _regression(case_id, "sources_for_missing_data", "sources appeared for a no-source answer mode")
         )
 
     if current_checks.get("used_discarded_candidates"):

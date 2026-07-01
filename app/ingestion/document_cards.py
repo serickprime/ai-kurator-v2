@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from app.ingestion.chunker import SectionDraft
 from app.ingestion.loaders import LoadedDocument
+from app.ingestion.text_normalizer import clean_heading, is_boilerplate_label, is_generic_heading
 
 KEYWORD_RE = re.compile(r"[\w#+.-]{3,}", re.UNICODE)
 ENTITY_RE = re.compile(r"\b(?:[A-ZА-ЯЁ][\wА-Яа-яЁё-]{2,}|[A-Z0-9]{2,})\b")
@@ -127,9 +128,15 @@ class DocumentCardBuilder:
         document: LoadedDocument,
         sections: tuple[SectionDraft, ...],
     ) -> DocumentCard:
-        headings = [section.heading for section in sections if section.heading and section.heading != "Document"]
-        topic_candidates = headings + _top_keywords(document.structured_text)
-        topics = tuple(_dedupe(topic_candidates, limit=12))
+        headings = [
+            clean_heading(section.heading)
+            for section in sections
+            if clean_heading(section.heading)
+            and not is_boilerplate_label(section.heading)
+            and not is_generic_heading(section.heading)
+        ]
+        topic_candidates = headings + _top_keywords(document.structured_text, limit=36)
+        topics = tuple(_dedupe(topic_candidates, limit=30))
         questions = tuple(_questions_from_sections(sections, document, limit=10))
         entities = tuple(_dedupe(ENTITY_RE.findall(document.structured_text), limit=12))
         task_types = tuple(_task_types(document.structured_text))
@@ -137,7 +144,7 @@ class DocumentCardBuilder:
         quality_score = _quality_score(document, sections, topics, questions)
 
         return DocumentCard(
-            title=document.title or document.path.stem,
+            title=clean_heading(document.title, fallback=document.path.stem),
             summary=summary,
             topics=topics,
             questions_answered=questions,
@@ -155,8 +162,9 @@ class DocumentCardBuilder:
 
 def _card_from_mapping(data: dict[str, Any], document: LoadedDocument) -> DocumentCard | None:
     try:
+        title = clean_heading(data.get("title"), fallback=clean_heading(document.title, fallback=document.path.stem))
         return DocumentCard(
-            title=str(data.get("title") or document.title),
+            title=title,
             summary=str(data["summary"]),
             topics=tuple(_clean_list(data.get("topics", []), 12)),
             questions_answered=tuple(_clean_list(data.get("questions_answered", []), 12)),
@@ -197,8 +205,8 @@ def _questions_from_sections(
 ) -> list[str]:
     questions: list[str] = []
     for section in sections:
-        heading = section.heading.strip("# ").strip()
-        if not heading or heading.lower() == "document":
+        heading = clean_heading(section.heading)
+        if not heading or is_boilerplate_label(heading) or is_generic_heading(heading):
             continue
         if heading.endswith("?"):
             questions.append(heading)

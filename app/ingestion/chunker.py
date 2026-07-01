@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.ingestion.loaders import LoadedDocument
+from app.ingestion.text_normalizer import clean_heading, is_boilerplate_label
 
 PAGE_MARKER_RE = re.compile(r"^\[\[page:(?P<page>\d+)]]\s*$")
 HEADING_RE = re.compile(r"^(?P<level>#{1,6})\s+(?P<title>.+?)\s*$")
@@ -62,12 +63,13 @@ class ParentChildChunker:
 
     def split_sections(self, document: LoadedDocument) -> tuple[SectionDraft, ...]:
         """Create parent sections from structured document text."""
-        sections = self._split_by_headings(document.structured_text)
+        default_heading = clean_heading(document.title, fallback=document.filename)
+        sections = self._split_by_headings(document.structured_text, default_heading=default_heading)
         if not sections:
             sections = (
                 SectionDraft(
                     section_index=0,
-                    heading=document.title,
+                    heading=default_heading,
                     content=document.structured_text.strip(),
                     page_start=_first_page(document),
                     page_end=_last_page(document),
@@ -100,8 +102,8 @@ class ParentChildChunker:
                 )
         return tuple(chunks)
 
-    def _split_by_headings(self, text: str) -> tuple[SectionDraft, ...]:
-        current_heading = "Document"
+    def _split_by_headings(self, text: str, *, default_heading: str) -> tuple[SectionDraft, ...]:
+        current_heading = default_heading
         current_lines: list[str] = []
         current_pages: list[int] = []
         current_page: int | None = None
@@ -117,12 +119,12 @@ class ParentChildChunker:
             sections.append(
                 SectionDraft(
                     section_index=index,
-                    heading=current_heading.strip() or f"Section {index + 1}",
+                    heading=clean_heading(current_heading, fallback=default_heading or f"Section {index + 1}"),
                     content=content,
                     page_start=page_start,
                     page_end=page_end,
                     summary=_summarize(content),
-                    metadata={"heading": current_heading},
+                    metadata={"heading": clean_heading(current_heading, fallback=default_heading)},
                 )
             )
 
@@ -136,8 +138,9 @@ class ParentChildChunker:
             heading_match = HEADING_RE.match(line.strip())
             if heading_match:
                 flush()
-                current_heading = heading_match.group("title").strip()
-                current_lines = [line]
+                heading = clean_heading(heading_match.group("title"), fallback=default_heading)
+                current_heading = heading
+                current_lines = [] if is_boilerplate_label(heading_match.group("title")) else [line]
                 current_pages = [current_page] if current_page is not None else []
                 continue
 

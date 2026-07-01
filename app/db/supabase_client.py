@@ -95,12 +95,35 @@ class SupabaseClient:
         await self.close()
 
 
+class SupabaseRequestError(RuntimeError):
+    """HTTP error returned by Supabase/PostgREST."""
+
+    def __init__(self, status_code: int, body: str, *, path: str = "") -> None:
+        self.status_code = status_code
+        self.body = body
+        self.path = path
+        super().__init__(f"Supabase request failed: {status_code} {body}")
+
+    @property
+    def is_missing_relation(self) -> bool:
+        """Return true for missing table/function/schema-cache errors."""
+        lowered = self.body.lower()
+        return self.status_code == 404 and (
+            "pgrst" in lowered
+            or "could not find" in lowered
+            or "not found" in lowered
+            or "schema cache" in lowered
+        )
+
+
 def _json_response(response: httpx.Response) -> list[dict[str, Any]]:
     try:
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        raise RuntimeError(
-            f"Supabase request failed: {exc.response.status_code} {exc.response.text}"
+        raise SupabaseRequestError(
+            exc.response.status_code,
+            exc.response.text,
+            path=str(exc.request.url),
         ) from exc
 
     if not response.content:
@@ -110,4 +133,6 @@ def _json_response(response: httpx.Response) -> list[dict[str, Any]]:
         return data
     if isinstance(data, dict):
         return [data]
+    if isinstance(data, (str, int, float, bool)) or data is None:
+        return [{"result": data}]
     raise RuntimeError("Unexpected Supabase response shape")

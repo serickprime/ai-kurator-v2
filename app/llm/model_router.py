@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -10,6 +11,16 @@ if TYPE_CHECKING:
 
 
 AnswerModeName = str
+ABSTRACT_MODEL_IDS = frozenset(
+    {
+        "openrouter/free",
+        "openrouter/auto",
+        "auto",
+        "free",
+        "cheap",
+        "quality",
+    }
+)
 
 
 class RoutedModelClient(Protocol):
@@ -76,12 +87,12 @@ class ModelRouterConfig:
     def from_settings(cls, settings: "Settings") -> "ModelRouterConfig":
         """Build routing config from environment-backed settings."""
         return cls(
-            free_text=_split_models(settings.openrouter_free_text_models),
-            free_vision=_split_models(settings.openrouter_free_vision_models),
-            cheap_text=_split_models(settings.openrouter_cheap_text_models or settings.openrouter_model),
-            cheap_vision=_split_models(settings.openrouter_cheap_vision_models or settings.vision_model),
-            quality_text=_split_models(settings.openrouter_quality_text_models or settings.openrouter_model),
-            quality_vision=_split_models(settings.openrouter_quality_vision_models or settings.vision_model),
+            free_text=_concrete_models(settings.openrouter_free_text_models),
+            free_vision=_concrete_models(settings.openrouter_free_vision_models),
+            cheap_text=_concrete_models(settings.openrouter_cheap_text_models or settings.openrouter_model),
+            cheap_vision=_concrete_models(settings.openrouter_cheap_vision_models or settings.vision_model),
+            quality_text=_concrete_models(settings.openrouter_quality_text_models or settings.openrouter_model),
+            quality_vision=_concrete_models(settings.openrouter_quality_vision_models or settings.vision_model),
             allow_quality_to_cheap_fallback=settings.allow_quality_to_cheap_fallback,
         )
 
@@ -157,10 +168,11 @@ class ModelRoutedAnswerClient:
     def __init__(self, router: ModelRouter, default_answer_mode: str = "cheap") -> None:
         self._router = router
         self._default_answer_mode = default_answer_mode
+        self.last_metadata: ModelRoutingMetadata | None = None
 
     async def complete_text(self, messages: list[dict[str, str]]) -> str:
         """Complete text with the default mode."""
-        result = await self._router.complete_text(messages, self._default_answer_mode)
+        result = await self._complete_text_with_metadata(messages, self._default_answer_mode)
         return result.text
 
     async def complete_text_for_dialog(
@@ -169,15 +181,40 @@ class ModelRoutedAnswerClient:
         dialog_context: object | None,
     ) -> str:
         """Complete text using the per-user mode stored in dialog context."""
-        result = await self._router.complete_text(
+        result = await self._complete_text_with_metadata(
             messages,
             _answer_mode_from_dialog_context(dialog_context, self._default_answer_mode),
         )
         return result.text
 
+    async def _complete_text_with_metadata(
+        self,
+        messages: list[dict[str, str]],
+        answer_mode: str,
+    ) -> ModelRouterResult:
+        try:
+            result = await self._router.complete_text(messages, answer_mode)
+        except ModelRouterError as exc:
+            self.last_metadata = exc.metadata
+            raise
+        self.last_metadata = result.metadata
+        return result
+
 
 def _split_models(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _concrete_models(value: str) -> tuple[str, ...]:
+    return tuple(model for model in _split_models(value) if is_concrete_model_id(model))
+
+
+def is_concrete_model_id(model: str) -> bool:
+    """Return true when a configured model looks like a concrete OpenRouter model id."""
+    clean = model.strip().lower()
+    if not clean or clean in ABSTRACT_MODEL_IDS:
+        return False
+    return bool(re.match(r"^[a-z0-9_.-]+/[a-z0-9_.:-]+$", clean))
 
 
 def _models_or_empty(models: tuple[str, ...]) -> tuple[str, ...]:
@@ -195,7 +232,7 @@ def _metadata(
         attempted_models=tuple(attempt.model for attempt in attempts),
         failed_models=tuple(attempt.model for attempt in attempts if not attempt.ok),
         successful_model=next((attempt.model for attempt in attempts if attempt.ok), None),
-        provider_errors=tuple(attempt.error or "" for attempt in attempts if attempt.error),
+        provider_errors=tuple(_sanitize_error(attempt.error or "") for attempt in attempts if attempt.error),
         degraded_quality=degraded_quality,
     )
 
@@ -217,3 +254,11 @@ def _answer_mode_from_dialog_context(dialog_context: object | None, default: str
             if mode in {"free", "cheap", "quality"}:
                 return mode
     return default
+
+
+def _sanitize_error(error: str) -> str:
+    clean = re.sub(r"Bearer\s+[A-Za-z0-9._-]+", "Bearer <redacted>", str(error))
+    clean = re.sub(r"bot[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]+", "bot<redacted>", clean)
+    clean = re.sub(r"sb_secret_[A-Za-z0-9_-]+", "sb_secret_<redacted>", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean[:500]

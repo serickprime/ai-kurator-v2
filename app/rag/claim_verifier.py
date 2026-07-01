@@ -35,7 +35,7 @@ def verify_claims(draft: AnswerDraft, evidence: EvidencePack) -> VerificationRep
             safe_answer="Нужно уточнить: подтвержденного фрагмента из материалов по этому вопросу.",
         )
 
-    if draft.answer_mode in {"ask_for_missing_data", "general_answer_without_sources"}:
+    if draft.answer_mode in {"ask_for_missing_data", "general_answer_without_sources", "out_of_base"}:
         leakage = _has_source_leakage(draft.text, evidence)
         return VerificationReport(
             is_supported=not leakage,
@@ -59,7 +59,7 @@ def verify_claims(draft: AnswerDraft, evidence: EvidencePack) -> VerificationRep
     safe_answer = _safe_answer(draft.text, unsupported, evidence)
     verdict = "rewrite" if safe_answer.strip() else "fail"
     if not safe_answer.strip():
-        safe_answer = "В evidence pack нет достаточного подтверждения для надежного ответа."
+        safe_answer = "В найденных фрагментах нет достаточно надежного подтверждения для ответа."
 
     return VerificationReport(
         is_supported=False,
@@ -106,7 +106,10 @@ def _is_supported(claim: str, evidence: EvidencePack) -> bool:
 
 def _safe_answer(answer: str, unsupported: tuple[str, ...], evidence: EvidencePack) -> str:
     if not unsupported:
-        return _remove_source_lines(answer)
+        safe = _remove_source_lines(answer)
+        if safe.strip():
+            return safe
+        return _supported_evidence_answer(evidence)
 
     unsupported_keys = {_normalize_sentence(claim) for claim in unsupported}
     kept: list[str] = []
@@ -122,12 +125,7 @@ def _safe_answer(answer: str, unsupported: tuple[str, ...], evidence: EvidencePa
     if safe:
         return _remove_source_lines(safe)
 
-    supported_sentences: list[str] = []
-    for item in evidence.items:
-        supported_sentences.extend(_sentences(item.text))
-        if len(supported_sentences) >= 3:
-            break
-    return "\n".join(supported_sentences[:3]).strip()
+    return _supported_evidence_answer(evidence)
 
 
 def _has_source_leakage(answer: str, evidence: EvidencePack) -> bool:
@@ -154,9 +152,17 @@ def _remove_source_lines(answer: str) -> str:
     lines = [
         line
         for line in answer.splitlines()
-        if not line.strip().lower().startswith(("источник:", "источники:", "sources:", "source:"))
+        if not _looks_like_source_line(line)
     ]
     return "\n".join(lines).strip()
+
+
+def _looks_like_source_line(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    normalized = stripped.lstrip(" ([{«\"'").lower()
+    return normalized.startswith(("источник:", "источники:", "sources:", "source:"))
 
 
 def _meaningful_roots(text: str) -> set[str]:
@@ -196,3 +202,49 @@ def _normalize_sentence(sentence: str) -> str:
 def _sentences(text: str) -> list[str]:
     normalized = re.sub(r"\s+", " ", text).strip()
     return [part.strip() for part in re.split(r"(?<=[.!?])\s+", normalized) if part.strip()]
+
+
+def _safe_evidence_sentences(text: str) -> list[str]:
+    result: list[str] = []
+    for sentence in _sentences(text):
+        clean = _clean_sentence(sentence)
+        if not clean or _is_low_value_sentence(clean):
+            continue
+        result.append(clean)
+        if len(result) >= 3:
+            break
+    return result
+
+
+def _supported_evidence_answer(evidence: EvidencePack) -> str:
+    supported_sentences: list[str] = []
+    for item in evidence.items:
+        supported_sentences.extend(_safe_evidence_sentences(item.text))
+        if len(supported_sentences) >= 3:
+            break
+    if not supported_sentences:
+        return "В найденных фрагментах нет достаточно надежного подтверждения для ответа."
+    return "В материалах указано:\n" + "\n".join(f"- {sentence}" for sentence in supported_sentences[:3]).strip()
+
+
+def _clean_sentence(sentence: str) -> str:
+    clean = re.sub(r"\s+", " ", sentence).strip(" -")
+    clean = re.sub(r"^#+\s*", "", clean)
+    if len(clean) > 220:
+        clean = clean[:217].rstrip() + "..."
+    return clean
+
+
+def _is_low_value_sentence(sentence: str) -> bool:
+    lowered = sentence.casefold()
+    noisy_markers = (
+        "страница ",
+        "текст страницы",
+        "визуальные элементы",
+        "действия",
+        "нравится",
+        "подписаться",
+        "http://",
+        "https://",
+    )
+    return len(sentence) < 18 or any(marker in lowered for marker in noisy_markers)

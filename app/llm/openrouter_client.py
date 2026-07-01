@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -21,6 +22,10 @@ class OpenRouterError(RuntimeError):
 
 class OpenRouterAuthError(OpenRouterError):
     """Raised when OpenRouter rejects credentials."""
+
+
+class OpenRouterBadRequestError(OpenRouterError):
+    """Raised when OpenRouter rejects a request or model id."""
 
 
 class OpenRouterRateLimitError(OpenRouterError):
@@ -190,6 +195,10 @@ def _message_content(response: httpx.Response, *, model: str) -> str:
 def _raise_for_openrouter(response: httpx.Response, *, model: str) -> None:
     if response.status_code in {401, 403}:
         raise OpenRouterAuthError("OpenRouter authorization failed. Check OPENROUTER_API_KEY.")
+    if response.status_code == 400:
+        raise OpenRouterBadRequestError(
+            f"OpenRouter request failed for model {model}: 400 {_sanitize_error_body(response.text)}"
+        )
     if response.status_code == 429:
         raise OpenRouterRateLimitError("OpenRouter rate limit exceeded.")
     try:
@@ -197,7 +206,7 @@ def _raise_for_openrouter(response: httpx.Response, *, model: str) -> None:
     except httpx.HTTPStatusError as exc:
         raise OpenRouterError(
             f"OpenRouter request failed for model {model}: "
-            f"{exc.response.status_code} {exc.response.text[:500]}"
+            f"{exc.response.status_code} {_sanitize_error_body(exc.response.text)}"
         ) from exc
 
 
@@ -216,6 +225,15 @@ def looks_like_bad_output(answer: str) -> bool:
     if any(normalized.startswith(prefix) for prefix in bad_prefixes) and len(normalized) < 300:
         return True
     return normalized in {"user safety: safe", "safe", "unsafe"}
+
+
+def _sanitize_error_body(body: str) -> str:
+    clean = re.sub(r"Bearer\s+[A-Za-z0-9._-]+", "Bearer <redacted>", body)
+    clean = re.sub(r"sk-or-v1-[A-Za-z0-9_-]+", "sk-or-v1-<redacted>", clean)
+    clean = re.sub(r"bot[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]+", "bot<redacted>", clean)
+    clean = re.sub(r"sb_secret_[A-Za-z0-9_-]+", "sb_secret_<redacted>", clean)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean[:500]
 
 
 def _image_payload_to_data_url(image_payload: object) -> str:

@@ -91,6 +91,30 @@ create table if not exists public.chunks (
     constraint chunks_token_count_check check (token_count is null or token_count >= 0)
 );
 
+create table if not exists public.term_statistics (
+    id uuid primary key default gen_random_uuid(),
+    workspace_id uuid not null references public.workspaces(id) on delete cascade,
+    term text not null,
+    normalized_term text not null,
+    document_frequency int not null default 0,
+    chunk_frequency int not null default 0,
+    course_frequency int not null default 0,
+    first_seen_at timestamptz,
+    last_seen_at timestamptz,
+    examples jsonb not null default '[]'::jsonb,
+    term_type_guess text not null default 'term',
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint term_statistics_workspace_term_key unique (workspace_id, normalized_term),
+    constraint term_statistics_document_frequency_check check (document_frequency >= 0),
+    constraint term_statistics_chunk_frequency_check check (chunk_frequency >= 0),
+    constraint term_statistics_course_frequency_check check (course_frequency >= 0)
+);
+
+alter table public.term_statistics
+    add column if not exists created_at timestamptz not null default now();
+
 create table if not exists public.evidence_logs (
     id uuid primary key default gen_random_uuid(),
     workspace_id uuid not null references public.workspaces(id) on delete cascade,
@@ -155,6 +179,11 @@ create trigger document_cards_set_updated_at
 before update on public.document_cards
 for each row execute function public.set_updated_at();
 
+drop trigger if exists term_statistics_set_updated_at on public.term_statistics;
+create trigger term_statistics_set_updated_at
+before update on public.term_statistics
+for each row execute function public.set_updated_at();
+
 drop trigger if exists conversations_set_updated_at on public.conversations;
 create trigger conversations_set_updated_at
 before update on public.conversations
@@ -214,6 +243,17 @@ create index if not exists chunks_embedding_hnsw_idx
     on public.chunks using hnsw (embedding vector_cosine_ops)
     where embedding is not null;
 
+create index if not exists term_statistics_workspace_term_idx
+    on public.term_statistics (workspace_id, normalized_term);
+create index if not exists term_statistics_workspace_document_frequency_idx
+    on public.term_statistics (workspace_id, document_frequency desc);
+create index if not exists term_statistics_workspace_chunk_frequency_idx
+    on public.term_statistics (workspace_id, chunk_frequency desc);
+create index if not exists term_statistics_type_idx
+    on public.term_statistics (workspace_id, term_type_guess);
+create index if not exists term_statistics_metadata_gin_idx
+    on public.term_statistics using gin (metadata);
+
 create index if not exists evidence_logs_workspace_created_at_idx
     on public.evidence_logs (workspace_id, created_at desc);
 create index if not exists conversations_user_workspace_active_idx
@@ -230,6 +270,7 @@ alter table public.documents enable row level security;
 alter table public.document_cards enable row level security;
 alter table public.sections enable row level security;
 alter table public.chunks enable row level security;
+alter table public.term_statistics enable row level security;
 alter table public.evidence_logs enable row level security;
 alter table public.conversations enable row level security;
 alter table public.messages enable row level security;
@@ -241,6 +282,7 @@ grant select, insert, update, delete on table
     public.document_cards,
     public.sections,
     public.chunks,
+    public.term_statistics,
     public.evidence_logs,
     public.conversations,
     public.messages,
@@ -253,11 +295,153 @@ revoke all on table
     public.document_cards,
     public.sections,
     public.chunks,
+    public.term_statistics,
     public.evidence_logs,
     public.conversations,
     public.messages,
     public.bot_users
 from anon, authenticated;
+
+create or replace function public.refresh_term_statistics(p_workspace_id uuid)
+returns int
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+    v_count int := 0;
+begin
+    delete from public.term_statistics
+    where workspace_id = p_workspace_id;
+
+    with token_rows as (
+        select
+            d.workspace_id,
+            d.id as document_id,
+            c.id as chunk_id,
+            d.course,
+            d.filename,
+            d.title,
+            d.created_at,
+            d.updated_at,
+            (m.term_parts)[1] as raw_term
+        from public.chunks c
+        join public.documents d on d.id = c.document_id
+        cross join lateral regexp_matches(
+            coalesce(c.heading, '') || ' ' || c.content,
+            '([[:alnum:]_#+.:-]{2,})',
+            'g'
+        ) as m(term_parts)
+        where d.workspace_id = p_workspace_id
+          and c.workspace_id = p_workspace_id
+          and d.status = 'active'
+          and coalesce(c.heading, '') !~* '(не объясняет|not about)'
+    ),
+    cleaned as (
+        select
+            workspace_id,
+            document_id,
+            chunk_id,
+            course,
+            filename,
+            title,
+            created_at,
+            updated_at,
+            lower(trim(both '.,:;!?()[]{}"''`«»' from raw_term)) as normalized_term
+        from token_rows
+    ),
+    filtered as (
+        select *
+        from cleaned
+        where normalized_term <> ''
+          and length(normalized_term) >= 2
+          and normalized_term !~ '^[0-9]+$'
+          and normalized_term not in (
+              'and','the','for','with','from','about','into',
+              'как','что','где','куда','когда','какой','какая','какие',
+              'если','или','это','этот','эта','для','при','после','перед',
+              'чтобы','на','из','в','во','с','со','по','про','не','ни','ли',
+              'нужно','нужен','нужна','нужны','можно','материал','источник',
+              'документ','ответ','вопрос','пример'
+          )
+    ),
+    ranked_examples as (
+        select
+            normalized_term,
+            document_id,
+            filename,
+            title,
+            row_number() over (
+                partition by normalized_term
+                order by max(updated_at) desc, title
+            ) as rn
+        from filtered
+        group by normalized_term, document_id, filename, title
+    ),
+    examples as (
+        select
+            normalized_term,
+            jsonb_agg(
+                jsonb_build_object(
+                    'document_id', document_id,
+                    'filename', filename,
+                    'title', title
+                )
+                order by rn
+            ) filter (where rn <= 3) as examples
+        from ranked_examples
+        group by normalized_term
+    ),
+    aggregated as (
+        select
+            workspace_id,
+            min(normalized_term) as term,
+            normalized_term,
+            count(distinct document_id)::int as document_frequency,
+            count(distinct chunk_id)::int as chunk_frequency,
+            count(distinct nullif(course, ''))::int as course_frequency,
+            min(created_at) as first_seen_at,
+            max(updated_at) as last_seen_at
+        from filtered
+        group by workspace_id, normalized_term
+    )
+    insert into public.term_statistics (
+        workspace_id,
+        term,
+        normalized_term,
+        document_frequency,
+        chunk_frequency,
+        course_frequency,
+        first_seen_at,
+        last_seen_at,
+        examples,
+        term_type_guess,
+        metadata
+    )
+    select
+        a.workspace_id,
+        a.term,
+        a.normalized_term,
+        a.document_frequency,
+        a.chunk_frequency,
+        a.course_frequency,
+        a.first_seen_at,
+        a.last_seen_at,
+        coalesce(e.examples, '[]'::jsonb),
+        case
+            when a.normalized_term ~ '[[:alnum:]_.-]+:[0-9]+' then 'endpoint_or_address'
+            when a.normalized_term like '%\_%' escape '\' then 'identifier'
+            when a.normalized_term ~ '[[:alpha:]]+[0-9]+|[0-9]+[[:alpha:]]+' then 'technical_identifier'
+            when a.normalized_term like '%.%' then 'path_or_parameter'
+            else 'term'
+        end as term_type_guess,
+        jsonb_build_object('source', 'refresh_term_statistics')
+    from aggregated a
+    left join examples e on e.normalized_term = a.normalized_term;
+
+    get diagnostics v_count = row_count;
+    return v_count;
+end;
+$$;
 
 create or replace function public.match_document_cards(
     p_workspace_id uuid,
@@ -489,11 +673,13 @@ as $$
 $$;
 
 revoke execute on function public.set_updated_at() from public, anon, authenticated;
+revoke execute on function public.refresh_term_statistics(uuid) from public, anon, authenticated;
 revoke execute on function public.match_document_cards(uuid, vector, int, jsonb) from public, anon, authenticated;
 revoke execute on function public.match_sections(uuid, uuid[], vector, int) from public, anon, authenticated;
 revoke execute on function public.match_chunks_in_documents(uuid, uuid[], vector, text, int) from public, anon, authenticated;
 revoke execute on function public.hybrid_match_chunks_in_documents(uuid, uuid[], vector, text, int, double precision, double precision, double precision) from public, anon, authenticated;
 
+grant execute on function public.refresh_term_statistics(uuid) to service_role;
 grant execute on function public.match_document_cards(uuid, vector, int, jsonb) to service_role;
 grant execute on function public.match_sections(uuid, uuid[], vector, int) to service_role;
 grant execute on function public.match_chunks_in_documents(uuid, uuid[], vector, text, int) to service_role;

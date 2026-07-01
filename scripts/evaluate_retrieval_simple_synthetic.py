@@ -28,9 +28,11 @@ from app.ingestion.chunker import ChunkDraft, ParentChildChunker, SectionDraft  
 from app.ingestion.document_cards import DocumentCardBuilder  # noqa: E402
 from app.ingestion.loaders import FileLoader  # noqa: E402
 from app.rag.document_router import DocumentCardRecord, DocumentRouter  # noqa: E402
+from app.rag.evidence_retriever import EvidenceChunkRecord, EvidenceRetriever  # noqa: E402
 from app.rag.evidence_pack import EvidencePackBuilder  # noqa: E402
 from app.rag.question_analysis import QuestionAnalyzer  # noqa: E402
 from app.rag.reranker import EvidenceReranker  # noqa: E402
+from app.rag.term_scoring import CorpusDocumentText, CorpusTermScorer  # noqa: E402
 from app.rag.types import DocumentCandidate, EvidencePack, EvidenceSpan, QuestionAnalysis  # noqa: E402
 
 DEFAULT_MATERIALS_DIR = ROOT / "sample_materials" / "rag_search_simple_test"
@@ -92,7 +94,9 @@ KNOWN_OBJECT_ROOTS = {
     "творо",
     "яблок",
     "яблокам",
+    "карто",
     "картоф",
+    "картофе",
     "велос",
     "велоси",
     "чемод",
@@ -244,6 +248,7 @@ class CaseRun:
     raw_forbidden_documents: list[str]
     evidence_forbidden_documents: list[str]
     evidence_pack_items: list[dict[str, Any]]
+    evidence_decisions: list[dict[str, Any]]
     discarded_candidates: list[dict[str, Any]]
     actual_answer_mode: str
     final_score: float
@@ -305,6 +310,44 @@ class InMemoryDocumentCardStore:
         return [replace(document.card, vector_score=round(score, 4)) for score, document in scored[:limit]]
 
 
+class InMemoryEvidenceChunkStore:
+    """EvidenceChunkStore backed by the synthetic index."""
+
+    def __init__(self, index: SyntheticIndex) -> None:
+        self._index = index
+
+    async def match_chunks(
+        self,
+        *,
+        workspace_id: str,
+        document_ids: tuple[str, ...],
+        query_text: str,
+        query_embedding: list[float] | None,
+        match_count: int,
+    ) -> list[EvidenceChunkRecord]:
+        """Return unscored chunks only from routed documents."""
+        del workspace_id, query_text, query_embedding
+        records: list[EvidenceChunkRecord] = []
+        for document_id in document_ids:
+            document = self._index.by_id.get(document_id) or self._index.by_filename.get(document_id)
+            if document is None:
+                continue
+            for chunk in document.chunks:
+                records.append(
+                    EvidenceChunkRecord(
+                        chunk_id=chunk.chunk_id,
+                        document_id=chunk.filename,
+                        document_title=chunk.document_title,
+                        section_id=str(chunk.section_index),
+                        heading=chunk.heading,
+                        content=chunk.content,
+                        source_uri=f"sample_materials/rag_search_simple_test/{chunk.filename}",
+                        metadata={"fact_ids": list(chunk.fact_ids), "chunk_index": chunk.chunk_index},
+                    )
+                )
+        return records[: max(match_count, len(records))]
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI args."""
     parser = argparse.ArgumentParser(description="Evaluate simple synthetic retrieval quality.")
@@ -336,14 +379,24 @@ async def run_benchmark(
 
     embedding_client = HashEmbeddingClient()
     index = await build_index(materials_dir, embedding_client)
+    term_scorer = _corpus_term_scorer(index)
     router = DocumentRouter(
         store=InMemoryDocumentCardStore(index),
         embedding_client=embedding_client,
+        term_scorer=term_scorer,
         min_score=0.12,
     )
     analyzer = QuestionAnalyzer()
+    retriever = EvidenceRetriever(
+        chunk_store=InMemoryEvidenceChunkStore(index),
+        workspace_id=WORKSPACE_ID,
+        match_count=120,
+        max_evidence=8,
+        min_score=0.22,
+        term_scorer=term_scorer,
+    )
     reranker = EvidenceReranker()
-    pack_builder = EvidencePackBuilder()
+    pack_builder = EvidencePackBuilder(term_scorer=term_scorer)
 
     results: list[CaseRun] = []
     for case in cases:
@@ -353,6 +406,7 @@ async def run_benchmark(
                 index=index,
                 analyzer=analyzer,
                 router=router,
+                retriever=retriever,
                 reranker=reranker,
                 pack_builder=pack_builder,
             )
@@ -417,7 +471,185 @@ async def build_index(materials_dir: Path, embedding_client: HashEmbeddingClient
         )
         embeddings[path.name] = card_embedding
 
+    for document in await _crowded_it_documents(embedding_client):
+        documents.append(document)
+        embeddings[document.filename] = document.card_embedding
+
     return SyntheticIndex(documents=tuple(documents), embeddings=embeddings)
+
+
+async def _crowded_it_documents(embedding_client: HashEmbeddingClient) -> tuple[IndexedDocument, ...]:
+    """Return controlled IT distractors with repeated common terms."""
+    specs: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = []
+
+    for index in range(1, 11):
+        specs.append(
+            (
+                f"crowded_webhook_noise_{index:02d}.md",
+                f"Webhook distractor {index:02d}",
+                (
+                    f"# Webhook distractor {index:02d}\n\n"
+                    f"FACT-ID: WEBHOOK_NOISE_{index:02d}\n"
+                    "Этот материал много раз упоминает webhook, HTTP callback и уведомления, "
+                    "но объясняет только общий прием событий и не содержит расчет подписи платежа."
+                ),
+                ("webhook", "HTTP callback", "notification"),
+                ("Как принять общий webhook?",),
+                ("YooMoney hash", "подпись платежа", "SHA1"),
+            )
+        )
+
+    for index in range(1, 11):
+        specs.append(
+            (
+                f"crowded_n8n_noise_{index:02d}.md",
+                f"n8n distractor {index:02d}",
+                (
+                    f"# n8n distractor {index:02d}\n\n"
+                    f"FACT-ID: N8N_NOISE_{index:02d}\n"
+                    "Материал упоминает n8n, workflow, webhook и интеграции, "
+                    "но остается обзором автоматизаций и не дает шаги запуска сервера."
+                ),
+                ("n8n", "workflow", "webhook"),
+                ("Как устроен общий workflow n8n?",),
+                ("локальная установка", "localhost:5678", "npx"),
+            )
+        )
+
+    for index in range(1, 11):
+        specs.append(
+            (
+                f"crowded_supabase_noise_{index:02d}.md",
+                f"Supabase distractor {index:02d}",
+                (
+                    f"# Supabase distractor {index:02d}\n\n"
+                    f"FACT-ID: SUPABASE_NOISE_{index:02d}\n"
+                    "Материал упоминает Supabase, таблицы, REST API и RLS, "
+                    "но остается обзором обычной структуры базы и прав доступа."
+                ),
+                ("Supabase", "таблицы", "REST API", "RLS"),
+                ("Как создать обычную таблицу Supabase?",),
+                ("match_documents", "pgvector", "vector search"),
+            )
+        )
+
+    specs.extend(
+        [
+            (
+                "it_yoomoney_hash.md",
+                "YooMoney webhook hash",
+                (
+                    "# YooMoney webhook hash\n\n"
+                    "FACT-ID: IT_YOOMONEY_HASH\n"
+                    "Для YooMoney webhook проверяют подпись уведомления: строку параметров "
+                    "собирают в заданном порядке и сравнивают рассчитанный SHA1 hash с полем sha1_hash."
+                ),
+                ("YooMoney", "webhook", "SHA1", "sha1_hash", "подпись"),
+                ("Как проверить YooMoney hash в webhook?",),
+                ("Docker", "n8n локальная установка", "Supabase tables"),
+            ),
+            (
+                "it_n8n_local_install.md",
+                "n8n local install",
+                (
+                    "# n8n local install\n\n"
+                    "FACT-ID: IT_N8N_LOCAL_INSTALL\n"
+                    "Локальная установка n8n выполняется через npx или Docker. После запуска "
+                    "интерфейс открывают на localhost:5678 и проверяют, что порт отвечает."
+                ),
+                ("n8n", "локальная установка", "Docker", "npx", "localhost:5678"),
+                ("Как установить n8n локально?",),
+                ("YooMoney", "workflow payments", "Supabase RAG"),
+            ),
+            (
+                "it_supabase_match_documents.md",
+                "Supabase match_documents RPC",
+                (
+                    "# Supabase match_documents RPC\n\n"
+                    "FACT-ID: IT_SUPABASE_MATCH_DOCUMENTS\n"
+                    "RPC match_documents используют как pgvector-функцию: она принимает query_embedding, "
+                    "сравнивает embedding через vector search и возвращает похожие документы."
+                ),
+                ("Supabase", "match_documents", "pgvector", "query_embedding", "vector search"),
+                ("Как работает Supabase match_documents?",),
+                ("общие таблицы", "RLS overview", "storage"),
+            ),
+        ]
+    )
+
+    return tuple([await _generated_document(spec, embedding_client) for spec in specs])
+
+
+async def _generated_document(
+    spec: tuple[str, str, str, tuple[str, ...], tuple[str, ...], tuple[str, ...]],
+    embedding_client: HashEmbeddingClient,
+) -> IndexedDocument:
+    filename, title, content, topics, questions, not_about = spec
+    card = DocumentCardRecord(
+        document_id=filename,
+        filename=filename,
+        title=title,
+        course="crowded it synthetic",
+        lesson=title,
+        summary=content,
+        topics=topics,
+        questions_answered=questions,
+        entities=tuple(_dedupe(list(topics) + _fact_ids(content), limit=16)),
+        task_types=("setup", "debug", "source_check", "reference"),
+        not_about=not_about,
+        quality_score=0.9,
+    )
+    section = SectionDraft(section_index=0, heading=title, content=content, summary=content[:240])
+    chunk = IndexedChunk(
+        chunk_id=f"{filename}:0",
+        document_id=filename,
+        filename=filename,
+        document_title=title,
+        heading=title,
+        content=content,
+        chunk_index=0,
+        section_index=0,
+        fact_ids=tuple(_fact_ids(content)),
+    )
+    return IndexedDocument(
+        document_id=filename,
+        filename=filename,
+        title=title,
+        card=card,
+        sections=(section,),
+        chunks=(chunk,),
+        card_embedding=await embedding_client.embed(_card_text(card)),
+        fact_ids=tuple(_fact_ids(content)),
+    )
+
+
+def _corpus_term_scorer(index: SyntheticIndex) -> CorpusTermScorer:
+    """Build corpus-aware term scorer from the synthetic index."""
+    documents = [
+        CorpusDocumentText(
+            document_id=document.filename,
+            title=document.title,
+            course=document.card.course,
+            text=_positive_card_text(document.card),
+            chunks=tuple(chunk.content for chunk in document.chunks),
+        )
+        for document in index.documents
+    ]
+    return CorpusTermScorer.from_documents(documents)
+
+
+def _positive_card_text(card: DocumentCardRecord) -> str:
+    """Return card text without negative/not-about terms for corpus stats."""
+    return "\n".join(
+        [
+            card.filename,
+            card.title,
+            card.summary,
+            " ".join(card.topics),
+            " ".join(card.questions_answered),
+            " ".join(card.entities),
+        ]
+    )
 
 
 async def evaluate_case(
@@ -426,24 +658,27 @@ async def evaluate_case(
     index: SyntheticIndex,
     analyzer: QuestionAnalyzer,
     router: DocumentRouter,
+    retriever: EvidenceRetriever,
     reranker: EvidenceReranker,
     pack_builder: EvidencePackBuilder,
 ) -> CaseRun:
     """Evaluate one case and return a diagnostic result."""
+    del index
     analysis = analyzer.analyze(case.question)
     documents = await router.route(analysis, workspace_id=WORKSPACE_ID, limit=5)
     incomplete = is_incomplete_question(case.question)
     out_of_base = is_out_of_base_question(case.question)
-    raw_chunks = _raw_chunk_candidates(index, analysis, documents)
 
     if incomplete or out_of_base:
         evidence_spans: tuple[EvidenceSpan, ...] = ()
         reason = "question is incomplete; retrieval not trusted" if incomplete else "question is out of synthetic base"
-        discarded = _discarded_for_untrusted(raw_chunks, reason)
+        raw_records = await retriever.candidate_records(analysis, documents)
+        discarded = [_discarded_record(record, reason) for record in raw_records[:8]]
     else:
-        evidence_spans, discarded = _retrieve_evidence(index, analysis, documents, raw_chunks)
+        evidence_spans = await retriever.retrieve(analysis, documents)
+        discarded = [_discarded_evidence_dict(item) for item in retriever.last_discarded]
 
-    reranked = reranker.rerank(evidence_spans)
+    reranked = reranker.rerank(evidence_spans, analysis=analysis)
     pack_analysis = replace(analysis, must_answer_points=())
     evidence_pack = pack_builder.build(reranked, max_items=case.expected_top_k_chunks or 5, analysis=pack_analysis)
     actual_answer_mode = _actual_answer_mode(evidence_pack, incomplete)
@@ -488,6 +723,7 @@ async def evaluate_case(
         raw_forbidden_documents=raw_forbidden,
         evidence_forbidden_documents=evidence_forbidden,
         evidence_pack_items=[_evidence_item_dict(item) for item in evidence_pack.items],
+        evidence_decisions=[asdict(decision) for decision in pack_builder.last_decisions],
         discarded_candidates=discarded,
         actual_answer_mode=actual_answer_mode,
         final_score=score,
@@ -658,7 +894,7 @@ def _document_card_record(
     not_about = _section_text(structured_text, "Что этот материал НЕ объясняет")
     fact_ids = _fact_ids(structured_text)
     title_topics = [title, filename.replace("_", " ").replace(".md", "")]
-    topics = _dedupe(title_topics + _important_terms(title + "\n" + explains) + list(card.topics), limit=18)
+    topics = _dedupe(title_topics + _important_terms(structured_text) + list(card.topics), limit=48)
     questions = _dedupe(
         [
             f"Как {title.lower()}?",
@@ -869,8 +1105,24 @@ def _analysis_dict(analysis: QuestionAnalysis) -> dict[str, Any]:
         "original_question": analysis.original_question,
         "task_type": analysis.task_type,
         "primary_intent": analysis.primary_intent,
+        "query_plan": asdict(analysis.query_plan) if analysis.query_plan is not None else {},
+        "expected_content_types": list(analysis.expected_content_types),
+        "source_priority": list(analysis.source_priority),
+        "course_hint": analysis.course_hint,
+        "domain_hint": analysis.domain_hint,
+        "ambiguity": list(analysis.ambiguity),
         "query_facets": [asdict(facet) for facet in analysis.query_facets],
         "keywords": list(analysis.keywords),
+        "primary_object": analysis.primary_object,
+        "object_terms": list(analysis.object_terms),
+        "requested_action": analysis.requested_action,
+        "requested_attribute": analysis.requested_attribute,
+        "common_terms": list(analysis.common_terms),
+        "platform_terms": list(analysis.platform_terms),
+        "config_terms": list(analysis.config_terms),
+        "exact_terms": list(analysis.exact_terms),
+        "rare_anchor_terms": list(analysis.rare_anchor_terms),
+        "strongest_evidence_terms": list(analysis.strongest_evidence_terms),
     }
 
 
@@ -884,6 +1136,15 @@ def _candidate_dict(candidate: DocumentCandidate) -> dict[str, Any]:
         "matched_topics": list(candidate.matched_topics),
         "matched_questions": list(candidate.matched_questions),
         "route": candidate.route,
+        "matched_common_terms": list(candidate.matched_common_terms),
+        "matched_anchor_terms": list(candidate.matched_anchor_terms),
+        "missing_action_terms": list(candidate.missing_action_terms),
+        "missing_object_terms": list(candidate.missing_object_terms),
+        "answerability_score": candidate.answerability_score,
+        "penalties": list(candidate.penalties),
+        "content_type": candidate.content_type,
+        "matched_content_types": list(candidate.matched_content_types),
+        "score_breakdown": dict(candidate.score_breakdown),
     }
 
 
@@ -907,6 +1168,28 @@ def _discarded(candidate: ChunkCandidate, reason: str) -> dict[str, Any]:
         "reason": reason,
         "fact_ids": list(candidate.chunk.fact_ids),
         "preview": re.sub(r"\s+", " ", candidate.chunk.content).strip()[:180],
+    }
+
+
+def _discarded_record(record: EvidenceChunkRecord, reason: str) -> dict[str, Any]:
+    return {
+        "document": record.document_id,
+        "locator": record.heading or "",
+        "score": record.score,
+        "reason": reason,
+        "fact_ids": list((record.metadata or {}).get("fact_ids") or []),
+        "preview": re.sub(r"\s+", " ", record.content).strip()[:180],
+    }
+
+
+def _discarded_evidence_dict(item: Any) -> dict[str, Any]:
+    return {
+        "document": item.document_id,
+        "locator": item.chunk_id,
+        "score": item.score,
+        "reason": item.reason,
+        "fact_ids": [],
+        "preview": item.preview,
     }
 
 
@@ -1029,10 +1312,58 @@ def _roots(tokens: Any) -> set[str]:
 
 def _root(token: str) -> str:
     token = token.casefold().replace("ё", "е").strip(".,:;!?()[]{}\"'`«»")
+    token = _stem_ru(token)
     if len(token) >= 8:
         return token[:7]
     if len(token) >= 6:
         return token[:5]
+    return token
+
+
+def _stem_ru(token: str) -> str:
+    if not re.search(r"[а-я]", token):
+        return token
+    endings = (
+        "иями",
+        "ями",
+        "ами",
+        "ого",
+        "ему",
+        "ыми",
+        "ими",
+        "его",
+        "ая",
+        "яя",
+        "ое",
+        "ее",
+        "ые",
+        "ие",
+        "ый",
+        "ий",
+        "ой",
+        "ом",
+        "ем",
+        "ах",
+        "ях",
+        "ов",
+        "ев",
+        "ам",
+        "ям",
+        "ою",
+        "ею",
+        "ей",
+        "у",
+        "ю",
+        "а",
+        "я",
+        "ы",
+        "и",
+        "е",
+        "ь",
+    )
+    for ending in endings:
+        if len(token) > len(ending) + 3 and token.endswith(ending):
+            return token[: -len(ending)]
     return token
 
 

@@ -11,6 +11,7 @@ from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from app.bot.access import UserAccessPolicy
+from app.bot.base_status import BaseStatus, format_base_status
 from app.bot.formatting import format_for_telegram, format_status
 from app.bot.intake_buffer import MessageIntakeBuffer, UserIntake
 from app.bot.keyboards import (
@@ -33,6 +34,8 @@ from app.bot.keyboards import (
 )
 from app.bot.user_state import InMemoryBotUserStateStore, InMemoryUserSettingsRepository
 from app.db.repositories import UserSettings
+from app.rag.source_labels import SourceLabelBuilder
+from app.service_registry.types import ServiceDocsStatus
 
 
 class RagPipeline(Protocol):
@@ -64,6 +67,25 @@ class IntakeIngestionService(Protocol):
         """Ingest one file or directory."""
 
 
+class ServiceDocsStatusReader(Protocol):
+    """Read-only service docs status provider."""
+
+    async def list_statuses(
+        self,
+        *,
+        scan_corpus: bool = False,
+        service: str | None = None,
+    ) -> tuple[ServiceDocsStatus, ...]:
+        """Return service/docs status rows."""
+
+
+class BaseStatusReader(Protocol):
+    """Read-only knowledge base status provider."""
+
+    async def get_status(self) -> BaseStatus:
+        """Return compact knowledge base status."""
+
+
 @dataclass
 class BotServices:
     """Telegram handler dependencies."""
@@ -72,7 +94,15 @@ class BotServices:
     settings_repo: Any = field(default_factory=InMemoryUserSettingsRepository)
     intake_buffer: MessageIntakeBuffer = field(default_factory=MessageIntakeBuffer)
     rag_pipeline: RagPipeline | None = None
+    rag_runtime: Any | None = None
+    rag_disabled_reason: str = ""
+    rag_missing_config: tuple[str, ...] = ()
     ingestion_service: IntakeIngestionService | None = None
+    ingestion_runtime: Any | None = None
+    ingestion_disabled_reason: str = ""
+    ingestion_missing_config: tuple[str, ...] = ()
+    service_docs_status_provider: ServiceDocsStatusReader | None = None
+    base_status_provider: BaseStatusReader | None = None
     conversation_repo: Any | None = None
     vision_textifier: Any | None = None
     download_dir: Path = Path("data/uploads/telegram")
@@ -104,7 +134,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         (
             "Задавайте вопрос текстом, изображением или текстом вместе с изображением. "
             "Для новой темы нажмите «Новая тема». "
-            "Для добавления базы знаний нажмите «Загрузить материал»."
+            "Для добавления базы знаний нажмите «Загрузить материал». "
+            "Команды смотрите в /help."
         ),
         reply_markup=main_menu_keyboard(),
     )
@@ -119,11 +150,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "\n".join(
             [
                 "Как работать:",
-                "- задайте вопрос текстом;",
-                "- отправьте скрин с подписью или сначала скрин, потом уточнение;",
-                "- для загрузки базы нажмите «Загрузить материал»;",
-                "- для нового диалога нажмите «Новая тема»;",
-                "- настройки открываются кнопкой «Настройки».",
+                "- задайте вопрос обычным сообщением;",
+                "- /upload или «Загрузить материал» — загрузить материал в базу;",
+                "- /base_status — статус базы знаний;",
+                "- /services — найденные сервисы и документация;",
+                "- /status — настройки и runtime-статус;",
+                "- /new — новая тема;",
+                "- /debug_last — последний debug, если нужен.",
             ]
         ),
         reply_markup=main_menu_keyboard(),
@@ -183,6 +216,50 @@ async def materials_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
+async def services_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/services`."""
+    services = _services(context)
+    if update.message is None:
+        return
+    if services.service_docs_status_provider is None:
+        await update.message.reply_text(
+            "Список сервисов пока недоступен: не подключено чтение Supabase или registry.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    try:
+        statuses = await services.service_docs_status_provider.list_statuses(scan_corpus=True)
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        await update.message.reply_text(
+            "Не получилось получить список сервисов: " + _safe_error(exc),
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await update.message.reply_text(_format_services_status(statuses), reply_markup=main_menu_keyboard())
+
+
+async def base_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/base_status`."""
+    services = _services(context)
+    if update.message is None:
+        return
+    if services.base_status_provider is None:
+        await update.message.reply_text(
+            "Статус базы пока недоступен: не подключено чтение Supabase.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    try:
+        status = await services.base_status_provider.get_status()
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        await update.message.reply_text(
+            "Не получилось получить статус базы: " + _safe_error(exc),
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await update.message.reply_text(format_base_status(status), reply_markup=main_menu_keyboard())
+
+
 async def debug_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle `/debug_last`."""
     services = _services(context)
@@ -196,7 +273,7 @@ async def debug_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=main_menu_keyboard(),
         )
         return
-    await update.message.reply_text(str(state.last_debug)[:3500], reply_markup=main_menu_keyboard())
+    await update.message.reply_text(_format_debug_summary(state.last_debug)[:3500], reply_markup=main_menu_keyboard())
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -346,6 +423,8 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("done", done_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("materials", materials_command))
+    application.add_handler(CommandHandler("services", services_command))
+    application.add_handler(CommandHandler("base_status", base_status_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
     application.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r"^settings:"))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -441,16 +520,32 @@ async def _ingest_or_count_upload(update: Update, services: BotServices, file_pa
     if update.message is None or user_id is None:
         return
     state = services.state_store.get(user_id)
+    if services.ingestion_service is None:
+        reason = services.ingestion_disabled_reason or (
+            "Загрузка материалов не подключена: не хватает настроек окружения. Проверьте .env."
+        )
+        await update.message.reply_text(reason, reply_markup=upload_menu_keyboard())
+        return
     try:
-        if services.ingestion_service is not None:
-            await services.ingestion_service.ingest_path(
-                file_path,
-                workspace=services.default_workspace_name,
-            )
+        await update.message.reply_text(
+            "Файл получен. Обрабатываю и добавляю в базу...",
+            reply_markup=upload_menu_keyboard(),
+        )
+        results = await services.ingestion_service.ingest_path(
+            file_path,
+            workspace=services.default_workspace_name,
+        )
+        service_statuses = await _upload_service_statuses(services)
         state.uploaded_materials += 1
-        await update.message.reply_text(f"Файл принят: {file_path.name}.", reply_markup=upload_menu_keyboard())
+        await update.message.reply_text(
+            _format_upload_results(results, service_statuses=service_statuses),
+            reply_markup=upload_menu_keyboard(),
+        )
     except Exception as exc:  # noqa: BLE001
-        await update.message.reply_text(f"Не получилось загрузить файл: {exc}", reply_markup=upload_menu_keyboard())
+        await update.message.reply_text(
+            "Не получилось загрузить материал: " + _safe_error(exc),
+            reply_markup=upload_menu_keyboard(),
+        )
 
 
 async def _answer_intake(update: Update, services: BotServices, intake: UserIntake) -> None:
@@ -462,15 +557,18 @@ async def _answer_intake(update: Update, services: BotServices, intake: UserInta
         await update.message.reply_text("Пришлите вопрос текстом или добавьте подпись к изображению.")
         return
     if services.rag_pipeline is None:
+        reason = services.rag_disabled_reason or (
+            "RAG v2 pipeline не подключён: не хватает настроек окружения. Проверьте .env."
+        )
         await update.message.reply_text(
-            "RAG v2 pipeline ещё не подключен к Telegram runtime. Вопрос собран, но отвечать пока нечем.",
+            reason,
             reply_markup=main_menu_keyboard(),
         )
         return
     result = await services.rag_pipeline.answer(
         question,
         workspace_id=str(intake.user_settings.get("selected_workspace_id") or services.default_workspace_id),
-        dialog_context={"user_settings": intake.user_settings, "vision_errors": intake.vision_errors},
+        dialog_context=_dialog_context(intake),
     )
     await update.message.reply_text(
         format_for_telegram(result.answer),
@@ -481,11 +579,12 @@ async def _answer_intake(update: Update, services: BotServices, intake: UserInta
         state = services.state_store.get(user_id)
         state.last_debug = {
             "status": str(getattr(result, "status", "")),
-            "sources": [getattr(source, "document_title", "") for source in getattr(result, "sources", ())],
+            "sources": SourceLabelBuilder().build_many(getattr(result, "sources", ())),
             "vision_errors": list(intake.vision_errors),
+            "rag": getattr(result, "debug", {}) or {},
         }
         if bool(intake.user_settings.get("debug_mode")):
-            await update.message.reply_text(str(state.last_debug)[:3500], reply_markup=main_menu_keyboard())
+            await update.message.reply_text(_format_debug_summary(state.last_debug)[:3500], reply_markup=main_menu_keyboard())
 
 
 async def _download_photo(update: Update, services: BotServices) -> Path:
@@ -519,6 +618,184 @@ def _safe_filename(filename: str) -> str:
     return clean[:160] or "telegram-file"
 
 
+async def _upload_service_statuses(services: BotServices) -> dict[str, ServiceDocsStatus]:
+    provider = services.service_docs_status_provider
+    if provider is None:
+        return {}
+    try:
+        statuses = await provider.list_statuses(scan_corpus=False)
+    except Exception:  # noqa: BLE001 - service status is optional upload context
+        return {}
+    return {status.service_id: status for status in statuses}
+
+
+def _format_upload_results(
+    results: list[Any],
+    *,
+    service_statuses: dict[str, ServiceDocsStatus] | None = None,
+) -> str:
+    if not results:
+        return "Материал не был загружен: ingestion не вернул результат."
+    if len(results) == 1:
+        return _format_upload_result(results[0], service_statuses=service_statuses)
+    total_sections = sum(int(getattr(result, "sections_count", 0) or 0) for result in results)
+    total_chunks = sum(int(getattr(result, "chunks_count", 0) or 0) for result in results)
+    statuses = _dedupe_strings(str(getattr(result, "term_statistics_status", "skipped")) for result in results)
+    service_lines = _format_upload_services(results, service_statuses=service_statuses)
+    return "\n".join(
+        [
+            "Файлы обработаны и добавлены в базу.",
+            f"Файлов: {len(results)}",
+            f"Разделов: {total_sections}",
+            f"Чанков: {total_chunks}",
+            "",
+            "Найдены сервисы:",
+            *service_lines,
+            "",
+            "Теперь можно задавать вопросы по этим материалам.",
+            "Embeddings: ok",
+            "Term statistics: " + ", ".join(statuses),
+        ]
+    )
+
+
+def _format_upload_result(
+    result: Any,
+    *,
+    service_statuses: dict[str, ServiceDocsStatus] | None = None,
+) -> str:
+    document_label = str(getattr(result, "document_key", "") or getattr(result, "document_id", "") or "unknown")
+    headline = (
+        "Файл уже был обработан раньше, изменений нет."
+        if bool(getattr(result, "skipped", False))
+        else "Файл обработан и добавлен в базу."
+    )
+    return "\n".join(
+        [
+            headline,
+            f"Документ: {document_label}",
+            f"Разделов: {int(getattr(result, 'sections_count', 0) or 0)}",
+            f"Чанков: {int(getattr(result, 'chunks_count', 0) or 0)}",
+            "",
+            "Найдены сервисы:",
+            *_format_upload_services([result], service_statuses=service_statuses),
+            "",
+            "Теперь можно задавать вопросы по этому материалу.",
+            "Embeddings: ok",
+            f"Term statistics: {getattr(result, 'term_statistics_status', 'skipped')}",
+        ]
+    )
+
+
+def _format_upload_services(
+    results: list[Any],
+    *,
+    service_statuses: dict[str, ServiceDocsStatus] | None = None,
+) -> list[str]:
+    service_statuses = service_statuses or {}
+    labels: dict[str, str] = {}
+    for result in results:
+        for mention in _upload_service_mentions(result):
+            service_id = str(mention.get("service_id") or "").strip()
+            if not service_id:
+                continue
+            display_name = str(mention.get("display_name") or service_id).strip() or service_id
+            labels.setdefault(service_id, display_name)
+        for service_id in _upload_service_ids(result):
+            labels.setdefault(service_id, service_id)
+    if not labels:
+        return ["сервисы не найдены"]
+    lines: list[str] = []
+    for service_id, display_name in sorted(labels.items(), key=lambda item: item[1].casefold()):
+        status = service_statuses.get(service_id)
+        display_name = str(status.display_name or display_name) if status is not None else display_name
+        suffix = f" — {_service_docs_phrase(status)}" if status is not None else ""
+        lines.append(f"{display_name}{suffix}")
+    return lines
+
+
+def _upload_service_ids(result: Any) -> list[str]:
+    values = getattr(result, "service_ids", ()) or ()
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    return _dedupe_strings(str(value).strip() for value in values if str(value).strip())
+
+
+def _upload_service_mentions(result: Any) -> list[dict[str, object]]:
+    values = getattr(result, "service_mentions", ()) or ()
+    if not isinstance(values, (list, tuple)):
+        return []
+    mentions: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        service_id = str(value.get("service_id") or "").strip()
+        if not service_id or service_id in seen:
+            continue
+        seen.add(service_id)
+        mentions.append(value)
+    return mentions
+
+
+def _format_services_status(statuses: tuple[ServiceDocsStatus, ...]) -> str:
+    if not statuses:
+        return "Сервисы пока не настроены."
+    lines = ["Сервисы:"]
+    for status in statuses:
+        found = _service_found_in_base(status)
+        docs = _service_docs_phrase(status)
+        quality = f", {status.quality_status}" if status.quality_status not in {"", "none"} else ""
+        lines.append(f"{status.display_name} — {'найден в базе' if found else 'не найден в базе'}, {docs}{quality}")
+    return "\n".join(lines)
+
+
+def _service_found_in_base(status: ServiceDocsStatus) -> bool:
+    return any(
+        value > 0
+        for value in (
+            int(status.detected_documents_count or 0),
+            int(status.detected_chunks_count or 0),
+            int(status.mention_count or 0),
+            int(status.active_docs_count or 0),
+        )
+    )
+
+
+def _service_docs_phrase(status: ServiceDocsStatus) -> str:
+    if status.docs_status == "indexed":
+        return "документация подключена"
+    if status.docs_status == "not_configured":
+        return "документация не подключена"
+    if status.docs_status == "configured_not_indexed":
+        return "документация настроена, но не проиндексирована"
+    if status.docs_status == "disabled":
+        return "документация отключена"
+    return "документация требует проверки"
+
+
+def _safe_error(exc: Exception) -> str:
+    text = re.sub(r"\s+", " ", str(exc)).strip() or exc.__class__.__name__
+    text = re.sub(r"bot[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]+", "bot<redacted>", text)
+    text = re.sub(r"\b[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]{20,}\b", "<telegram-token-redacted>", text)
+    text = re.sub(r"Bearer\s+[A-Za-z0-9._-]+", "Bearer <redacted>", text)
+    text = re.sub(r"\bsk-or-v1-[A-Za-z0-9_-]+", "sk-or-v1-<redacted>", text)
+    text = re.sub(r"sb_secret_[A-Za-z0-9_-]+", "sb_secret_<redacted>", text)
+    return text[:700]
+
+
+def _dedupe_strings(items: Any) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        clean = str(item).strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        result.append(clean)
+    return result
+
+
 def _can_upload(services: BotServices, telegram_user_id: int) -> bool:
     policy = services.access_policy
     return (
@@ -543,6 +820,69 @@ def _settings_dict(settings: UserSettings) -> dict[str, Any]:
         "debug_mode": settings.debug_mode,
         "selected_workspace_id": settings.selected_workspace_id,
     }
+
+
+def _dialog_context(intake: UserIntake) -> dict[str, object]:
+    blocked = ("candidate", "discarded", "raw", "retrieval")
+    clean_settings = {
+        str(key): value
+        for key, value in intake.user_settings.items()
+        if not any(marker in str(key).lower() for marker in blocked)
+    }
+    return {
+        "user_settings": clean_settings,
+        "vision_errors": intake.vision_errors,
+    }
+
+
+def _format_debug_summary(debug: dict[str, Any]) -> str:
+    status = str(debug.get("status") or "unknown").replace("AnswerStatus.", "")
+    sources = [str(source) for source in debug.get("sources", []) if str(source).strip()]
+    vision_errors = [str(error) for error in debug.get("vision_errors", []) if str(error).strip()]
+    lines = [f"Debug: status={status}"]
+    lines.append("sources=" + (", ".join(sources) if sources else "none"))
+    if vision_errors:
+        lines.append("vision_errors=" + "; ".join(vision_errors[:3]))
+    rag = debug.get("rag")
+    if isinstance(rag, dict) and rag:
+        answer_mode = rag.get("answer_mode")
+        if answer_mode:
+            lines.append(f"answer_mode={answer_mode}")
+        query_plan = rag.get("query_plan") if isinstance(rag.get("query_plan"), dict) else {}
+        expected = rag.get("expected_content_types") or query_plan.get("expected_content_types", [])
+        if expected:
+            lines.append("expected_content_types=" + ", ".join(str(item) for item in expected[:5]))
+        course_hint = rag.get("course_hint") or query_plan.get("course_hint")
+        if course_hint:
+            lines.append(f"course_hint={course_hint}")
+        documents = rag.get("selected_documents")
+        if isinstance(documents, list) and documents:
+            lines.append("documents:")
+            for document in documents[:5]:
+                if not isinstance(document, dict):
+                    continue
+                title = document.get("title") or document.get("filename") or document.get("document_id")
+                title = document.get("clean_label") or SourceLabelBuilder().build_document_label(document) or title
+                score = document.get("score")
+                penalties = document.get("penalties") or []
+                penalty_text = f" penalties={','.join(str(item) for item in penalties[:3])}" if penalties else ""
+                lines.append(f"- {title} score={score}{penalty_text}")
+        decisions = rag.get("accepted_decisions")
+        if isinstance(decisions, list) and decisions:
+            lines.append("accepted_evidence:")
+            for decision in decisions[:5]:
+                if isinstance(decision, dict):
+                    lines.append(
+                        f"- {decision.get('evidence_id')} {decision.get('status')} "
+                        f"reasons={','.join(str(item) for item in (decision.get('reasons') or [])[:3])}"
+                    )
+        discarded = rag.get("discarded_decisions") or rag.get("discarded_evidence")
+        if isinstance(discarded, list) and discarded:
+            lines.append("discarded:")
+            for item in discarded[:5]:
+                if isinstance(item, dict):
+                    lines.append(f"- {item.get('evidence_id') or item.get('chunk_id')} reason={item.get('reason') or item.get('reasons')}")
+    return "\n".join(lines)
 
 
 def _settings_text(settings: UserSettings) -> str:

@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from app.ingestion.chunker import ChunkDraft, SectionDraft
 from app.ingestion.document_cards import DocumentCard
+from app.db.supabase_client import SupabaseRequestError
 
 if TYPE_CHECKING:
     from app.db.supabase_client import SupabaseClient
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -21,6 +25,7 @@ class DocumentRecord:
     version: int
     status: str
     content_hash: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,7 @@ class DocumentRepository:
 
     def __init__(self, client: "SupabaseClient") -> None:
         self._client = client
+        self._term_statistics_available: bool | None = None
 
     async def get_or_create_workspace(self, name: str) -> dict[str, Any]:
         """Return an existing workspace by name or create it."""
@@ -79,7 +85,7 @@ class DocumentRepository:
         rows = await self._client.select(
             "documents",
             params={
-                "select": "id,version,status,content_hash",
+                "select": "id,version,status,content_hash,metadata",
                 "workspace_id": f"eq.{workspace_id}",
                 "document_key": f"eq.{document_key}",
                 "order": "version.desc",
@@ -97,7 +103,7 @@ class DocumentRepository:
         rows = await self._client.select(
             "documents",
             params={
-                "select": "id,version,status,content_hash",
+                "select": "id,version,status,content_hash,metadata",
                 "workspace_id": f"eq.{workspace_id}",
                 "document_key": f"eq.{document_key}",
                 "status": "eq.active",
@@ -237,6 +243,57 @@ class DocumentRepository:
         for start in range(0, len(all_rows), batch_size):
             inserted.extend(await self._client.insert("chunks", all_rows[start : start + batch_size]))
         return inserted
+
+    async def refresh_term_statistics(self, workspace_id: str) -> int:
+        """Rebuild corpus term statistics for active documents in a workspace."""
+        if self._term_statistics_available is False:
+            return -1
+        try:
+            rows = await self._client.rpc("refresh_term_statistics", {"p_workspace_id": workspace_id})
+        except SupabaseRequestError as exc:
+            if exc.is_missing_relation:
+                self._term_statistics_available = False
+                LOGGER.info("term_statistics is unavailable; ingestion will use fallback term scoring")
+                return -1
+            LOGGER.warning("failed to refresh term statistics for workspace %s: %s", workspace_id, exc)
+            return -2
+        except Exception as exc:  # noqa: BLE001 - term stats must not break ingestion
+            LOGGER.warning("failed to refresh term statistics for workspace %s: %s", workspace_id, exc)
+            return -2
+        self._term_statistics_available = True
+        if not rows:
+            return 0
+        value = next(iter(rows[0].values()), 0)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    async def list_term_statistics(self, workspace_id: str, limit: int = 5000) -> list[dict[str, Any]]:
+        """Return corpus term statistics for workspace-level rarity scoring."""
+        if self._term_statistics_available is False:
+            return []
+        try:
+            rows = await self._client.select(
+                "term_statistics",
+                params={
+                    "select": (
+                        "term,normalized_term,document_frequency,chunk_frequency,course_frequency,"
+                        "first_seen_at,last_seen_at,examples,term_type_guess,metadata"
+                    ),
+                    "workspace_id": f"eq.{workspace_id}",
+                    "order": "document_frequency.desc",
+                    "limit": str(limit),
+                },
+            )
+        except SupabaseRequestError as exc:
+            if exc.is_missing_relation:
+                self._term_statistics_available = False
+                LOGGER.info("term_statistics is unavailable; using fallback term scoring")
+                return []
+            raise
+        self._term_statistics_available = True
+        return rows
 
 
 class ConversationRepository:
@@ -433,11 +490,13 @@ class EvidenceLogRepository:
 
 
 def _document_record(row: dict[str, Any]) -> DocumentRecord:
+    metadata = row.get("metadata")
     return DocumentRecord(
         id=str(row["id"]),
         version=int(row["version"]),
         status=str(row["status"]),
         content_hash=str(row["content_hash"]),
+        metadata=metadata if isinstance(metadata, dict) else {},
     )
 
 

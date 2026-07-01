@@ -103,3 +103,16 @@ def test_image_context_without_text_does_not_call_rag() -> None:
     assert pipeline.calls == []
     assert "Пришлите вопрос" in message.replies[-1]
 
+
+def test_debug_mode_sends_readable_summary_not_raw_dict() -> None:
+    pipeline = FakePipeline()
+    services = BotServices(rag_pipeline=pipeline)
+    intake = UserIntake(text="привет", user_settings={"debug_mode": True})
+    message = FakeMessage()
+
+    asyncio.run(_answer_intake(_update(7, message), services, intake))
+
+    assert len(message.replies) == 2
+    assert message.replies[-1].startswith("Debug: status=")
+    assert "sources=none" in message.replies[-1]
+    assert not message.replies[-1].startswith("{")

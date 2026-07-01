@@ -2,6 +2,21 @@
 
 These instructions are for coding agents working in this repository.
 
+## Non-Negotiable RAG Development Rule
+
+Do not optimize RAG for one concrete question. Optimize the universal evidence search and evidence validation process.
+
+Raw candidates may be broad. `EvidencePack` must be strict.
+
+`AnswerGenerator` receives only:
+
+- `QuestionAnalysis`;
+- `EvidencePack`;
+- the user question;
+- compact `dialog_context`.
+
+Never pass raw candidates, discarded candidates, document candidates, course hints, or domain hints into the generation prompt. A similar chunk is not a source. A source is only an accepted evidence span that actually supports the answer.
+
 ## Project Overview
 
 AI Kurator V2 is a local-first Telegram RAG assistant for large educational and technical knowledge bases.
@@ -45,18 +60,21 @@ Main entry points:
 ## RAG Rules
 
 - Do not copy the old `services/rag.py` design into this repository.
+- Do not add hardcoded service-specific routing such as `if question contains "n8n"`.
+- Do not fix benchmark failures by tailoring logic to one eval question.
 - Do not send raw global candidate chunks to the answer generator.
 - Document routing must happen before evidence retrieval for generation context.
 - Evidence retrieval can use chunks internally, but the answer model sees only the final evidence pack.
 - Sources must be derived from evidence actually used in the answer.
 - If there is no evidence, the bot must not imitate an answer from the knowledge base.
+- Course hints, domain hints, and routing scores can help find evidence, but they are never evidence themselves.
 - Keep LLM inputs compact. Never send full PDFs, whole source files, or unrelated candidate chunks when evidence spans are enough.
 
 ## Supabase Rules
 
 - Before applying schema changes to a live project, inspect the current schema.
 - For DDL, use migrations or update `app/db/schema.sql`.
-- The planned embedding dimension is `vector(768)` for `nomic-embed-text`.
+- The planned embedding dimension is `vector(1024)` for multilingual embeddings such as BGE-M3.
 - Do not switch embedding models for existing data without a reindexing plan.
 - RAG search should only use active indexed units.
 - Material updates should archive old versions instead of creating duplicate active documents.

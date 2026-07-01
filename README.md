@@ -92,6 +92,7 @@ python app/main.py
 ```
 
 Runtime logs are written to `logs/app.log` and `logs/errors.log`.
+For the full Telegram RAG v2 runtime checklist on Windows, see [Run Telegram RAG V2](docs/run_telegram_rag.md).
 
 ## Smoke Checks
 
@@ -101,10 +102,14 @@ Run these after filling `.env` and applying the Supabase schema:
 python scripts/smoke_telegram_config.py
 python scripts/smoke_supabase.py
 python scripts/smoke_openrouter.py
+python scripts/smoke_rag_runtime.py
+python scripts/smoke_telegram_upload_ingestion.py
 ```
 
 `smoke_supabase.py` is read-only and checks that `DEFAULT_WORKSPACE_ID` exists in `workspaces`.
 `smoke_openrouter.py` sends a tiny completion request to `OPENROUTER_DEFAULT_MODEL`.
+`smoke_rag_runtime.py` only builds runtime dependencies and prints missing `.env` settings when RAG v2 is disabled.
+`smoke_telegram_upload_ingestion.py` writes a tiny txt material through the same ingestion service used by Telegram upload mode.
 
 ## Telegram UX
 
@@ -115,6 +120,13 @@ The bot has a compact persistent reply keyboard:
 - `Настройки`
 
 Questions, captions, and image context are combined into one user intake before RAG. Vision text is context only, not a standalone question. Upload mode is explicit: files outside `Загрузить материал` are not indexed automatically, and text sent during upload mode does not go to RAG.
+
+Telegram material uploads are described in [Telegram Upload Ingestion](docs/telegram_upload_ingestion.md). Upload feedback shows processing status, document/section/chunk counts, and detected services when service discovery finds them.
+
+Useful read-only Telegram status commands:
+
+- `/services` shows detected services and whether their docs source is connected.
+- `/base_status` shows knowledge base counts, external docs status, service status, and recent uploads.
 
 Answer model routing is controlled by per-user settings and the `OPENROUTER_*_MODELS` environment lists. Free mode never silently falls back to paid models. Quality can fall back to cheap only when `ALLOW_QUALITY_TO_CHEAP_FALLBACK=true`.
 
@@ -129,6 +141,12 @@ Persistent settings need the optional `user_settings` migration proposed in [Tel
 ```
 
 Ingestion creates a document row, a document card for document-first routing, parent sections, child chunks, and embeddings for the card, sections, and chunks. If a file has the same content hash as the active version, it is skipped. If the file changed, the old active document is archived after the new version is fully indexed.
+
+Ingestion also attempts to refresh corpus term statistics, so frequently repeated terms automatically become weaker retrieval signals and rare exact terms become stronger anchors. After a large import or reindexing, rebuild them explicitly:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\rebuild_term_statistics.py --workspace team
+```
 
 Make sure `EMBEDDING_MODEL` points to a local model that actually returns 1024-dimensional vectors. The database schema uses `vector(1024)`, so older 768-dimensional models such as `nomic-embed-text` require a schema change or reindexing plan before use.
 

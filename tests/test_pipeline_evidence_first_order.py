@@ -5,7 +5,7 @@ from app.rag.claim_verifier import ClaimVerifier
 from app.rag.evidence_pack import EvidencePackBuilder
 from app.rag.pipeline import EvidenceFirstRagPipeline
 from app.rag.reranker import EvidenceReranker
-from app.rag.types import DocumentCandidate, EvidenceSpan, QuestionAnalysis
+from app.rag.types import AnswerStatus, DocumentCandidate, EvidenceSpan, QuestionAnalysis
 
 
 class RecordingAnalyzer:
@@ -50,6 +50,7 @@ class RecordingRetriever:
                 document_id="doc-install",
                 document_title="Установка n8n",
                 text="Запуск n8n локально описан в материале.",
+                score=0.72,
             ),
         )
 
@@ -100,3 +101,49 @@ def test_pipeline_still_runs_evidence_first_order() -> None:
         "claim_verifier",
     ]
     assert result.sources
+
+
+def test_pipeline_short_circuits_small_talk_without_retrieval() -> None:
+    calls: list[str] = []
+    pipeline = EvidenceFirstRagPipeline(
+        analyzer=SmallTalkAnalyzer(calls),
+        router=ExplodingRouter(),
+        retriever=ExplodingRetriever(),
+        reranker=EvidenceReranker(),
+        pack_builder=EvidencePackBuilder(),
+        answer_generator=RecordingAnswerGenerator(calls),
+        verifier=RecordingVerifier(calls),
+    )
+
+    result = asyncio.run(pipeline.answer("привет", workspace_id="workspace-1"))
+
+    assert calls == ["question_analysis", "answer_generation", "claim_verifier"]
+    assert result.status == AnswerStatus.ANSWERED
+    assert result.sources == ()
+    assert "Привет" in result.answer
+
+
+class SmallTalkAnalyzer:
+    def __init__(self, calls: list[str]) -> None:
+        self.calls = calls
+
+    def analyze(self, question: str) -> QuestionAnalysis:
+        self.calls.append("question_analysis")
+        return QuestionAnalysis(
+            original_question=question,
+            primary_intent="поприветствовать пользователя",
+            task_type="general",
+            source_required=False,
+            answer_scope="general",
+            intent="small_talk",
+        )
+
+
+class ExplodingRouter:
+    async def route(self, *args: object, **kwargs: object) -> tuple[DocumentCandidate, ...]:
+        raise AssertionError("Router must not run for source-free small talk")
+
+
+class ExplodingRetriever:
+    async def retrieve(self, *args: object, **kwargs: object) -> tuple[EvidenceSpan, ...]:
+        raise AssertionError("Retriever must not run for source-free small talk")
