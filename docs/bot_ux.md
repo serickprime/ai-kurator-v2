@@ -60,6 +60,10 @@ Quick cleanup workflow:
 
 Files outside upload mode are not indexed automatically. The bot asks the user to enter upload mode first.
 
+## Answer Style
+
+Final Telegram answers should read as connected curator text, not as raw technical fragments copied from evidence. Empty numbered items, orphaned "see section" fragments, and headings without content should be cleaned before the answer is sent. Source blocks must stay separate at the end.
+
 ## Settings
 
 The inline settings menu controls:
