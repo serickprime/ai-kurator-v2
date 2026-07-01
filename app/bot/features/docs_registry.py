@@ -7,6 +7,8 @@ from typing import Any, Protocol
 
 from telegram import Update
 
+from app.docs_registry.candidates import load_docs_source_candidates_config
+from app.docs_registry.models import DocsSourceCandidate
 from app.service_registry.types import ServiceDocsStatus
 
 
@@ -29,6 +31,7 @@ async def send_docs_dashboard(
     is_allowed: bool,
     reply_markup: Any | None = None,
     safe_error: Callable[[Exception], str] | None = None,
+    candidate_loader: Callable[[], tuple[DocsSourceCandidate, ...]] | None = None,
 ) -> None:
     """Send the read-only `/docs` dashboard."""
     if update.message is None:
@@ -54,13 +57,19 @@ async def send_docs_dashboard(
             reply_markup=reply_markup,
         )
         return
-    await update.message.reply_text(format_docs_dashboard(statuses), reply_markup=reply_markup)
+    candidates = _load_candidates(candidate_loader)
+    await update.message.reply_text(format_docs_dashboard(statuses, candidates=candidates), reply_markup=reply_markup)
 
 
-def format_docs_dashboard(statuses: tuple[ServiceDocsStatus, ...]) -> str:
+def format_docs_dashboard(
+    statuses: tuple[ServiceDocsStatus, ...],
+    *,
+    candidates: tuple[DocsSourceCandidate, ...] = (),
+) -> str:
     """Format a compact read-only documentation dashboard."""
     connected = tuple(status for status in statuses if _is_connected(status))
     not_connected = tuple(status for status in statuses if not _is_connected(status))
+    available_candidates = _available_candidates(candidates, statuses)
 
     lines = [
         "Документация сервисов:",
@@ -78,6 +87,16 @@ def format_docs_dashboard(statuses: tuple[ServiceDocsStatus, ...]) -> str:
     else:
         lines.append("нет данных")
 
+    lines.extend(["", "Можно подключить позже:"])
+    if available_candidates:
+        shown = available_candidates[:8]
+        lines.extend(f"➕ {candidate.display_name}" for candidate in shown)
+        hidden_count = len(available_candidates) - len(shown)
+        if hidden_count > 0:
+            lines.append(f"Ещё: {hidden_count}")
+    else:
+        lines.append("нет данных")
+
     lines.extend(
         [
             "",
@@ -90,6 +109,36 @@ def format_docs_dashboard(statuses: tuple[ServiceDocsStatus, ...]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _load_candidates(loader: Callable[[], tuple[DocsSourceCandidate, ...]] | None) -> tuple[DocsSourceCandidate, ...]:
+    try:
+        if loader is not None:
+            return loader()
+        return load_docs_source_candidates_config().candidates
+    except Exception:  # noqa: BLE001 - `/docs` must keep working when optional catalog is unavailable
+        return ()
+
+
+def _available_candidates(
+    candidates: tuple[DocsSourceCandidate, ...],
+    statuses: tuple[ServiceDocsStatus, ...],
+) -> tuple[DocsSourceCandidate, ...]:
+    connected_service_ids = {
+        status.service_id
+        for status in statuses
+        if _is_connected(status) or status.docs_source_configured or status.docs_status == "configured_not_indexed"
+    }
+    connected_docs_sources = {
+        str(status.docs_source)
+        for status in statuses
+        if status.docs_source and (_is_connected(status) or status.docs_source_configured)
+    }
+    return tuple(
+        candidate
+        for candidate in candidates
+        if candidate.service_id not in connected_service_ids and candidate.docs_source not in connected_docs_sources
+    )
 
 
 def _is_connected(status: ServiceDocsStatus) -> bool:
