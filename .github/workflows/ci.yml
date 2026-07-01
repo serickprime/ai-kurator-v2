@@ -48,38 +48,4 @@ jobs:
           PY
 
       - name: Secret grep
-        run: |
-          python - <<'PY'
-          import re
-          from pathlib import Path
-
-          pattern = re.compile(
-              "|".join(
-                  [
-                      "sb_" + "secret_",
-                      "gh" + "p_",
-                      "github_" + "pat_",
-                      r"[0-9]{8,}:[A-Za-z0-9_-]{20,}",
-                  ]
-              )
-          )
-          ignored_dirs = {".git", ".venv", "venv", "__pycache__", "eval_runs", "logs"}
-          ignored_files = {"AGENTS.md"}
-          hits = []
-          for path in Path(".").rglob("*"):
-              if not path.is_file() or path.name in ignored_files:
-                  continue
-              if any(part in ignored_dirs for part in path.parts):
-                  continue
-              try:
-                  text = path.read_text(encoding="utf-8")
-              except UnicodeDecodeError:
-                  continue
-              for index, line in enumerate(text.splitlines(), start=1):
-                  if pattern.search(line):
-                      hits.append(f"{path}:{index}")
-          if hits:
-              print("Potential secrets found:")
-              print("\n".join(hits))
-              raise SystemExit(1)
-          PY
+        run: python scripts/check_tracked_secrets.py

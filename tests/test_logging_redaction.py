@@ -31,11 +31,11 @@ def test_url_encoded_token_is_masked() -> None:
 
 
 def test_raw_telegram_token_is_masked() -> None:
-    text = "token=123456789:ABCdef_1234567890_secret"
+    text = "token=123456789:ABCdef_1234567890_fake"
 
     redacted = _redact_secrets(text)
 
-    assert "123456789:ABCdef_1234567890_secret" not in redacted
+    assert "123456789:ABCdef_1234567890_fake" not in redacted
     assert "<telegram-token-redacted>" in redacted
 
 

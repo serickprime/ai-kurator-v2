@@ -129,7 +129,7 @@ def test_abstract_openrouter_model_id_is_not_used_as_concrete_model() -> None:
 def test_router_sanitizes_provider_errors_and_tries_next_model() -> None:
     client = FakeRoutedClient(
         {
-            "cheap-a": RuntimeError("400 bad request Authorization: Bearer secret-token"),
+            "cheap-a": RuntimeError("400 bad request Authorization: Bearer fake-token"),
             "cheap-b": "safe answer",
         }
     )
@@ -139,5 +139,5 @@ def test_router_sanitizes_provider_errors_and_tries_next_model() -> None:
 
     assert result.text == "safe answer"
     assert client.text_attempts == ["cheap-a", "cheap-b"]
-    assert "secret-token" not in " ".join(result.metadata.provider_errors)
+    assert "fake-token" not in " ".join(result.metadata.provider_errors)
     assert "Bearer <redacted>" in " ".join(result.metadata.provider_errors)
