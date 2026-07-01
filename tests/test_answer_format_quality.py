@@ -68,3 +68,65 @@ curl https://example.com
     assert "```bash\n1.\ncurl https://example.com\nраздел keep-this\n```" in cleaned
     assert "\n1.\nГотово" not in cleaned
     assert "Готово." in cleaned
+
+
+def test_clean_answer_format_removes_orphan_headings_without_colon() -> None:
+    raw = """HTTP Request node в n8n — это универсальный инструмент для вызова REST-API.
+Как работает
+Аутентификация – поддерживаются все типы.
+Тело запроса – выбираете тип JSON.
+Ключевые условия
+Практический вывод
+Чтобы выполнить запрос к внешнему сервису:
+Добавьте HTTP Request node."""
+
+    cleaned = clean_answer_format(raw)
+
+    assert "Как работает" in cleaned
+    assert "Аутентификация – поддерживаются все типы." in cleaned
+    assert "Тело запроса – выбираете тип JSON." in cleaned
+    assert "Ключевые условия" not in cleaned
+    assert "\nПрактический вывод\n" not in f"\n{cleaned}\n"
+    assert "Чтобы выполнить запрос к внешнему сервису:" in cleaned
+    assert "Добавьте HTTP Request node." in cleaned
+
+
+def test_clean_answer_format_keeps_normal_heading_with_content() -> None:
+    raw = """Как работает
+Аутентификация – поддерживаются все типы.
+Тело запроса – выбираете тип JSON."""
+
+    cleaned = clean_answer_format(raw)
+
+    assert cleaned.splitlines()[0] == "Как работает"
+    assert "Аутентификация – поддерживаются все типы." in cleaned
+    assert "Тело запроса – выбираете тип JSON." in cleaned
+
+
+def test_clean_answer_format_preserves_markdown_links() -> None:
+    raw = """Подробности есть в [HTTP Request docs](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/).
+
+Итог:
+Используйте node для вызова внешнего API."""
+
+    cleaned = clean_answer_format(raw)
+
+    assert "[HTTP Request docs](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.httprequest/)" in cleaned
+    assert "Итог: Используйте node для вызова внешнего API." in cleaned
+
+
+def test_clean_answer_format_preserves_code_blocks_with_commands_v2() -> None:
+    raw = """Важно
+
+```bash
+npm install -g n8n
+n8n start
+```
+
+Итог
+Запустите команду из терминала."""
+
+    cleaned = clean_answer_format(raw)
+
+    assert "```bash\nnpm install -g n8n\nn8n start\n```" in cleaned
+    assert "Итог: Запустите команду из терминала." in cleaned

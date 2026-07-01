@@ -4,6 +4,23 @@ from __future__ import annotations
 
 import re
 
+EMPTY_HEADING_LABELS = {
+    "ключевые условия",
+    "практический вывод",
+    "как работает",
+    "важно",
+    "итог",
+    "вывод",
+}
+
+INLINE_SUMMARY_HEADING_LABELS = {
+    "ключевые условия",
+    "практический вывод",
+    "важно",
+    "итог",
+    "вывод",
+}
+
 
 def clean_answer_format(text: str) -> str:
     """Remove broken list/reference fragments while preserving useful content."""
@@ -50,14 +67,14 @@ def _clean_text_block(text: str) -> str:
         if _is_empty_numbered_item(line) or _is_orphan_reference(line):
             index += 1
             continue
-        if _is_empty_heading(line):
+        if _is_known_empty_heading(line):
             next_index = _next_meaningful_index(raw_lines, index + 1)
-            if next_index is None or _is_empty_heading(raw_lines[next_index].strip()):
+            if next_index is None or _is_known_empty_heading(raw_lines[next_index].strip()):
                 index += 1
                 continue
             next_line = raw_lines[next_index].strip()
-            if not _looks_like_list_item(next_line) and not _is_orphan_reference(next_line):
-                lines.append(f"{line} {next_line}")
+            if _should_inline_heading(line) and not _looks_like_list_item(next_line) and not _is_orphan_reference(next_line):
+                lines.append(_inline_heading(line, next_line))
                 index = next_index + 1
                 continue
         lines.append(line)
@@ -91,18 +108,24 @@ def _is_orphan_reference(line: str) -> bool:
     return False
 
 
-def _is_empty_heading(line: str) -> bool:
+def _is_known_empty_heading(line: str) -> bool:
+    return _heading_label(line) in EMPTY_HEADING_LABELS
+
+
+def _should_inline_heading(line: str) -> bool:
     clean = line.strip()
-    if not clean.endswith(":"):
-        return False
-    lowered = clean.casefold()
-    return lowered in {
-        "ключевые условия:",
-        "практический вывод:",
-        "важно:",
-        "итог:",
-        "вывод:",
-    }
+    return clean.endswith(":") or _heading_label(clean) in INLINE_SUMMARY_HEADING_LABELS
+
+
+def _inline_heading(line: str, next_line: str) -> str:
+    clean = line.strip()
+    separator = " " if clean.endswith(":") else ": "
+    return f"{clean}{separator}{next_line.strip()}"
+
+
+def _heading_label(line: str) -> str:
+    clean = re.sub(r"\s+", " ", line.strip()).strip(":").strip()
+    return clean.casefold()
 
 
 def _next_meaningful_index(lines: list[str], start: int) -> int | None:
