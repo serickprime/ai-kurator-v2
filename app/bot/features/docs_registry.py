@@ -1,0 +1,129 @@
+"""Read-only Telegram dashboard for documentation sources."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any, Protocol
+
+from telegram import Update
+
+from app.service_registry.types import ServiceDocsStatus
+
+
+class ServiceDocsStatusReader(Protocol):
+    """Read-only service docs status provider."""
+
+    async def list_statuses(
+        self,
+        *,
+        scan_corpus: bool = False,
+        service: str | None = None,
+    ) -> tuple[ServiceDocsStatus, ...]:
+        """Return service/docs status rows."""
+
+
+async def send_docs_dashboard(
+    update: Update,
+    *,
+    status_provider: ServiceDocsStatusReader | None,
+    is_allowed: bool,
+    reply_markup: Any | None = None,
+    safe_error: Callable[[Exception], str] | None = None,
+) -> None:
+    """Send the read-only `/docs` dashboard."""
+    if update.message is None:
+        return
+    if not is_allowed:
+        await update.message.reply_text(
+            "Панель документации доступна владельцу бота.",
+            reply_markup=reply_markup,
+        )
+        return
+    if status_provider is None:
+        await update.message.reply_text(
+            "Панель документации пока недоступна: не подключено чтение Supabase или registry.",
+            reply_markup=reply_markup,
+        )
+        return
+    try:
+        statuses = await status_provider.list_statuses(scan_corpus=False)
+    except Exception as exc:  # noqa: BLE001 - Telegram command should fail gracefully
+        error = safe_error(exc) if safe_error is not None else str(exc)
+        await update.message.reply_text(
+            "Не получилось получить панель документации: " + error,
+            reply_markup=reply_markup,
+        )
+        return
+    await update.message.reply_text(format_docs_dashboard(statuses), reply_markup=reply_markup)
+
+
+def format_docs_dashboard(statuses: tuple[ServiceDocsStatus, ...]) -> str:
+    """Format a compact read-only documentation dashboard."""
+    connected = tuple(status for status in statuses if _is_connected(status))
+    not_connected = tuple(status for status in statuses if not _is_connected(status))
+
+    lines = [
+        "Документация сервисов:",
+        "",
+        "Подключено:",
+    ]
+    if connected:
+        lines.extend(_connected_line(status) for status in connected[:10])
+    else:
+        lines.append("нет данных")
+
+    lines.extend(["", "Не подключено:"])
+    if not_connected:
+        lines.extend(_not_connected_line(status) for status in not_connected[:10])
+    else:
+        lines.append("нет данных")
+
+    lines.extend(
+        [
+            "",
+            "Что можно делать:",
+            "- /services — технический статус сервисов",
+            "- /base_status — статус базы знаний",
+            "",
+            "Следующий этап:",
+            "подключение новых official docs будет через безопасный preview/dry-run и подтверждение владельца.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _is_connected(status: ServiceDocsStatus) -> bool:
+    return (
+        status.docs_status == "indexed"
+        and bool(status.docs_source_configured or status.docs_source)
+        and status.active_docs_count > 0
+    )
+
+
+def _connected_line(status: ServiceDocsStatus) -> str:
+    quality = _quality_label(status)
+    suffix = f" — {quality}" if quality else ""
+    return f"✅ {status.display_name}{suffix}"
+
+
+def _not_connected_line(status: ServiceDocsStatus) -> str:
+    reason = _not_connected_reason(status)
+    suffix = f" — {reason}" if reason else ""
+    return f"⚪ {status.display_name}{suffix}"
+
+
+def _quality_label(status: ServiceDocsStatus) -> str:
+    quality = (status.quality_status or "").strip()
+    if quality and quality.casefold() != "none":
+        return quality.upper()
+    return "indexed" if status.docs_status == "indexed" else ""
+
+
+def _not_connected_reason(status: ServiceDocsStatus) -> str:
+    if status.docs_status == "disabled" or status.configured_status == "disabled":
+        return "отключено"
+    if status.docs_status == "configured_not_indexed":
+        return "настроено, не проиндексировано"
+    if status.docs_status == "needs_review" or status.configured_status == "needs_review":
+        return "нужна проверка"
+    return ""

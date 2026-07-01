@@ -12,6 +12,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 
 from app.bot.access import UserAccessPolicy
 from app.bot.base_status import BaseStatus, format_base_status
+from app.bot.features.docs_registry import send_docs_dashboard
 from app.bot.formatting import format_for_telegram, format_status
 from app.bot.intake_buffer import MessageIntakeBuffer, UserIntake
 from app.bot.keyboards import (
@@ -183,6 +184,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "- задайте вопрос обычным сообщением;",
                 "- /upload или «Загрузить материал» — загрузить материал в базу;",
                 "- /base_status — статус базы знаний;",
+                "- /docs — панель документации сервисов;",
                 "- /materials — список загруженных материалов;",
                 "- /material <id> — карточка материала;",
                 "- /archive_material <id> — архивировать материал;",
@@ -454,6 +456,19 @@ async def services_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     await update.message.reply_text(_format_services_status(statuses), reply_markup=main_menu_keyboard())
 
 
+async def docs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/docs`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    await send_docs_dashboard(
+        update,
+        status_provider=services.service_docs_status_provider,
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        reply_markup=main_menu_keyboard(),
+        safe_error=_safe_error,
+    )
+
+
 async def base_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle `/base_status`."""
     services = _services(context)
@@ -507,6 +522,7 @@ _TEXT_COMMAND_HANDLERS: dict[str, CommandFallbackHandler] = {
     "source_last": source_last_command,
     "archive_source": archive_source_command,
     "services": services_command,
+    "docs": docs_command,
     "base_status": base_status_command,
     "debug_last": debug_last_command,
 }
@@ -694,6 +710,7 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("source_last", source_last_command))
     application.add_handler(CommandHandler("archive_source", archive_source_command))
     application.add_handler(CommandHandler("services", services_command))
+    application.add_handler(CommandHandler("docs", docs_command))
     application.add_handler(CommandHandler("base_status", base_status_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
     application.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r"^settings:"))
@@ -1081,6 +1098,11 @@ def _can_manage_materials(services: BotServices, telegram_user_id: int) -> bool:
 
 
 def _can_archive_materials(services: BotServices, telegram_user_id: int) -> bool:
+    policy = services.access_policy
+    return telegram_user_id in set(policy.owner_ids) or telegram_user_id in set(policy.fallback_admin_ids)
+
+
+def _can_use_docs_dashboard(services: BotServices, telegram_user_id: int) -> bool:
     policy = services.access_policy
     return telegram_user_id in set(policy.owner_ids) or telegram_user_id in set(policy.fallback_admin_ids)
 
