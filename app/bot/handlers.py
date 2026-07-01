@@ -32,6 +32,22 @@ from app.bot.keyboards import (
     settings_inline_keyboard,
     upload_menu_keyboard,
 )
+from app.bot.materials import (
+    ExternalDocsArchiveError,
+    MaterialAmbiguousError,
+    MaterialCard,
+    MaterialNotFoundError,
+    format_material_archived,
+    format_material_card,
+    format_materials_list,
+)
+from app.bot.source_last import (
+    find_last_answer_source,
+    format_last_answer_sources,
+    format_source_archived,
+    last_answer_sources_from_debug,
+    source_refs_to_debug_payload,
+)
 from app.bot.user_state import InMemoryBotUserStateStore, InMemoryUserSettingsRepository
 from app.db.repositories import UserSettings
 from app.rag.source_labels import SourceLabelBuilder
@@ -86,6 +102,19 @@ class BaseStatusReader(Protocol):
         """Return compact knowledge base status."""
 
 
+class MaterialsReader(Protocol):
+    """Read/update uploaded materials provider."""
+
+    async def list_recent_materials(self, workspace_id: str, limit: int = 10) -> tuple[MaterialCard, ...]:
+        """Return recent uploaded materials."""
+
+    async def get_material(self, workspace_id: str, material_id_or_prefix: str) -> MaterialCard:
+        """Return one uploaded material."""
+
+    async def archive_material(self, workspace_id: str, material_id_or_prefix: str) -> MaterialCard:
+        """Archive one uploaded material."""
+
+
 @dataclass
 class BotServices:
     """Telegram handler dependencies."""
@@ -103,6 +132,7 @@ class BotServices:
     ingestion_missing_config: tuple[str, ...] = ()
     service_docs_status_provider: ServiceDocsStatusReader | None = None
     base_status_provider: BaseStatusReader | None = None
+    materials_provider: MaterialsReader | None = None
     conversation_repo: Any | None = None
     vision_textifier: Any | None = None
     download_dir: Path = Path("data/uploads/telegram")
@@ -153,6 +183,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "- задайте вопрос обычным сообщением;",
                 "- /upload или «Загрузить материал» — загрузить материал в базу;",
                 "- /base_status — статус базы знаний;",
+                "- /materials — список загруженных материалов;",
+                "- /material <id> — карточка материала;",
+                "- /archive_material <id> — архивировать материал;",
+                "- /source_last — источники последнего ответа;",
+                "- /archive_source <id> — архивировать источник последнего ответа;",
                 "- /services — найденные сервисы и документация;",
                 "- /status — настройки и runtime-статус;",
                 "- /new — новая тема;",
@@ -204,16 +239,197 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def materials_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle `/materials`."""
-    del context
-    if update.message is None:
+    services = _services(context)
+    user_id = _user_id(update)
+    if update.message is None or user_id is None:
         return
-    await update.message.reply_text(
-        (
-            "Просмотр материалов будет подключен к Supabase documents/document_cards. "
-            "Сейчас используйте загрузку материалов."
-        ),
-        reply_markup=main_menu_keyboard(),
-    )
+    if not _can_manage_materials(services, user_id):
+        await update.message.reply_text("Просмотр материалов доступен владельцу бота.", reply_markup=main_menu_keyboard())
+        return
+    if services.materials_provider is None or not services.default_workspace_id:
+        await update.message.reply_text(
+            "Список материалов пока недоступен: не подключено чтение Supabase.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    try:
+        materials = await services.materials_provider.list_recent_materials(services.default_workspace_id, limit=10)
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        await update.message.reply_text(
+            "Не получилось получить список материалов: " + _safe_error(exc),
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await update.message.reply_text(format_materials_list(materials), reply_markup=main_menu_keyboard())
+
+
+async def material_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/material <id>`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    if update.message is None or user_id is None:
+        return
+    if not _can_manage_materials(services, user_id):
+        await update.message.reply_text("Просмотр материалов доступен владельцу бота.", reply_markup=main_menu_keyboard())
+        return
+    material_id = _first_command_arg(update, context)
+    if not material_id:
+        await update.message.reply_text("Укажите id материала: /material <id>", reply_markup=main_menu_keyboard())
+        return
+    if services.materials_provider is None or not services.default_workspace_id:
+        await update.message.reply_text(
+            "Карточка материала пока недоступна: не подключено чтение Supabase.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    try:
+        material = await services.materials_provider.get_material(services.default_workspace_id, material_id)
+    except MaterialAmbiguousError:
+        await update.message.reply_text(
+            "Нашёл несколько материалов с таким id. Уточните id.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    except MaterialNotFoundError:
+        await update.message.reply_text("Материал не найден.", reply_markup=main_menu_keyboard())
+        return
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        await update.message.reply_text(
+            "Не получилось получить материал: " + _safe_error(exc),
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await update.message.reply_text(format_material_card(material), reply_markup=main_menu_keyboard())
+
+
+async def archive_material_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/archive_material <id>`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    if update.message is None or user_id is None:
+        return
+    if not _can_archive_materials(services, user_id):
+        await update.message.reply_text(
+            "Архивирование доступно владельцу бота.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    material_id = _first_command_arg(update, context)
+    if not material_id:
+        await update.message.reply_text(
+            "Укажите id материала: /archive_material <id>",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    if services.materials_provider is None or not services.default_workspace_id:
+        await update.message.reply_text(
+            "Архивирование пока недоступно: не подключено чтение Supabase.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    try:
+        material = await services.materials_provider.archive_material(services.default_workspace_id, material_id)
+    except ExternalDocsArchiveError:
+        await update.message.reply_text(
+            "Официальную документацию нельзя архивировать через Telegram.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    except MaterialAmbiguousError:
+        await update.message.reply_text(
+            "Нашёл несколько материалов с таким id. Уточните id.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    except MaterialNotFoundError:
+        await update.message.reply_text("Материал не найден.", reply_markup=main_menu_keyboard())
+        return
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        await update.message.reply_text(
+            "Не получилось архивировать материал: " + _safe_error(exc),
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await update.message.reply_text(format_material_archived(material), reply_markup=main_menu_keyboard())
+
+
+async def source_last_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/source_last`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    if update.message is None or user_id is None:
+        return
+    state = services.state_store.get(user_id)
+    sources = last_answer_sources_from_debug(state.last_debug)
+    await update.message.reply_text(format_last_answer_sources(sources), reply_markup=main_menu_keyboard())
+
+
+async def archive_source_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/archive_source <id>`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    if update.message is None or user_id is None:
+        return
+    if not _can_archive_materials(services, user_id):
+        await update.message.reply_text(
+            "Архивирование доступно владельцу бота.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    source_id = _first_command_arg(update, context)
+    if not source_id:
+        await update.message.reply_text(
+            "Укажите id источника: /archive_source <id>",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    sources = last_answer_sources_from_debug(services.state_store.get(user_id).last_debug)
+    source = find_last_answer_source(sources, source_id)
+    if source is None:
+        await update.message.reply_text(
+            "Такого источника нет в последнем ответе.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    if source.is_external:
+        await update.message.reply_text(
+            "Официальную документацию нельзя архивировать через Telegram.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    if services.materials_provider is None or not services.default_workspace_id:
+        await update.message.reply_text(
+            "Архивирование пока недоступно: не подключено чтение Supabase.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    try:
+        material = await services.materials_provider.archive_material(services.default_workspace_id, source.document_id)
+    except ExternalDocsArchiveError:
+        await update.message.reply_text(
+            "Официальную документацию нельзя архивировать через Telegram.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    except MaterialAmbiguousError:
+        await update.message.reply_text(
+            "Нашёл несколько материалов с таким id. Уточните id.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    except MaterialNotFoundError:
+        await update.message.reply_text(
+            "Материал уже не найден среди активных материалов.",
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        await update.message.reply_text(
+            "Не получилось архивировать источник: " + _safe_error(exc),
+            reply_markup=main_menu_keyboard(),
+        )
+        return
+    await update.message.reply_text(format_source_archived(material.title or source.title), reply_markup=main_menu_keyboard())
 
 
 async def services_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -286,6 +502,10 @@ _TEXT_COMMAND_HANDLERS: dict[str, CommandFallbackHandler] = {
     "done": done_command,
     "status": status_command,
     "materials": materials_command,
+    "material": material_command,
+    "archive_material": archive_material_command,
+    "source_last": source_last_command,
+    "archive_source": archive_source_command,
     "services": services_command,
     "base_status": base_status_command,
     "debug_last": debug_last_command,
@@ -469,6 +689,10 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("done", done_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("materials", materials_command))
+    application.add_handler(CommandHandler("material", material_command))
+    application.add_handler(CommandHandler("archive_material", archive_material_command))
+    application.add_handler(CommandHandler("source_last", source_last_command))
+    application.add_handler(CommandHandler("archive_source", archive_source_command))
     application.add_handler(CommandHandler("services", services_command))
     application.add_handler(CommandHandler("base_status", base_status_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
@@ -626,6 +850,7 @@ async def _answer_intake(update: Update, services: BotServices, intake: UserInta
         state.last_debug = {
             "status": str(getattr(result, "status", "")),
             "sources": SourceLabelBuilder().build_many(getattr(result, "sources", ())),
+            "source_refs": source_refs_to_debug_payload(getattr(result, "sources", ())),
             "vision_errors": list(intake.vision_errors),
             "rag": getattr(result, "debug", {}) or {},
         }
@@ -849,6 +1074,27 @@ def _can_upload(services: BotServices, telegram_user_id: int) -> bool:
         or telegram_user_id in set(policy.owner_ids)
         or telegram_user_id in set(policy.fallback_admin_ids)
     )
+
+
+def _can_manage_materials(services: BotServices, telegram_user_id: int) -> bool:
+    return _can_archive_materials(services, telegram_user_id)
+
+
+def _can_archive_materials(services: BotServices, telegram_user_id: int) -> bool:
+    policy = services.access_policy
+    return telegram_user_id in set(policy.owner_ids) or telegram_user_id in set(policy.fallback_admin_ids)
+
+
+def _first_command_arg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    args = getattr(context, "args", None)
+    if args:
+        return str(args[0]).strip()
+    if update.message is None or not update.message.text:
+        return ""
+    parts = update.message.text.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        return ""
+    return parts[1].strip().split(maxsplit=1)[0] if parts[1].strip() else ""
 
 
 def _services(context: ContextTypes.DEFAULT_TYPE) -> BotServices:

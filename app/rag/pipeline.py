@@ -6,6 +6,7 @@ import logging
 from dataclasses import asdict
 from typing import Protocol
 
+from app.rag.answer_formatting import clean_answer_format
 from app.rag.answer_generator import AnswerGenerator
 from app.rag.claim_verifier import ClaimVerifier
 from app.rag.document_router import DocumentRouter
@@ -87,6 +88,7 @@ class EvidenceFirstRagPipeline:
             }
 
         final_answer = verification.safe_answer if verification.verdict in {"rewrite", "fail"} else draft.text
+        final_answer = clean_answer_format(final_answer)
         status = _final_status(draft.status, verification.verdict)
         source_strings = build_sources(evidence) if _can_show_sources(evidence, verification.verdict) else []
         if source_strings:

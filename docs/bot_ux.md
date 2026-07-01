@@ -17,6 +17,10 @@ Commands stay available:
 /help
 /status
 /materials
+/material <id>
+/archive_material <id>
+/source_last
+/archive_source <id>
 /services
 /base_status
 /debug_last
@@ -29,14 +33,40 @@ Read-only status commands:
 
 - `/services` shows services detected in the indexed base and whether their documentation source is connected.
 - `/base_status` shows compact knowledge base counts, external docs source status, service status, and recent uploads.
+- `/materials` lists recent uploaded/local materials, excluding external docs.
+- `/material <id>` shows one uploaded/local material card by full UUID or displayed short id.
+- `/source_last` shows documents/sources used by the last RAG answer.
 
 These commands do not start sync, do not crawl the internet, and do not mutate the database.
+
+Material management command:
+
+- `/archive_material <id>` archives one active uploaded/local material by setting `documents.status = archived`.
+- `/archive_source <id>` archives one uploaded/local source from the last RAG answer.
+
+It does not physically delete chunks, does not archive external/official docs, does not start sync, and is limited to owner/admin users.
+
+Quick cleanup workflow:
+
+1. Ask a question.
+2. If the answer used a bad source, run `/source_last`.
+3. Find the bad uploaded/local source id.
+4. Run `/archive_source <id>`.
+5. Ask the question again.
 
 `Новая тема` clears the local intake buffer, resets upload/follow-up state, and closes the active conversation when a conversation repository is wired.
 
 `Загрузить материал` switches the user into `upload_material` mode. Files and images in this mode are sent to ingestion. Plain text in this mode is never sent to RAG.
 
 Files outside upload mode are not indexed automatically. The bot asks the user to enter upload mode first.
+
+## Answer Style
+
+Final Telegram answers should read as connected curator text, not as raw technical fragments copied from evidence. Empty numbered items, orphaned "see section" fragments, and headings without content should be cleaned before the answer is sent. Source blocks must stay separate at the end.
+
+## Ручная проверка качества
+
+Manual Telegram RAG quality smoke suite: [RAG Quality Smoke Suite](rag_quality_smoke_suite.md).
 
 ## Settings
 

@@ -3,7 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from scripts.run_telegram_bot import PollingLock, RunnerDependencies, run_bot
+from scripts import run_telegram_bot
+from scripts.run_telegram_bot import (
+    PollingLock,
+    RunnerDependencies,
+    _pid_is_running,
+    _posix_pid_is_running,
+    _windows_pid_is_running,
+    run_bot,
+)
 from scripts.runtime_healthcheck import HealthLine, HealthReport
 
 
@@ -120,6 +128,87 @@ def test_polling_lock_replaces_stale_lock(tmp_path: Path) -> None:
         assert lock_path.read_text(encoding="utf-8") == "111"
 
     assert not lock_path.exists()
+
+
+def test_windows_pid_helper_does_not_use_os_kill(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    kernel32 = FakeKernel32(handle=123)
+    monkeypatch.setattr(run_telegram_bot.ctypes, "windll", SimpleNamespace(kernel32=kernel32), raising=False)
+
+    def fail_kill(pid: int, signal: int) -> None:
+        del pid, signal
+        raise AssertionError("Windows PID helper must not use os.kill")
+
+    monkeypatch.setattr(run_telegram_bot.os, "kill", fail_kill)
+
+    assert _windows_pid_is_running(456) is True
+    assert kernel32.open_calls == [(0x1000, False, 456)]
+    assert kernel32.close_calls == [123]
+
+
+def test_windows_pid_helper_returns_true_when_open_process_returns_handle(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    kernel32 = FakeKernel32(handle=99)
+    monkeypatch.setattr(run_telegram_bot.ctypes, "windll", SimpleNamespace(kernel32=kernel32), raising=False)
+
+    assert _windows_pid_is_running(123) is True
+    assert kernel32.close_calls == [99]
+
+
+def test_windows_pid_helper_returns_false_when_open_process_returns_zero(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    kernel32 = FakeKernel32(handle=0)
+    monkeypatch.setattr(run_telegram_bot.ctypes, "windll", SimpleNamespace(kernel32=kernel32), raising=False)
+
+    assert _windows_pid_is_running(123) is False
+    assert kernel32.close_calls == []
+
+
+def test_pid_dispatch_uses_windows_helper_on_windows(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(run_telegram_bot.os, "name", "nt", raising=False)
+    monkeypatch.setattr(run_telegram_bot, "_windows_pid_is_running", lambda pid: pid == 77)
+    monkeypatch.setattr(
+        run_telegram_bot,
+        "_posix_pid_is_running",
+        lambda pid: (_ for _ in ()).throw(AssertionError("POSIX helper should not run")),
+    )
+
+    assert _pid_is_running(77) is True
+    assert _pid_is_running(78) is False
+
+
+def test_posix_pid_helper_uses_os_kill(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[int, int]] = []
+
+    def fake_kill(pid: int, signal: int) -> None:
+        calls.append((pid, signal))
+
+    monkeypatch.setattr(run_telegram_bot.os, "kill", fake_kill)
+
+    assert _posix_pid_is_running(321) is True
+    assert calls == [(321, 0)]
+
+
+def test_posix_pid_helper_returns_false_on_os_error(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    def fake_kill(pid: int, signal: int) -> None:
+        del pid, signal
+        raise OSError
+
+    monkeypatch.setattr(run_telegram_bot.os, "kill", fake_kill)
+
+    assert _posix_pid_is_running(321) is False
+
+
+class FakeKernel32:
+    def __init__(self, *, handle: int) -> None:
+        self.handle = handle
+        self.open_calls: list[tuple[int, bool, int]] = []
+        self.close_calls: list[int] = []
+
+    def OpenProcess(self, access: int, inherit_handle: bool, pid: int) -> int:  # noqa: N802 - Windows API name
+        self.open_calls.append((access, inherit_handle, pid))
+        return self.handle
+
+    def CloseHandle(self, handle: int) -> bool:  # noqa: N802 - Windows API name
+        self.close_calls.append(handle)
+        return True
 
 
 async def _report(status: str) -> HealthReport:

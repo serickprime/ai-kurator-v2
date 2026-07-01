@@ -127,10 +127,24 @@ Questions, captions, and image context are combined into one user intake before 
 
 Telegram material uploads are described in [Telegram Upload Ingestion](docs/telegram_upload_ingestion.md). Upload feedback shows processing status, document/section/chunk counts, and detected services when service discovery finds them.
 
+Manual RAG quality smoke suite: [docs/rag_quality_smoke_suite.md](docs/rag_quality_smoke_suite.md).
+
 Useful read-only Telegram status commands:
 
 - `/services` shows detected services and whether their docs source is connected.
 - `/base_status` shows knowledge base counts, external docs status, service status, and recent documents.
+- `/materials` lists recent uploaded/local materials and excludes external docs.
+- `/material <id>` shows one uploaded/local material card by full UUID or short displayed id.
+- `/source_last` shows sources used by the last RAG answer.
+
+Owner/admin material management:
+
+- `/archive_material <id>` archives one active uploaded/local material by setting `documents.status = archived`.
+- `/archive_source <id>` archives an uploaded/local source from the last RAG answer.
+
+Archiving does not physically delete chunks and cannot be used for external/official docs.
+
+When an answer used a bad uploaded/local source, check `/source_last`, archive the source with `/archive_source <id>`, then ask the question again.
 
 Answer model routing is controlled by per-user settings and the `OPENROUTER_*_MODELS` environment lists. Free mode never silently falls back to paid models. Quality can fall back to cheap only when `ALLOW_QUALITY_TO_CHEAP_FALLBACK=true`.
 

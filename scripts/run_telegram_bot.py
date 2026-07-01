@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import os
 import sys
 from dataclasses import dataclass
@@ -126,6 +127,31 @@ def _read_pid(path: Path) -> int | None:
 
 
 def _pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        return _windows_pid_is_running(pid)
+    return _posix_pid_is_running(pid)
+
+
+def _windows_pid_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    process_query_limited_information = 0x1000
+    try:
+        kernel32 = ctypes.windll.kernel32
+    except AttributeError:
+        return False
+    handle = kernel32.OpenProcess(process_query_limited_information, False, int(pid))
+    if not handle:
+        return False
+    try:
+        return True
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _posix_pid_is_running(pid: int) -> bool:
     if pid <= 0:
         return False
     try:
