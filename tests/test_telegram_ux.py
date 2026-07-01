@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.bot.handlers import BotServices, _answer_intake, _start_new_topic, handle_text
+from app.bot.handlers import BotServices, _answer_intake, _start_new_topic, handle_settings_callback, handle_text
 from app.bot.intake_buffer import UserIntake
 from app.bot.keyboards import (
     BTN_CANCEL,
@@ -10,6 +10,7 @@ from app.bot.keyboards import (
     BTN_NEW_TOPIC,
     BTN_SETTINGS,
     BTN_UPLOAD_MATERIAL,
+    CALLBACK_SETTINGS_BACK,
     main_menu_keyboard,
     upload_menu_keyboard,
 )
@@ -30,6 +31,20 @@ class FakeMessage:
         self.replies.append(text)
 
 
+class FakeCallbackQuery:
+    def __init__(self, data: str) -> None:
+        self.data = data
+        self.answers: list[str] = []
+        self.edits: list[str] = []
+
+    async def answer(self, text: str | None = None) -> None:
+        self.answers.append(text or "")
+
+    async def edit_message_text(self, text: str, **kwargs: object) -> None:
+        del kwargs
+        self.edits.append(text)
+
+
 class FakePipeline:
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -48,6 +63,10 @@ def _update(user_id: int, message: FakeMessage) -> SimpleNamespace:
     return SimpleNamespace(message=message, effective_user=SimpleNamespace(id=user_id), callback_query=None)
 
 
+def _callback_update(user_id: int, query: FakeCallbackQuery) -> SimpleNamespace:
+    return SimpleNamespace(message=None, effective_user=SimpleNamespace(id=user_id), callback_query=query)
+
+
 def test_main_keyboard_has_only_primary_buttons() -> None:
     keyboard = main_menu_keyboard().to_dict()["keyboard"]
 
@@ -62,6 +81,27 @@ def test_upload_keyboard_has_done_and_cancel() -> None:
     labels = [button["text"] for row in keyboard for button in row]
 
     assert labels == [BTN_DONE, BTN_CANCEL]
+
+
+def test_settings_reply_keyboard_opens_settings() -> None:
+    services = BotServices()
+    message = FakeMessage(BTN_SETTINGS)
+
+    asyncio.run(handle_text(_update(7, message), _context(services)))
+
+    assert message.replies
+    assert "Режим ответа:" in message.replies[-1]
+    assert message.replies[-1] != "Настройки закрыты."
+
+
+def test_settings_back_callback_still_closes_settings() -> None:
+    services = BotServices()
+    query = FakeCallbackQuery(CALLBACK_SETTINGS_BACK)
+
+    asyncio.run(handle_settings_callback(_callback_update(7, query), _context(services)))
+
+    assert query.answers == [""]
+    assert query.edits == ["Настройки закрыты."]
 
 
 def test_upload_mode_text_does_not_call_rag() -> None:

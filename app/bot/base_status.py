@@ -139,7 +139,7 @@ def format_base_status(status: BaseStatus) -> str:
     else:
         lines.append("нет данных")
 
-    lines.extend(["", "Последние загрузки:"])
+    lines.extend(["", "Последние документы:"])
     if status.recent_documents:
         for document in status.recent_documents[:5]:
             lines.append(f"- {document.label}")
