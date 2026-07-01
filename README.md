@@ -129,6 +129,8 @@ Telegram material uploads are described in [Telegram Upload Ingestion](docs/tele
 
 Manual RAG quality smoke suite: [docs/rag_quality_smoke_suite.md](docs/rag_quality_smoke_suite.md).
 
+External Docs Registry v2 design: [docs/external_docs_registry_v2.md](docs/external_docs_registry_v2.md).
+
 Useful read-only Telegram status commands:
 
 - `/services` shows detected services and whether their docs source is connected.
