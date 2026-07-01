@@ -77,6 +77,8 @@ class IngestionResult:
     chunks_count: int = 0
     content_hash: str = ""
     term_statistics_status: str = "skipped"
+    service_ids: tuple[str, ...] = ()
+    service_mentions: tuple[dict[str, object], ...] = ()
 
 
 class IndexingService:
@@ -167,6 +169,8 @@ class IndexingService:
                 version=active.version,
                 skipped=True,
                 content_hash=content_hash,
+                service_ids=_service_ids_from_metadata(active.metadata),
+                service_mentions=_service_mentions_from_metadata(active.metadata),
             )
 
         latest = await self._repository.get_latest_document(workspace_id, key)
@@ -245,6 +249,8 @@ class IndexingService:
             chunks_count=len(chunks),
             content_hash=content_hash,
             term_statistics_status=term_statistics_status,
+            service_ids=_service_ids_from_metadata(discovery.document_metadata),
+            service_mentions=_service_mentions_from_metadata(discovery.document_metadata),
         )
 
     async def _refresh_term_statistics(self, workspace_id: str) -> str:
@@ -396,6 +402,42 @@ def _mentions_metadata(mentions: tuple[ServiceMention, ...]) -> dict[str, object
             for mention in mentions
         ],
     }
+
+
+def _service_ids_from_metadata(metadata: dict[str, object]) -> tuple[str, ...]:
+    values = metadata.get("service_ids")
+    if isinstance(values, (list, tuple)):
+        return tuple(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+    mentions = metadata.get("service_mentions")
+    if isinstance(mentions, (list, tuple)):
+        service_ids: list[str] = []
+        for item in mentions:
+            if isinstance(item, dict) and str(item.get("service_id") or "").strip():
+                service_ids.append(str(item["service_id"]).strip())
+        return tuple(dict.fromkeys(service_ids))
+    return ()
+
+
+def _service_mentions_from_metadata(metadata: dict[str, object]) -> tuple[dict[str, object], ...]:
+    mentions = metadata.get("service_mentions")
+    if not isinstance(mentions, (list, tuple)):
+        return ()
+    result: list[dict[str, object]] = []
+    for item in mentions:
+        if not isinstance(item, dict):
+            continue
+        service_id = str(item.get("service_id") or "").strip()
+        if not service_id:
+            continue
+        result.append(
+            {
+                "service_id": service_id,
+                "display_name": str(item.get("display_name") or service_id).strip() or service_id,
+                "matched_alias": str(item.get("matched_alias") or "").strip(),
+                "confidence": item.get("confidence", 0),
+            }
+        )
+    return tuple(result)
 
 
 def _sections_with_service_metadata(

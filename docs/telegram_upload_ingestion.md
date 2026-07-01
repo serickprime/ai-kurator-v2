@@ -35,13 +35,16 @@ Rows are written to:
 - `sections`
 - `chunks`
 
-After a successful upload the bot replies with:
+After the file is downloaded, the bot first replies that processing has started. After a successful upload the final reply includes:
 
 - document key;
 - section count;
 - chunk count;
+- detected services, or `сервисы не найдены`;
 - embedding status;
 - term statistics status.
+
+When a detected service has a docs source in the registry, Telegram can also show whether that documentation is connected. This is read-only status lookup only: upload feedback does not start external docs sync and does not crawl the internet.
 
 `Term statistics: updated` means `refresh_term_statistics()` ran. `missing fallback` means the material was saved, but the optional `term_statistics` table/RPC is absent and routing will use neutral term scoring until the schema is applied.
 

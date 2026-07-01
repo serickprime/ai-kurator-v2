@@ -527,12 +527,20 @@ async def _ingest_or_count_upload(update: Update, services: BotServices, file_pa
         await update.message.reply_text(reason, reply_markup=upload_menu_keyboard())
         return
     try:
+        await update.message.reply_text(
+            "Файл получен. Обрабатываю и добавляю в базу...",
+            reply_markup=upload_menu_keyboard(),
+        )
         results = await services.ingestion_service.ingest_path(
             file_path,
             workspace=services.default_workspace_name,
         )
+        service_statuses = await _upload_service_statuses(services)
         state.uploaded_materials += 1
-        await update.message.reply_text(_format_upload_results(results), reply_markup=upload_menu_keyboard())
+        await update.message.reply_text(
+            _format_upload_results(results, service_statuses=service_statuses),
+            reply_markup=upload_menu_keyboard(),
+        )
     except Exception as exc:  # noqa: BLE001
         await update.message.reply_text(
             "Не получилось загрузить материал: " + _safe_error(exc),
@@ -610,32 +618,57 @@ def _safe_filename(filename: str) -> str:
     return clean[:160] or "telegram-file"
 
 
-def _format_upload_results(results: list[Any]) -> str:
+async def _upload_service_statuses(services: BotServices) -> dict[str, ServiceDocsStatus]:
+    provider = services.service_docs_status_provider
+    if provider is None:
+        return {}
+    try:
+        statuses = await provider.list_statuses(scan_corpus=False)
+    except Exception:  # noqa: BLE001 - service status is optional upload context
+        return {}
+    return {status.service_id: status for status in statuses}
+
+
+def _format_upload_results(
+    results: list[Any],
+    *,
+    service_statuses: dict[str, ServiceDocsStatus] | None = None,
+) -> str:
     if not results:
         return "Материал не был загружен: ingestion не вернул результат."
     if len(results) == 1:
-        return _format_upload_result(results[0])
+        return _format_upload_result(results[0], service_statuses=service_statuses)
     total_sections = sum(int(getattr(result, "sections_count", 0) or 0) for result in results)
     total_chunks = sum(int(getattr(result, "chunks_count", 0) or 0) for result in results)
     statuses = _dedupe_strings(str(getattr(result, "term_statistics_status", "skipped")) for result in results)
+    service_lines = _format_upload_services(results, service_statuses=service_statuses)
     return "\n".join(
         [
-            "Материалы загружены.",
+            "Файлы обработаны и добавлены в базу.",
             f"Файлов: {len(results)}",
             f"Разделов: {total_sections}",
             f"Чанков: {total_chunks}",
+            "",
+            "Найдены сервисы:",
+            *service_lines,
+            "",
+            "Теперь можно задавать вопросы по этим материалам.",
             "Embeddings: ok",
             "Term statistics: " + ", ".join(statuses),
         ]
     )
 
 
-def _format_upload_result(result: Any) -> str:
+def _format_upload_result(
+    result: Any,
+    *,
+    service_statuses: dict[str, ServiceDocsStatus] | None = None,
+) -> str:
     document_label = str(getattr(result, "document_key", "") or getattr(result, "document_id", "") or "unknown")
     headline = (
-        "Материал уже был загружен без изменений."
+        "Файл уже был обработан раньше, изменений нет."
         if bool(getattr(result, "skipped", False))
-        else "Материал загружен."
+        else "Файл обработан и добавлен в базу."
     )
     return "\n".join(
         [
@@ -643,10 +676,66 @@ def _format_upload_result(result: Any) -> str:
             f"Документ: {document_label}",
             f"Разделов: {int(getattr(result, 'sections_count', 0) or 0)}",
             f"Чанков: {int(getattr(result, 'chunks_count', 0) or 0)}",
+            "",
+            "Найдены сервисы:",
+            *_format_upload_services([result], service_statuses=service_statuses),
+            "",
+            "Теперь можно задавать вопросы по этому материалу.",
             "Embeddings: ok",
             f"Term statistics: {getattr(result, 'term_statistics_status', 'skipped')}",
         ]
     )
+
+
+def _format_upload_services(
+    results: list[Any],
+    *,
+    service_statuses: dict[str, ServiceDocsStatus] | None = None,
+) -> list[str]:
+    service_statuses = service_statuses or {}
+    labels: dict[str, str] = {}
+    for result in results:
+        for mention in _upload_service_mentions(result):
+            service_id = str(mention.get("service_id") or "").strip()
+            if not service_id:
+                continue
+            display_name = str(mention.get("display_name") or service_id).strip() or service_id
+            labels.setdefault(service_id, display_name)
+        for service_id in _upload_service_ids(result):
+            labels.setdefault(service_id, service_id)
+    if not labels:
+        return ["сервисы не найдены"]
+    lines: list[str] = []
+    for service_id, display_name in sorted(labels.items(), key=lambda item: item[1].casefold()):
+        status = service_statuses.get(service_id)
+        display_name = str(status.display_name or display_name) if status is not None else display_name
+        suffix = f" — {_service_docs_phrase(status)}" if status is not None else ""
+        lines.append(f"{display_name}{suffix}")
+    return lines
+
+
+def _upload_service_ids(result: Any) -> list[str]:
+    values = getattr(result, "service_ids", ()) or ()
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    return _dedupe_strings(str(value).strip() for value in values if str(value).strip())
+
+
+def _upload_service_mentions(result: Any) -> list[dict[str, object]]:
+    values = getattr(result, "service_mentions", ()) or ()
+    if not isinstance(values, (list, tuple)):
+        return []
+    mentions: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        service_id = str(value.get("service_id") or "").strip()
+        if not service_id or service_id in seen:
+            continue
+        seen.add(service_id)
+        mentions.append(value)
+    return mentions
 
 
 def _format_services_status(statuses: tuple[ServiceDocsStatus, ...]) -> str:
@@ -688,7 +777,9 @@ def _service_docs_phrase(status: ServiceDocsStatus) -> str:
 def _safe_error(exc: Exception) -> str:
     text = re.sub(r"\s+", " ", str(exc)).strip() or exc.__class__.__name__
     text = re.sub(r"bot[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]+", "bot<redacted>", text)
+    text = re.sub(r"\b[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]{20,}\b", "<telegram-token-redacted>", text)
     text = re.sub(r"Bearer\s+[A-Za-z0-9._-]+", "Bearer <redacted>", text)
+    text = re.sub(r"\bsk-or-v1-[A-Za-z0-9_-]+", "sk-or-v1-<redacted>", text)
     text = re.sub(r"sb_secret_[A-Za-z0-9_-]+", "sb_secret_<redacted>", text)
     return text[:700]
 

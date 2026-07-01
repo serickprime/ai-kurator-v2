@@ -121,7 +121,7 @@ The bot has a compact persistent reply keyboard:
 
 Questions, captions, and image context are combined into one user intake before RAG. Vision text is context only, not a standalone question. Upload mode is explicit: files outside `Загрузить материал` are not indexed automatically, and text sent during upload mode does not go to RAG.
 
-Telegram material uploads are described in [Telegram Upload Ingestion](docs/telegram_upload_ingestion.md).
+Telegram material uploads are described in [Telegram Upload Ingestion](docs/telegram_upload_ingestion.md). Upload feedback shows processing status, document/section/chunk counts, and detected services when service discovery finds them.
 
 Useful read-only Telegram status commands:
 
