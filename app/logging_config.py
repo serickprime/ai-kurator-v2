@@ -6,6 +6,10 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 _TELEGRAM_BOT_TOKEN_RE = re.compile(r"bot[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]+")
+_TELEGRAM_RAW_TOKEN_RE = re.compile(r"\b[0-9]{6,}(?::|%3[Aa])[A-Za-z0-9_-]{20,}\b")
+_BEARER_TOKEN_RE = re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]+")
+_OPENROUTER_KEY_RE = re.compile(r"\bsk-or-v1-[A-Za-z0-9_-]+")
+_SUPABASE_SECRET_RE = re.compile(r"\bsb_secret_[A-Za-z0-9_-]+")
 
 
 def configure_logging(level: str = "INFO", log_dir: str | Path = "logs") -> None:
@@ -57,4 +61,8 @@ class RedactingFormatter(logging.Formatter):
 
 
 def _redact_secrets(text: str) -> str:
-    return _TELEGRAM_BOT_TOKEN_RE.sub("bot<redacted>", text)
+    redacted = _TELEGRAM_BOT_TOKEN_RE.sub("bot<redacted>", text)
+    redacted = _TELEGRAM_RAW_TOKEN_RE.sub("<telegram-token-redacted>", redacted)
+    redacted = _BEARER_TOKEN_RE.sub("Bearer <redacted>", redacted)
+    redacted = _OPENROUTER_KEY_RE.sub("sk-or-v1-<redacted>", redacted)
+    return _SUPABASE_SECRET_RE.sub("sb_secret_<redacted>", redacted)

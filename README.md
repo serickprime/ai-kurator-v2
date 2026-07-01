@@ -123,6 +123,11 @@ Questions, captions, and image context are combined into one user intake before 
 
 Telegram material uploads are described in [Telegram Upload Ingestion](docs/telegram_upload_ingestion.md).
 
+Useful read-only Telegram status commands:
+
+- `/services` shows detected services and whether their docs source is connected.
+- `/base_status` shows knowledge base counts, external docs status, service status, and recent uploads.
+
 Answer model routing is controlled by per-user settings and the `OPENROUTER_*_MODELS` environment lists. Free mode never silently falls back to paid models. Quality can fall back to cheap only when `ALLOW_QUALITY_TO_CHEAP_FALLBACK=true`.
 
 `OPENROUTER_BASE_URL`, `OPENROUTER_SITE_URL`, and `OPENROUTER_APP_NAME` are optional transport/header settings. Keep `OPENROUTER_API_KEY` server-side only.
