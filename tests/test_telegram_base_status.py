@@ -116,6 +116,8 @@ def test_base_status_format_contains_counts_external_services_and_recent_docs() 
     assert "supabase_docs — 25 docs, PASS" in text
     assert "n8n — документация подключена" in text
     assert "FlutterFlow — документация не подключена" in text
+    assert "Последние документы:" in text
+    assert "Последние загрузки:" not in text
     assert "- CLn02_text_double_deep" in text
     assert "- service_discovery_test" in text
 
