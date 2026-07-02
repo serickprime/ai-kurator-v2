@@ -58,20 +58,25 @@ Core state:
 
 ## Current branch block
 
-Telegram Bot API query quality fix implemented in branch `telegram-bot-api-query-quality-fix`:
+Retrieval Query Quality Framework implemented in branch `retrieval-query-quality-framework`:
 
-- service-aware query enrichment for Telegram Bot API Russian send-message questions;
-- `как отправить сообщение через Telegram Bot API?` adds retrieval anchors:
-  - `sendMessage`
-  - `chat_id`
-  - `text`
+- `app/rag/query_enrichment.py`;
+- `config/query_glossary.yaml`;
+- service-aware query enrichment from a curated glossary;
+- bridges natural-language questions and technical documentation anchors;
+- current glossary includes:
+  - Telegram Bot API send-message and webhook anchors;
+  - OpenRouter API key and model anchors;
+  - n8n HTTP Request and Webhook node anchors;
+  - Supabase vector search anchors;
 - original user question is preserved;
-- no reindex is needed because `sendMessage` evidence already exists;
-- `/base_status`, `/docs`, and `/services` should show quality reasons instead of bare `FAIL`.
+- glossary never generates answers and never replaces evidence;
+- no reindex is needed because enrichment changes retrieval queries, not indexed chunks;
+- `/base_status`, `/docs`, and `/services` should show quality reasons instead of bare `FAIL` or `WARN`.
 
 ## Current focus
 
-Review and test Telegram Bot API query quality bugfix.
+Review and test Retrieval Query Quality Framework.
 
 ## Next recommended
 
@@ -81,7 +86,12 @@ Review and test Telegram Bot API query quality bugfix.
   - `/source_last`
 - verify the answer uses `telegram_bot_api_docs`;
 - verify accepted evidence includes `sendMessage`, `chat_id`, and `text`;
+- test n8n/OpenRouter/Supabase glossary cases from `docs/manual_smoke_checklist.md`;
 - verify `/base_status` and `/docs` do not show unexplained bare `FAIL`.
+
+## Retrieval quality principle
+
+Do not fix one user question with one-off code. If a natural-language question misses technical docs terms, improve a general retrieval/evidence mechanism and add regression tests for the class of questions.
 
 ## Later roadmap
 

@@ -121,6 +121,33 @@ Expected:
 - if Telegram Bot API quality is `WARN` or `FAIL`, the user-facing status includes a short reason;
 - do not show a bare `FAIL` without explanation.
 
+## Retrieval Query Quality smoke
+
+Run after query enrichment changes:
+
+- `Новая тема`
+- `как отправить сообщение через Telegram Bot API?`
+- `/source_last`
+- `Новая тема`
+- `как отправить запрос к api в n8n?`
+- `/source_last`
+- `Новая тема`
+- `как подключить openrouter api ключ?`
+- `/source_last`
+- `Новая тема`
+- `как сделать векторный поиск по документам в Supabase?`
+- `/source_last`
+
+Expected:
+
+- Telegram Bot API answer uses `telegram_bot_api_docs` and evidence around `sendMessage`, `chat_id`, `text`;
+- n8n answer uses official/local n8n evidence around `HTTP Request node`, `method`, `headers`, `body`;
+- OpenRouter answer uses `openrouter_docs` and evidence around `API key`, `base_url`, `Authorization`, `Bearer`;
+- Supabase answer uses `supabase_docs` when indexed evidence exists and should include `pgvector`, `match_documents`, or embeddings evidence;
+- if exact evidence is not indexed, bot should return insufficient evidence rather than answer from a broad overview page.
+
+Do not treat glossary anchors as answer content. The answer still needs accepted evidence.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:

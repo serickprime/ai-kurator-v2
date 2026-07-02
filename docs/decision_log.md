@@ -57,10 +57,20 @@ Decision: project status, roadmap, guardrails, and workflow must live in reposit
 
 Reason: agents should not rely only on chat history.
 
-## Telegram Bot API send-message queries use service-aware anchors
+## Query enrichment uses a curated retrieval glossary
 
-Decision: enrich Telegram Bot API send-message questions with `sendMessage`, `chat_id`, and `text` retrieval anchors.
+Decision: use a curated query glossary to add technical search anchors for retrieval.
 
-Reason: Russian user phrasing such as "как отправить сообщение через Telegram Bot API?" can be semantically correct while missing the exact method name used in official docs. The enrichment keeps the original question unchanged, does not reindex documents, and only improves retrieval signals for the service-specific send-message intent.
+Reason: natural-language user questions can be semantically correct while missing exact method, parameter, node, or RPC names used in official docs. Query enrichment improves retrieval by adding exact terms, config terms, and query facets from a curated glossary.
+
+Boundaries:
+
+- enrichment does not generate answers;
+- enrichment does not replace evidence;
+- enrichment does not change AnswerGenerator;
+- the original user question is preserved;
+- final sources still come only from accepted evidence.
+
+Principle: do not fix one question with one-off code. Improve retrieval quality for a class of questions and keep regression tests for that class.
 
 Status visibility: quality surfaces should show the reason for `WARN` or `FAIL`, not only the raw status label.

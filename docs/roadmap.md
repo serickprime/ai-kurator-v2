@@ -15,7 +15,7 @@ Tasks:
 
 Goal: stop adding services one by one through new custom code.
 
-Status: implemented in branch `docs-activation-queue`; pending PR review and manual Telegram smoke.
+Status: merged in PR #19.
 
 Planned features:
 
@@ -38,7 +38,28 @@ Safeguards:
 - no failed or needs_review candidates in batch activation;
 - owner/admin confirmation required.
 
-## Phase 3 — Service-aware suggestions
+## Phase 3 — Retrieval Query Quality Framework
+
+Goal: improve answers across uploaded materials and official docs by bridging natural-language user questions and technical documentation terms while keeping evidence-first architecture.
+
+Planned behavior:
+
+- use a curated query glossary for retrieval-only anchors;
+- add exact terms, config terms, and query facets before document/chunk retrieval;
+- preserve the original user question;
+- require accepted evidence for final answers;
+- keep sources from accepted evidence only.
+
+Not allowed:
+
+- one-off fixes per question;
+- generated answers from glossary entries;
+- replacing evidence with glossary content;
+- changing AnswerGenerator to guess without evidence.
+
+Status: implemented in branch `retrieval-query-quality-framework`; pending review and manual Telegram smoke.
+
+## Phase 4 — Service-aware suggestions
 
 Goal: make the bot notice when a user asks about a service whose docs are not connected.
 
@@ -50,7 +71,7 @@ Planned behavior:
 - if docs are missing and candidate exists, bot suggests preview;
 - bot does not auto-index from the normal question.
 
-## Phase 4 — Maintenance
+## Phase 5 — Maintenance
 
 Goal: keep connected official docs useful over time.
 
