@@ -56,6 +56,21 @@ Expected:
 - preview does not index documents;
 - preview does not write to Supabase.
 
+## Docs Activation Queue
+
+- `/docs_preview_all`
+- `/docs_ready`
+- `/docs_activate_ready`
+- `/docs_activate_ready https://example.com`
+
+Expected:
+
+- batch preview classifies candidates as ready, needs_review, failed, or already_connected;
+- ready list shows only candidates eligible for the next activation plan;
+- activation plan does not write to Supabase;
+- arbitrary URL is rejected;
+- do not run `/docs_activate_ready confirm` unless explicitly requested.
+
 ## OpenRouter RAG smoke
 
 Run:

@@ -15,6 +15,8 @@ Tasks:
 
 Goal: stop adding services one by one through new custom code.
 
+Status: implemented in branch `docs-activation-queue`; pending PR review and manual Telegram smoke.
+
 Planned features:
 
 - `/docs_preview_all` — preview all candidates from the curated catalog.
