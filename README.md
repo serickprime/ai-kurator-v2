@@ -131,6 +131,8 @@ Manual RAG quality smoke suite: [docs/rag_quality_smoke_suite.md](docs/rag_quali
 
 External Docs Registry v2 design: [docs/external_docs_registry_v2.md](docs/external_docs_registry_v2.md).
 
+External docs candidate QA: [docs/external_docs_candidate_qa.md](docs/external_docs_candidate_qa.md).
+
 Useful read-only Telegram status commands:
 
 - `/docs` shows a read-only documentation dashboard and curated candidates from `config/docs_source_candidates.yaml`. It does not crawl, sync, index, or change config.

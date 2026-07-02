@@ -162,6 +162,8 @@ MVP для следующего блока:
 - не меняет config;
 - не активирует docs source.
 
+Manual candidate QA report: [External Docs Candidate QA](external_docs_candidate_qa.md).
+
 ## Модули
 
 Целевая структура:
