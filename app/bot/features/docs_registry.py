@@ -8,7 +8,12 @@ from typing import Any, Protocol
 from telegram import Update
 
 from app.docs_registry.candidates import load_docs_source_candidates_config
-from app.docs_registry.models import DocsSourceCandidate
+from app.docs_registry.models import DocsCandidatePreviewResult, DocsSourceCandidate
+from app.docs_registry.preview import (
+    ArbitraryDocsUrlError,
+    DocsCandidateNotFoundError,
+    DocsCandidatePreviewService,
+)
 from app.service_registry.types import ServiceDocsStatus
 
 
@@ -22,6 +27,13 @@ class ServiceDocsStatusReader(Protocol):
         service: str | None = None,
     ) -> tuple[ServiceDocsStatus, ...]:
         """Return service/docs status rows."""
+
+
+class DocsPreviewReader(Protocol):
+    """Read-only candidate preview service."""
+
+    async def preview(self, service_id_or_alias: str, *, limit: int = 5) -> DocsCandidatePreviewResult:
+        """Return a safe dry-run preview for a curated candidate."""
 
 
 async def send_docs_dashboard(
@@ -103,12 +115,115 @@ def format_docs_dashboard(
             "Что можно делать:",
             "- /services — технический статус сервисов",
             "- /base_status — статус базы знаний",
+            "- /docs_preview <id> — безопасный предпросмотр кандидата",
+            "",
+            "Для предпросмотра:",
+            "`/docs_preview <id>`",
             "",
             "Следующий этап:",
             "подключение новых official docs будет через безопасный preview/dry-run и подтверждение владельца.",
         ]
     )
     return "\n".join(lines)
+
+
+async def send_docs_preview(
+    update: Update,
+    *,
+    service_id_or_alias: str,
+    is_allowed: bool,
+    preview_service: DocsPreviewReader | None = None,
+    reply_markup: Any | None = None,
+    safe_error: Callable[[Exception], str] | None = None,
+) -> None:
+    """Send a safe read-only preview for one curated docs candidate."""
+    if update.message is None:
+        return
+    if not is_allowed:
+        await update.message.reply_text(
+            "Предпросмотр документации доступен владельцу бота.",
+            reply_markup=reply_markup,
+        )
+        return
+    if not service_id_or_alias.strip():
+        await update.message.reply_text(
+            "Укажите сервис: /docs_preview claude_code",
+            reply_markup=reply_markup,
+        )
+        return
+    service = preview_service or DocsCandidatePreviewService()
+    try:
+        result = await service.preview(service_id_or_alias.strip(), limit=5)
+    except ArbitraryDocsUrlError:
+        await update.message.reply_text(
+            "Произвольные URL нельзя проверять. Используйте сервис из /docs.",
+            reply_markup=reply_markup,
+        )
+        return
+    except DocsCandidateNotFoundError:
+        await update.message.reply_text(
+            "Кандидат документации не найден. Посмотрите список в /docs.",
+            reply_markup=reply_markup,
+        )
+        return
+    except Exception as exc:  # noqa: BLE001 - Telegram command should fail gracefully
+        error = safe_error(exc) if safe_error is not None else str(exc)
+        await update.message.reply_text(
+            "Не получилось подготовить предпросмотр документации: " + error,
+            reply_markup=reply_markup,
+        )
+        return
+    await update.message.reply_text(format_docs_preview(result), reply_markup=reply_markup)
+
+
+def format_docs_preview(result: DocsCandidatePreviewResult) -> str:
+    """Format a safe preview result for Telegram."""
+    status_text = {
+        "ok": "можно проверить",
+        "needs_review": "нужна ручная проверка",
+        "failed": "не удалось проверить",
+    }.get(result.status, result.status)
+    lines = [
+        f"Предпросмотр документации: {result.display_name}",
+        "",
+        f"Статус: {status_text}",
+        f"Домен: {', '.join(result.allowed_domains) if result.allowed_domains else 'нет данных'}",
+        "Стартовый URL:",
+    ]
+    lines.extend(result.start_urls or ("нет данных",))
+    lines.extend(
+        [
+            "",
+            f"Проверено страниц: {result.pages_checked}",
+            f"Найдено страниц: {result.pages_found}",
+        ]
+    )
+    samples = _preview_samples(result)
+    if samples:
+        lines.extend(["", "Примеры:"])
+        lines.extend(f"- {sample}" for sample in samples[:5])
+    if result.warnings:
+        lines.extend(["", "Предупреждения:"])
+        lines.extend(f"- {warning}" for warning in result.warnings[:5])
+    lines.extend(
+        [
+            "",
+            f"Риск: {result.risk_level}",
+            "",
+            "Это только preview. Документация не подключена и не используется в ответах.",
+            "",
+            "Следующий этап:",
+            "после проверки можно будет добавить отдельное подтверждение подключения.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _preview_samples(result: DocsCandidatePreviewResult) -> tuple[str, ...]:
+    samples = tuple(item for item in result.sample_titles if item.strip())
+    if samples:
+        return samples
+    return tuple(item for item in result.sample_urls if item.strip())
 
 
 def _load_candidates(loader: Callable[[], tuple[DocsSourceCandidate, ...]] | None) -> tuple[DocsSourceCandidate, ...]:

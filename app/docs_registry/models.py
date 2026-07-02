@@ -7,6 +7,7 @@ from typing import Literal
 
 
 RiskLevel = Literal["low", "medium", "review"]
+DocsPreviewStatus = Literal["ok", "failed", "needs_review"]
 
 
 @dataclass(frozen=True)
@@ -40,3 +41,22 @@ class DocsSourceCandidatesConfig:
             if candidate.service_id.casefold() == needle:
                 return candidate
         raise KeyError(service_id)
+
+
+@dataclass(frozen=True)
+class DocsCandidatePreviewResult:
+    """Safe dry-run result for one curated docs candidate."""
+
+    service_id: str
+    display_name: str
+    docs_source: str
+    allowed_domains: tuple[str, ...]
+    start_urls: tuple[str, ...]
+    pages_checked: int
+    pages_found: int
+    sample_titles: tuple[str, ...] = ()
+    sample_urls: tuple[str, ...] = ()
+    status: DocsPreviewStatus = "failed"
+    warnings: tuple[str, ...] = ()
+    risk_level: RiskLevel = "review"
+    notes: str = ""
