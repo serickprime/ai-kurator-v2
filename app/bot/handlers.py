@@ -12,7 +12,13 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 
 from app.bot.access import UserAccessPolicy
 from app.bot.base_status import BaseStatus, format_base_status
-from app.bot.features.docs_registry import DocsPreviewReader, send_docs_dashboard, send_docs_preview
+from app.bot.features.docs_registry import (
+    DocsActivationReader,
+    DocsPreviewReader,
+    send_docs_activation,
+    send_docs_dashboard,
+    send_docs_preview,
+)
 from app.bot.formatting import format_for_telegram, format_status
 from app.bot.intake_buffer import MessageIntakeBuffer, UserIntake
 from app.bot.keyboards import (
@@ -133,6 +139,7 @@ class BotServices:
     ingestion_missing_config: tuple[str, ...] = ()
     service_docs_status_provider: ServiceDocsStatusReader | None = None
     docs_preview_service: DocsPreviewReader | None = None
+    docs_activation_service: DocsActivationReader | None = None
     base_status_provider: BaseStatusReader | None = None
     materials_provider: MaterialsReader | None = None
     conversation_repo: Any | None = None
@@ -187,6 +194,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "- /base_status — статус базы знаний;",
                 "- /docs — панель документации сервисов;",
                 "- /docs_preview <id> — предпросмотр кандидата документации;",
+                "- /docs_activate openrouter — controlled activation документации OpenRouter;",
                 "- /materials — список загруженных материалов;",
                 "- /material <id> — карточка материала;",
                 "- /archive_material <id> — архивировать материал;",
@@ -485,6 +493,24 @@ async def docs_preview_command(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+async def docs_activate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/docs_activate`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    args = _command_args(update, context)
+    service_id_or_alias = args[0] if args else ""
+    confirm = len(args) > 1 and args[1].casefold() == "confirm"
+    await send_docs_activation(
+        update,
+        service_id_or_alias=service_id_or_alias,
+        confirm=confirm,
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        activation_service=services.docs_activation_service,
+        reply_markup=main_menu_keyboard(),
+        safe_error=_safe_error,
+    )
+
+
 async def base_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle `/base_status`."""
     services = _services(context)
@@ -540,6 +566,7 @@ _TEXT_COMMAND_HANDLERS: dict[str, CommandFallbackHandler] = {
     "services": services_command,
     "docs": docs_command,
     "docs_preview": docs_preview_command,
+    "docs_activate": docs_activate_command,
     "base_status": base_status_command,
     "debug_last": debug_last_command,
 }
@@ -729,6 +756,7 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("services", services_command))
     application.add_handler(CommandHandler("docs", docs_command))
     application.add_handler(CommandHandler("docs_preview", docs_preview_command))
+    application.add_handler(CommandHandler("docs_activate", docs_activate_command))
     application.add_handler(CommandHandler("base_status", base_status_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
     application.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r"^settings:"))
@@ -1126,15 +1154,20 @@ def _can_use_docs_dashboard(services: BotServices, telegram_user_id: int) -> boo
 
 
 def _first_command_arg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    args = _command_args(update, context)
+    return args[0] if args else ""
+
+
+def _command_args(update: Update, context: ContextTypes.DEFAULT_TYPE) -> list[str]:
     args = getattr(context, "args", None)
     if args:
-        return str(args[0]).strip()
+        return [str(arg).strip() for arg in args if str(arg).strip()]
     if update.message is None or not update.message.text:
-        return ""
+        return []
     parts = update.message.text.strip().split(maxsplit=1)
     if len(parts) < 2:
-        return ""
-    return parts[1].strip().split(maxsplit=1)[0] if parts[1].strip() else ""
+        return []
+    return [part.strip() for part in parts[1].strip().split() if part.strip()]
 
 
 def _services(context: ContextTypes.DEFAULT_TYPE) -> BotServices:

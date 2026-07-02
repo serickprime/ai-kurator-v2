@@ -23,6 +23,7 @@ Commands stay available:
 /archive_source <id>
 /docs
 /docs_preview <service>
+/docs_activate openrouter
 /services
 /base_status
 /debug_last
@@ -42,6 +43,11 @@ Read-only status commands:
 - `/source_last` shows documents/sources used by the last RAG answer.
 
 These commands do not start sync, do not crawl the internet, and do not mutate the database.
+
+Docs activation command:
+
+- `/docs_activate openrouter` shows the controlled activation plan only. It does not crawl, index, write to Supabase, or activate docs.
+- `/docs_activate openrouter confirm` is owner/admin-only and runs controlled activation for OpenRouter. MVP activation rejects arbitrary URLs and all non-OpenRouter candidates.
 
 Material management command:
 

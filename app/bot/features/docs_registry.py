@@ -7,6 +7,15 @@ from typing import Any, Protocol
 
 from telegram import Update
 
+from app.docs_registry.activation import (
+    ArbitraryDocsActivationUrlError,
+    DocsActivationCandidateNotFoundError,
+    DocsActivationError,
+    DocsActivationPlan,
+    DocsActivationResult,
+    DocsActivationRuntimeUnavailableError,
+    DocsActivationService,
+)
 from app.docs_registry.candidates import load_docs_source_candidates_config
 from app.docs_registry.models import DocsCandidatePreviewResult, DocsSourceCandidate
 from app.docs_registry.preview import (
@@ -34,6 +43,16 @@ class DocsPreviewReader(Protocol):
 
     async def preview(self, service_id_or_alias: str, *, limit: int = 5) -> DocsCandidatePreviewResult:
         """Return a safe dry-run preview for a curated candidate."""
+
+
+class DocsActivationReader(Protocol):
+    """Controlled docs activation service."""
+
+    def plan(self, service_id_or_alias: str) -> DocsActivationPlan:
+        """Return a safe activation plan without indexing or writing."""
+
+    async def activate(self, service_id_or_alias: str) -> DocsActivationResult:
+        """Run controlled activation after explicit confirmation."""
 
 
 async def send_docs_dashboard(
@@ -116,12 +135,140 @@ def format_docs_dashboard(
             "- /services — технический статус сервисов",
             "- /base_status — статус базы знаний",
             "- /docs_preview <id> — безопасный предпросмотр кандидата",
+            "- /docs_activate openrouter — план controlled activation для OpenRouter",
             "",
             "Для предпросмотра:",
             "`/docs_preview <id>`",
             "",
+            "Для controlled activation:",
+            "`/docs_activate openrouter`",
+            "",
             "Следующий этап:",
             "подключение новых official docs будет через безопасный preview/dry-run и подтверждение владельца.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+async def send_docs_activation(
+    update: Update,
+    *,
+    service_id_or_alias: str,
+    confirm: bool,
+    is_allowed: bool,
+    activation_service: DocsActivationReader | None = None,
+    reply_markup: Any | None = None,
+    safe_error: Callable[[Exception], str] | None = None,
+) -> None:
+    """Send an activation plan or run controlled activation after confirm."""
+    if update.message is None:
+        return
+    if not is_allowed:
+        await update.message.reply_text(
+            "Подключение документации доступно владельцу бота.",
+            reply_markup=reply_markup,
+        )
+        return
+    if not service_id_or_alias.strip():
+        await update.message.reply_text(
+            "Укажите сервис: /docs_activate openrouter",
+            reply_markup=reply_markup,
+        )
+        return
+
+    service = activation_service or DocsActivationService()
+    try:
+        if not confirm:
+            await update.message.reply_text(
+                format_docs_activation_plan(service.plan(service_id_or_alias.strip())),
+                reply_markup=reply_markup,
+            )
+            return
+        if activation_service is None:
+            raise DocsActivationRuntimeUnavailableError("activation runtime is not configured")
+        result = await activation_service.activate(service_id_or_alias.strip())
+    except ArbitraryDocsActivationUrlError:
+        await update.message.reply_text(
+            "Произвольные URL нельзя подключать. Используйте сервис из /docs.",
+            reply_markup=reply_markup,
+        )
+        return
+    except DocsActivationCandidateNotFoundError:
+        await update.message.reply_text(
+            "Кандидат не найден. Посмотрите список в /docs.",
+            reply_markup=reply_markup,
+        )
+        return
+    except DocsActivationRuntimeUnavailableError:
+        await update.message.reply_text(
+            "Подключение документации пока недоступно: не хватает runtime-настроек.",
+            reply_markup=reply_markup,
+        )
+        return
+    except DocsActivationError as exc:
+        await update.message.reply_text(str(exc), reply_markup=reply_markup)
+        return
+    except Exception as exc:  # noqa: BLE001 - Telegram command should fail gracefully
+        error = safe_error(exc) if safe_error is not None else str(exc)
+        await update.message.reply_text(
+            "Не получилось выполнить controlled activation: " + error,
+            reply_markup=reply_markup,
+        )
+        return
+    await update.message.reply_text(format_docs_activation_result(result), reply_markup=reply_markup)
+
+
+def format_docs_activation_plan(plan: DocsActivationPlan) -> str:
+    """Format a pre-confirm activation plan."""
+    lines = [
+        f"Controlled activation: {plan.display_name}",
+        "",
+        "Статус: готов к проверочному подключению",
+        f"Домен: {', '.join(plan.allowed_domains) if plan.allowed_domains else 'нет данных'}",
+        "Стартовый URL:",
+        *plan.start_urls,
+        "",
+        f"Лимит страниц: {plan.max_pages}",
+        f"Глубина crawl: {plan.crawl_depth}",
+        f"Риск: {plan.risk_level}",
+        "",
+        "Это действие подключит official docs source после crawl/index/quality gate.",
+        "",
+        "Для запуска напишите:",
+        f"`{plan.confirm_command}`",
+    ]
+    if plan.warnings:
+        lines.extend(["", "Предупреждения:", *[f"- {warning}" for warning in plan.warnings[:5]]])
+    return "\n".join(lines)
+
+
+def format_docs_activation_result(result: DocsActivationResult) -> str:
+    """Format controlled activation result without raw JSON."""
+    lines = [
+        f"Controlled activation: {result.plan.display_name}",
+        "",
+        f"Quality gate: {result.quality_gate.quality}",
+        f"Fetched pages: {result.fetched_pages}",
+        f"Indexed new: {result.indexed_new}",
+        f"Skipped unchanged: {result.skipped_unchanged}",
+        f"Archived old: {result.archived_old}",
+        f"Failed: {result.failed}",
+        f"Chunks: {result.chunks_total}",
+    ]
+    if result.quality_gate.failures:
+        lines.extend(["", "Failures:", *[f"- {failure}" for failure in result.quality_gate.failures[:5]]])
+    if result.quality_gate.warnings:
+        lines.extend(["", "Warnings:", *[f"- {warning}" for warning in result.quality_gate.warnings[:5]]])
+    if result.errors:
+        lines.extend(["", "Errors:", *[f"- {error}" for error in result.errors[:3]]])
+    lines.extend(
+        [
+            "",
+            (
+                "OpenRouter docs indexed through controlled activation."
+                if result.quality_gate.passed
+                else "Activation needs review before relying on this source."
+            ),
         ]
     )
     return "\n".join(lines)

@@ -178,3 +178,19 @@ Rules for that PR:
 - only one candidate;
 - first use pending/indexing/quality gate;
 - do not bulk-connect all candidates.
+
+## OpenRouter Activation MVP
+
+The first controlled activation command is:
+
+```text
+/docs_activate openrouter
+```
+
+Without `confirm`, it only shows a plan and does not crawl, index, write to Supabase, or activate docs.
+
+```text
+/docs_activate openrouter confirm
+```
+
+With `confirm`, owner/admin can run the controlled activation flow for OpenRouter only. Arbitrary URLs and all other candidates are rejected in this MVP.
