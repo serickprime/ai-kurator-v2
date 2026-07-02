@@ -30,6 +30,11 @@ from app.docs_registry.queue import (
 )
 from app.service_registry.types import ServiceDocsStatus
 
+QUEUE_PREVIEW_IN_PROGRESS_TEXT = "Проверяю candidates. Это может занять несколько секунд."
+QUEUE_READY_NEEDS_PREVIEW_TEXT = (
+    "Сначала выполните проверку candidates: нажмите «Проверить всё» или используйте /docs_preview_all."
+)
+
 
 class ServiceDocsStatusReader(Protocol):
     """Read-only service docs status provider."""
@@ -211,6 +216,8 @@ async def send_docs_wizard_callback(
     action: str,
     is_allowed: bool,
     queue_service: DocsActivationQueueReader | None = None,
+    cached_queue_report: DocsQueueReport | None = None,
+    cache_queue_report: Callable[[DocsQueueReport], None] | None = None,
     reply_markup: Any | None = None,
     safe_error: Callable[[Exception], str] | None = None,
     candidate_loader: Callable[[], tuple[DocsSourceCandidate, ...]] | None = None,
@@ -219,28 +226,37 @@ async def send_docs_wizard_callback(
     query = update.callback_query
     if query is None:
         return
-    await query.answer()
     if not is_allowed:
+        await query.answer()
         await _edit_or_reply_callback(
             query,
             "Панель документации доступна владельцу бота.",
             reply_markup=reply_markup,
         )
         return
-    if action in {"preview_all", "ready"}:
+    if action == "preview_all":
+        await query.answer("Проверяю candidates...")
+        await _edit_or_reply_callback(query, QUEUE_PREVIEW_IN_PROGRESS_TEXT, reply_markup=reply_markup)
         queue = _queue_service(queue_service, status_provider=status_provider)
         try:
-            report = await (queue.ready() if action == "ready" else queue.preview_all())
+            report = await queue.preview_all()
         except Exception as exc:  # noqa: BLE001 - callback should fail visibly
             error = safe_error(exc) if safe_error is not None else str(exc)
             await _edit_or_reply_callback(query, "Не получилось проверить candidates: " + error, reply_markup=reply_markup)
             return
-        await _edit_or_reply_callback(
-            query,
-            format_docs_ready_report(report) if action == "ready" else format_docs_queue_report(report),
-            reply_markup=reply_markup,
-        )
+        if cache_queue_report is not None:
+            cache_queue_report(report)
+        await _edit_or_reply_callback(query, format_docs_queue_report(report), reply_markup=reply_markup)
         return
+    if action == "ready":
+        if cached_queue_report is None:
+            await query.answer("Сначала выполните проверку candidates")
+            await _edit_or_reply_callback(query, QUEUE_READY_NEEDS_PREVIEW_TEXT, reply_markup=reply_markup)
+            return
+        await query.answer("Показываю готовые candidates")
+        await _edit_or_reply_callback(query, format_docs_ready_report(cached_queue_report), reply_markup=reply_markup)
+        return
+    await query.answer()
     if status_provider is None:
         await _edit_or_reply_callback(
             query,
@@ -354,6 +370,7 @@ async def send_docs_preview_all(
     is_allowed: bool,
     queue_service: DocsActivationQueueReader | None = None,
     status_provider: ServiceDocsStatusReader | None = None,
+    cache_queue_report: Callable[[DocsQueueReport], None] | None = None,
     reply_markup: Any | None = None,
     safe_error: Callable[[Exception], str] | None = None,
 ) -> None:
@@ -366,12 +383,15 @@ async def send_docs_preview_all(
             reply_markup=reply_markup,
         )
         return
+    await update.message.reply_text(QUEUE_PREVIEW_IN_PROGRESS_TEXT, reply_markup=reply_markup)
     try:
         report = await _queue_service(queue_service, status_provider=status_provider).preview_all()
     except Exception as exc:  # noqa: BLE001 - command must fail gracefully
         error = safe_error(exc) if safe_error is not None else str(exc)
         await update.message.reply_text("Не получилось проверить candidates: " + error, reply_markup=reply_markup)
         return
+    if cache_queue_report is not None:
+        cache_queue_report(report)
     await update.message.reply_text(format_docs_queue_report(report), reply_markup=reply_markup)
 
 
@@ -381,6 +401,8 @@ async def send_docs_ready(
     is_allowed: bool,
     queue_service: DocsActivationQueueReader | None = None,
     status_provider: ServiceDocsStatusReader | None = None,
+    cached_queue_report: DocsQueueReport | None = None,
+    cache_queue_report: Callable[[DocsQueueReport], None] | None = None,
     reply_markup: Any | None = None,
     safe_error: Callable[[Exception], str] | None = None,
 ) -> None:
@@ -393,12 +415,18 @@ async def send_docs_ready(
             reply_markup=reply_markup,
         )
         return
+    if cached_queue_report is not None:
+        await update.message.reply_text(format_docs_ready_report(cached_queue_report), reply_markup=reply_markup)
+        return
+    await update.message.reply_text(QUEUE_PREVIEW_IN_PROGRESS_TEXT, reply_markup=reply_markup)
     try:
         report = await _queue_service(queue_service, status_provider=status_provider).ready()
     except Exception as exc:  # noqa: BLE001
         error = safe_error(exc) if safe_error is not None else str(exc)
         await update.message.reply_text("Не получилось получить ready candidates: " + error, reply_markup=reply_markup)
         return
+    if cache_queue_report is not None:
+        cache_queue_report(report)
     await update.message.reply_text(format_docs_ready_report(report), reply_markup=reply_markup)
 
 

@@ -66,7 +66,9 @@ Expected:
 Expected:
 
 - batch preview classifies candidates as ready, needs_review, failed, or already_connected;
+- `/docs_preview_all` and the `Проверить всё` button show an immediate in-progress status before the final report;
 - ready list shows only candidates eligible for the next activation plan;
+- the `Готово к подключению` button uses the latest preview report; without one it asks to run `Проверить всё` or `/docs_preview_all` first;
 - activation plan does not write to Supabase;
 - arbitrary URL is rejected;
 - do not run `/docs_activate_ready confirm` unless explicitly requested.

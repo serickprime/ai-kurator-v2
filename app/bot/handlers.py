@@ -507,6 +507,8 @@ async def docs_wizard_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         action=action,
         is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
         queue_service=services.docs_queue_service,
+        cached_queue_report=_cached_docs_queue_report(services, user_id),
+        cache_queue_report=_cache_docs_queue_report_callback(services, user_id),
         reply_markup=docs_registry_inline_keyboard(),
         safe_error=_safe_error,
     )
@@ -553,6 +555,7 @@ async def docs_preview_all_command(update: Update, context: ContextTypes.DEFAULT
         is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
         queue_service=services.docs_queue_service,
         status_provider=services.service_docs_status_provider,
+        cache_queue_report=_cache_docs_queue_report_callback(services, user_id),
         reply_markup=main_menu_keyboard(),
         safe_error=_safe_error,
     )
@@ -567,6 +570,8 @@ async def docs_ready_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
         queue_service=services.docs_queue_service,
         status_provider=services.service_docs_status_provider,
+        cached_queue_report=_cached_docs_queue_report(services, user_id),
+        cache_queue_report=_cache_docs_queue_report_callback(services, user_id),
         reply_markup=main_menu_keyboard(),
         safe_error=_safe_error,
     )
@@ -594,6 +599,22 @@ async def docs_activate_ready_command(update: Update, context: ContextTypes.DEFA
         reply_markup=main_menu_keyboard(),
         safe_error=_safe_error,
     )
+
+
+def _cached_docs_queue_report(services: BotServices, user_id: int | None) -> Any | None:
+    if user_id is None:
+        return None
+    return services.state_store.get(user_id).last_docs_queue_report
+
+
+def _cache_docs_queue_report_callback(services: BotServices, user_id: int | None) -> Callable[[Any], None] | None:
+    if user_id is None:
+        return None
+
+    def _cache(report: Any) -> None:
+        services.state_store.set_docs_queue_report(user_id, report)
+
+    return _cache
 
 
 async def base_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

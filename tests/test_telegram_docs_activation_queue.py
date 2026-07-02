@@ -32,11 +32,13 @@ class FakeCallbackQuery:
         self.data = data
         self.message = FakeMessage("callback")
         self.answered = False
+        self.answer_texts: list[str] = []
         self.edits: list[str] = []
 
     async def answer(self, *args: object, **kwargs: object) -> None:
-        del args, kwargs
         self.answered = True
+        text = args[0] if args else kwargs.get("text", "")
+        self.answer_texts.append(str(text))
 
     async def edit_message_text(self, text: str, **kwargs: object) -> None:
         del kwargs
@@ -82,6 +84,7 @@ def test_docs_preview_all_command_shows_batch_report_without_activation() -> Non
 
     assert queue.calls == ["preview_all"]
     assert queue.activation_calls == []
+    assert "Проверяю candidates" in message.replies[0]
     assert "Готовы к подключению:" in message.replies[-1]
     assert "✅ Telegram Bot API — 5 pages" in message.replies[-1]
     assert "✅ OpenRouter — already connected" in message.replies[-1]
@@ -97,9 +100,81 @@ def test_docs_ready_command_shows_only_ready_allowlisted_candidates() -> None:
     asyncio.run(docs_ready_command(_update(message, user_id=7), _context(BotServices(docs_queue_service=queue, owner_ids=(7,)))))
 
     assert queue.calls == ["ready"]
+    assert "Проверяю candidates" in message.replies[0]
     assert "✅ Telegram Bot API — telegram_bot_api" in message.replies[-1]
     assert "OpenRouter — already connected" not in message.replies[-1]
     assert "Ollama" not in message.replies[-1]
+
+
+def test_docs_preview_all_command_caches_queue_report() -> None:
+    queue = FakeQueueService()
+    services = BotServices(docs_queue_service=queue, owner_ids=(7,))
+    message = FakeMessage("/docs_preview_all")
+
+    asyncio.run(docs_preview_all_command(_update(message, user_id=7), _context(services)))
+
+    state = services.state_store.get(7)
+    assert state.last_docs_queue_report is queue.report
+    assert state.last_docs_queue_report_at is not None
+
+
+def test_docs_ready_command_uses_cached_report_without_preview() -> None:
+    queue = FakeQueueService()
+    services = BotServices(docs_queue_service=queue, owner_ids=(7,))
+    services.state_store.set_docs_queue_report(7, queue.report)
+    message = FakeMessage("/docs_ready")
+
+    asyncio.run(docs_ready_command(_update(message, user_id=7), _context(services)))
+
+    assert queue.calls == []
+    assert "✅ Telegram Bot API — telegram_bot_api" in message.replies[-1]
+    assert "{" not in message.replies[-1]
+
+
+def test_docs_preview_all_callback_answers_and_shows_progress_before_preview() -> None:
+    queue = FakeQueueService()
+    services = BotServices(docs_queue_service=queue, owner_ids=(7,))
+    query = FakeCallbackQuery("docs:preview_all")
+
+    asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
+
+    assert query.answered
+    assert query.answer_texts
+    assert "Проверяю candidates" in query.answer_texts[0]
+    assert "Проверяю candidates" in query.edits[0]
+    assert "✅ Telegram Bot API — 5 pages" in query.edits[-1]
+    assert services.state_store.get(7).last_docs_queue_report is queue.report
+    assert queue.activation_calls == []
+    assert "{" not in query.edits[-1]
+
+
+def test_docs_ready_callback_uses_cached_report_without_preview() -> None:
+    queue = FakeQueueService()
+    services = BotServices(docs_queue_service=queue, owner_ids=(7,))
+    services.state_store.set_docs_queue_report(7, queue.report)
+    query = FakeCallbackQuery("docs:ready")
+
+    asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
+
+    assert query.answered
+    assert "Показываю готовые candidates" in query.answer_texts[0]
+    assert queue.calls == []
+    assert "✅ Telegram Bot API — telegram_bot_api" in query.edits[-1]
+    assert queue.activation_calls == []
+
+
+def test_docs_ready_callback_without_cache_asks_to_run_preview_first() -> None:
+    queue = FakeQueueService()
+    services = BotServices(docs_queue_service=queue, owner_ids=(7,))
+    query = FakeCallbackQuery("docs:ready")
+
+    asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
+
+    assert query.answered
+    assert "Сначала выполните проверку candidates" in query.answer_texts[0]
+    assert queue.calls == []
+    assert "Сначала выполните проверку candidates" in query.edits[-1]
+    assert queue.activation_calls == []
 
 
 def test_docs_activate_ready_plan_does_not_write() -> None:
@@ -189,7 +264,7 @@ def test_docs_queue_callbacks_do_not_activate_confirm() -> None:
         assert query.answered
         assert query.edits
 
-    assert queue.calls == ["preview_all", "ready"]
+    assert queue.calls == ["preview_all"]
     assert queue.activation_calls == []
 
 
