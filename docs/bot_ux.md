@@ -23,6 +23,9 @@ Commands stay available:
 /archive_source <id>
 /docs
 /docs_preview <service>
+/docs_preview_all
+/docs_ready
+/docs_activate_ready
 /docs_activate openrouter
 /services
 /base_status
@@ -36,6 +39,8 @@ Read-only status commands:
 
 - `/docs` shows a read-only inline dashboard for documentation sources and curated candidates from `config/docs_source_candidates.yaml`. Its buttons let the owner/admin view connected sources, candidates, preview help, and help. It does not crawl, sync, index, activate, write to Supabase, or change config.
 - `/docs_preview <service>` runs a safe read-only dry-run for one curated candidate. It uses only configured candidate URLs/domains, does not index, does not write to Supabase, and does not activate docs.
+- `/docs_preview_all` runs preview for all curated candidates and classifies them as ready, needs_review, failed, or already_connected. It can take a few seconds, so the bot should immediately show an in-progress status. It does not sync, index, activate, or write to Supabase.
+- `/docs_ready` shows only candidates that are ready for the next controlled activation plan. The inline `Готово к подключению` button uses the last preview report when available; without a report it asks the owner to run `Проверить всё` or `/docs_preview_all` first.
 - `/services` shows services detected in the indexed base and whether their documentation source is connected.
 - `/base_status` shows compact knowledge base counts, external docs source status, service status, and recent uploads.
 - `/materials` lists recent uploaded/local materials, excluding external docs.
@@ -48,6 +53,7 @@ Docs activation command:
 
 - `/docs_activate openrouter` shows the controlled activation plan only. It does not crawl, index, write to Supabase, or activate docs.
 - `/docs_activate openrouter confirm` is owner/admin-only and runs controlled activation for OpenRouter. MVP activation rejects arbitrary URLs and all non-OpenRouter candidates. `/docs` never runs this confirmation; it only shows guidance.
+- `/docs_activate_ready` shows a no-write plan for ready candidates. `/docs_activate_ready confirm` is owner/admin-only and activates only ready candidates that are in the MVP allowlist: `openrouter`, `telegram_bot_api`. Candidates marked `needs_review`, `failed`, or `already_connected` are skipped.
 
 Material management command:
 

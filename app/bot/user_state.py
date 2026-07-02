@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.db.repositories import UserSettings
+
+if TYPE_CHECKING:
+    from app.docs_registry.queue import DocsQueueReport
 
 
 @dataclass
@@ -17,6 +20,8 @@ class BotUserState:
     uploaded_materials: int = 0
     active_conversation_id: str | None = None
     last_debug: dict[str, Any] = field(default_factory=dict)
+    last_docs_queue_report: DocsQueueReport | None = None
+    last_docs_queue_report_at: datetime | None = None
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -45,6 +50,15 @@ class InMemoryBotUserStateStore:
         state.last_debug = {}
         state.active_conversation_id = None
         state.updated_at = datetime.now(timezone.utc)
+        return state
+
+    def set_docs_queue_report(self, telegram_user_id: int, report: DocsQueueReport) -> BotUserState:
+        """Cache the latest docs activation queue report for one user."""
+        state = self.get(telegram_user_id)
+        now = datetime.now(timezone.utc)
+        state.last_docs_queue_report = report
+        state.last_docs_queue_report_at = now
+        state.updated_at = now
         return state
 
 

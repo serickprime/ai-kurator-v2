@@ -110,11 +110,20 @@ def test_activation_rejects_unknown_candidate() -> None:
         service.plan("missing")
 
 
-def test_activation_rejects_non_openrouter_candidate_in_mvp() -> None:
+def test_activation_allows_telegram_bot_api_candidate_in_mvp_allowlist() -> None:
     service = DocsActivationService(candidates_config=_config(_telegram_candidate()))
 
+    plan = service.plan("telegram_bot_api")
+
+    assert plan.service_id == "telegram_bot_api"
+    assert plan.docs_source == "telegram_bot_api_docs"
+
+
+def test_activation_rejects_non_allowlisted_candidate_in_mvp() -> None:
+    service = DocsActivationService(candidates_config=_config(_ollama_candidate()))
+
     with pytest.raises(DocsActivationPolicyError):
-        service.plan("telegram_bot_api")
+        service.plan("ollama")
 
 
 def test_activation_quality_gate_passes_for_successful_openrouter_run() -> None:
@@ -204,6 +213,23 @@ def _telegram_candidate() -> DocsSourceCandidate:
         deny_patterns=("/login",),
         max_pages=20,
         crawl_depth=1,
+        risk_level="low",
+        notes="test",
+    )
+
+
+def _ollama_candidate() -> DocsSourceCandidate:
+    return DocsSourceCandidate(
+        service_id="ollama",
+        display_name="Ollama",
+        aliases=("ollama",),
+        docs_source="ollama_docs",
+        official_start_urls=("https://docs.ollama.com/",),
+        allowed_domains=("docs.ollama.com",),
+        allow_patterns=(r"^https://docs\.ollama\.com/",),
+        deny_patterns=("/login",),
+        max_pages=25,
+        crawl_depth=2,
         risk_level="low",
         notes="test",
     )

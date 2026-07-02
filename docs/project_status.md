@@ -4,7 +4,7 @@
 
 Current main after the latest completed merge:
 
-- `e472deb Add docs UI wizard (#17)`
+- `421a61f add project control pack (#18)`
 
 ## Current project state
 
@@ -29,6 +29,7 @@ Core state:
 - OpenRouter controlled activation was completed successfully.
 - OpenRouter docs are indexed as official `external_docs`.
 - `/source_last` confirms OpenRouter as official external docs source after OpenRouter questions.
+- Project control docs are present in the repository.
 
 ## Completed PRs
 
@@ -49,22 +50,42 @@ Core state:
 - PR #15 — external docs candidate QA report.
 - PR #16 — controlled OpenRouter docs activation flow.
 - PR #17 — Docs UI Wizard.
+- PR #18 — project control pack.
 
-## Current focus
+## Current branch block
 
-Stop and add project control layer.
+Docs Activation Queue implemented in branch `docs-activation-queue`:
 
-This block must only add repository control documents and agent workflow instructions.
-
-## Next recommended roadmap block
-
-Docs Activation Queue:
-
+- `app/docs_registry/queue.py`
 - `/docs_preview_all`
 - `/docs_ready`
 - `/docs_activate_ready`
-- classify candidates as ready / needs_review / failed / already_connected
-- activate only ready allowlisted candidates after owner/admin confirmation
+- `/docs_activate_ready confirm`
+- batch classification:
+  - ready
+  - needs_review
+  - failed
+  - already_connected
+- allowlist-based MVP activation:
+  - openrouter
+  - telegram_bot_api
+- safeguards:
+  - owner/admin only
+  - no arbitrary URLs
+  - no activation for needs_review
+  - no activation for failed
+  - no activation for already_connected
+  - callbacks do not run confirm
+
+## Current focus
+
+Review and test Docs Activation Queue PR.
+
+## Next recommended
+
+- manual Telegram smoke for queue;
+- inspect ready list;
+- only then decide whether to run `/docs_activate_ready confirm`.
 
 ## Later roadmap
 
