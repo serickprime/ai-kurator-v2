@@ -13,8 +13,10 @@ from app.external_docs.extractor import ExternalDocsExtractor
 from app.external_docs.policy import is_url_allowed
 from app.external_docs.types import CrawledPage, ExternalDocSource, ExternalDocsIndexResult, ExtractedPage
 
-ALLOWED_ACTIVATION_SERVICE_ID = "openrouter"
-ALLOWED_ACTIVATION_DOCS_SOURCE = "openrouter_docs"
+ALLOWED_ACTIVATION_SOURCES: dict[str, str] = {
+    "openrouter": "openrouter_docs",
+    "telegram_bot_api": "telegram_bot_api_docs",
+}
 
 
 class DocsActivationError(ValueError):
@@ -265,10 +267,11 @@ def build_activation_quality_gate(
     failures: list[str] = []
     warnings: list[str] = []
 
-    if plan.service_id != ALLOWED_ACTIVATION_SERVICE_ID:
-        failures.append("source is not openrouter")
-    if plan.docs_source != ALLOWED_ACTIVATION_DOCS_SOURCE or source.name != ALLOWED_ACTIVATION_DOCS_SOURCE:
-        failures.append("source_name is not openrouter_docs")
+    expected_docs_source = ALLOWED_ACTIVATION_SOURCES.get(plan.service_id)
+    if expected_docs_source is None:
+        failures.append("source is not allowlisted")
+    elif plan.docs_source != expected_docs_source or source.name != expected_docs_source:
+        failures.append(f"source_name is not {expected_docs_source}")
     if plan.risk_level != "low":
         failures.append("candidate is not low risk")
     if fetched_pages <= 0:
@@ -294,10 +297,11 @@ def build_activation_quality_gate(
 
 
 def _validate_candidate_policy(candidate: DocsSourceCandidate) -> None:
-    if candidate.service_id != ALLOWED_ACTIVATION_SERVICE_ID:
-        raise DocsActivationPolicyError("В MVP подключение разрешено только для OpenRouter.")
-    if candidate.docs_source != ALLOWED_ACTIVATION_DOCS_SOURCE:
-        raise DocsActivationPolicyError("OpenRouter candidate must use openrouter_docs source.")
+    expected_docs_source = ALLOWED_ACTIVATION_SOURCES.get(candidate.service_id)
+    if expected_docs_source is None:
+        raise DocsActivationPolicyError("В MVP подключение разрешено только для OpenRouter и Telegram Bot API.")
+    if candidate.docs_source != expected_docs_source:
+        raise DocsActivationPolicyError(f"{candidate.service_id} candidate must use {expected_docs_source} source.")
     if candidate.risk_level != "low":
         raise DocsActivationPolicyError("Candidate risk level must be low.")
 

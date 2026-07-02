@@ -23,6 +23,11 @@ from app.docs_registry.preview import (
     DocsCandidateNotFoundError,
     DocsCandidatePreviewService,
 )
+from app.docs_registry.queue import (
+    DocsActivationQueueService,
+    DocsQueueActivationResult,
+    DocsQueueReport,
+)
 from app.service_registry.types import ServiceDocsStatus
 
 
@@ -53,6 +58,22 @@ class DocsActivationReader(Protocol):
 
     async def activate(self, service_id_or_alias: str) -> DocsActivationResult:
         """Run controlled activation after explicit confirmation."""
+
+
+class DocsActivationQueueReader(Protocol):
+    """Batch docs queue service."""
+
+    async def preview_all(self) -> DocsQueueReport:
+        """Return a batch preview report."""
+
+    async def ready(self) -> DocsQueueReport:
+        """Return a report for ready candidates."""
+
+    async def activation_plan(self) -> DocsQueueReport:
+        """Return an activation plan without writing."""
+
+    async def activate_ready(self) -> DocsQueueActivationResult:
+        """Activate ready candidates after explicit confirmation."""
 
 
 async def send_docs_dashboard(
@@ -173,6 +194,9 @@ def format_docs_wizard_help() -> str:
             "",
             "- /docs — панель документации",
             "- /docs_preview <id> — безопасный предпросмотр",
+            "- /docs_preview_all — проверить candidates",
+            "- /docs_ready — готовые к подключению",
+            "- /docs_activate_ready — план подключения готовых",
             "- /docs_activate openrouter — план подключения OpenRouter",
             "- /services — технический статус",
             "- /base_status — статус базы",
@@ -186,6 +210,7 @@ async def send_docs_wizard_callback(
     status_provider: ServiceDocsStatusReader | None,
     action: str,
     is_allowed: bool,
+    queue_service: DocsActivationQueueReader | None = None,
     reply_markup: Any | None = None,
     safe_error: Callable[[Exception], str] | None = None,
     candidate_loader: Callable[[], tuple[DocsSourceCandidate, ...]] | None = None,
@@ -199,6 +224,20 @@ async def send_docs_wizard_callback(
         await _edit_or_reply_callback(
             query,
             "Панель документации доступна владельцу бота.",
+            reply_markup=reply_markup,
+        )
+        return
+    if action in {"preview_all", "ready"}:
+        queue = _queue_service(queue_service, status_provider=status_provider)
+        try:
+            report = await (queue.ready() if action == "ready" else queue.preview_all())
+        except Exception as exc:  # noqa: BLE001 - callback should fail visibly
+            error = safe_error(exc) if safe_error is not None else str(exc)
+            await _edit_or_reply_callback(query, "Не получилось проверить candidates: " + error, reply_markup=reply_markup)
+            return
+        await _edit_or_reply_callback(
+            query,
+            format_docs_ready_report(report) if action == "ready" else format_docs_queue_report(report),
             reply_markup=reply_markup,
         )
         return
@@ -309,6 +348,174 @@ async def send_docs_activation(
     await update.message.reply_text(format_docs_activation_result(result), reply_markup=reply_markup)
 
 
+async def send_docs_preview_all(
+    update: Update,
+    *,
+    is_allowed: bool,
+    queue_service: DocsActivationQueueReader | None = None,
+    status_provider: ServiceDocsStatusReader | None = None,
+    reply_markup: Any | None = None,
+    safe_error: Callable[[Exception], str] | None = None,
+) -> None:
+    """Send a batch preview report without indexing or writing."""
+    if update.message is None:
+        return
+    if not is_allowed:
+        await update.message.reply_text(
+            "Проверка документации доступна владельцу бота.",
+            reply_markup=reply_markup,
+        )
+        return
+    try:
+        report = await _queue_service(queue_service, status_provider=status_provider).preview_all()
+    except Exception as exc:  # noqa: BLE001 - command must fail gracefully
+        error = safe_error(exc) if safe_error is not None else str(exc)
+        await update.message.reply_text("Не получилось проверить candidates: " + error, reply_markup=reply_markup)
+        return
+    await update.message.reply_text(format_docs_queue_report(report), reply_markup=reply_markup)
+
+
+async def send_docs_ready(
+    update: Update,
+    *,
+    is_allowed: bool,
+    queue_service: DocsActivationQueueReader | None = None,
+    status_provider: ServiceDocsStatusReader | None = None,
+    reply_markup: Any | None = None,
+    safe_error: Callable[[Exception], str] | None = None,
+) -> None:
+    """Send candidates that are ready for activation."""
+    if update.message is None:
+        return
+    if not is_allowed:
+        await update.message.reply_text(
+            "Список готовых candidates доступен владельцу бота.",
+            reply_markup=reply_markup,
+        )
+        return
+    try:
+        report = await _queue_service(queue_service, status_provider=status_provider).ready()
+    except Exception as exc:  # noqa: BLE001
+        error = safe_error(exc) if safe_error is not None else str(exc)
+        await update.message.reply_text("Не получилось получить ready candidates: " + error, reply_markup=reply_markup)
+        return
+    await update.message.reply_text(format_docs_ready_report(report), reply_markup=reply_markup)
+
+
+async def send_docs_activate_ready(
+    update: Update,
+    *,
+    confirm: bool,
+    is_allowed: bool,
+    queue_service: DocsActivationQueueReader | None = None,
+    status_provider: ServiceDocsStatusReader | None = None,
+    reply_markup: Any | None = None,
+    safe_error: Callable[[Exception], str] | None = None,
+) -> None:
+    """Show a ready activation plan, or activate ready candidates after confirm."""
+    if update.message is None:
+        return
+    if not is_allowed:
+        await update.message.reply_text(
+            "Подключение документации доступно владельцу бота.",
+            reply_markup=reply_markup,
+        )
+        return
+    queue = _queue_service(queue_service, status_provider=status_provider)
+    try:
+        if not confirm:
+            report = await queue.activation_plan()
+            await update.message.reply_text(format_docs_activate_ready_plan(report), reply_markup=reply_markup)
+            return
+        result = await queue.activate_ready()
+    except Exception as exc:  # noqa: BLE001
+        error = safe_error(exc) if safe_error is not None else str(exc)
+        await update.message.reply_text("Не получилось выполнить activation queue: " + error, reply_markup=reply_markup)
+        return
+    await update.message.reply_text(format_docs_activate_ready_result(result), reply_markup=reply_markup)
+
+
+def format_docs_queue_report(report: DocsQueueReport) -> str:
+    """Format batch preview results without raw JSON."""
+    lines = ["Docs Activation Queue", "", "Готовы к подключению:"]
+    ready_lines = [f"✅ {item.display_name} — {item.pages_found} pages" for item in report.ready]
+    connected_lines = [f"✅ {item.display_name} — already connected" for item in report.already_connected]
+    lines.extend(ready_lines or [])
+    lines.extend(connected_lines or [])
+    if not ready_lines and not connected_lines:
+        lines.append("нет данных")
+
+    lines.extend(["", "Нужна ручная проверка:"])
+    if report.needs_review:
+        lines.extend(f"⚠️ {item.display_name} — {item.reason}" for item in report.needs_review)
+    else:
+        lines.append("нет данных")
+
+    lines.extend(["", "Ошибка:"])
+    if report.failed:
+        lines.extend(f"❌ {item.display_name} — {item.reason}" for item in report.failed)
+    else:
+        lines.append("нет данных")
+
+    lines.extend(["", "Это preview: sync/indexing/activation не запускаются."])
+    return "\n".join(lines)
+
+
+def format_docs_ready_report(report: DocsQueueReport) -> str:
+    """Format candidates ready for activation."""
+    lines = ["Готовы к подключению:"]
+    ready = report.ready_for_activation()
+    if ready:
+        lines.extend(f"✅ {item.display_name} — {item.service_id} ({item.pages_found} pages)" for item in ready)
+    else:
+        lines.append("нет данных")
+    blocked = tuple(item for item in report.ready if item not in ready)
+    if blocked:
+        lines.extend(["", "Ready, но не входят в MVP allowlist:"])
+        lines.extend(f"- {item.display_name} — {item.service_id}" for item in blocked[:10])
+    lines.extend(["", "Для плана: /docs_activate_ready", "Для запуска: /docs_activate_ready confirm"])
+    return "\n".join(lines)
+
+
+def format_docs_activate_ready_plan(report: DocsQueueReport) -> str:
+    """Format a no-write activation plan for ready candidates."""
+    ready = report.ready_for_activation()
+    lines = ["План подключения ready docs:", ""]
+    if ready:
+        lines.extend(f"✅ {item.display_name} — {item.service_id}" for item in ready)
+        lines.extend(["", "Для запуска напишите:", "`/docs_activate_ready confirm`"])
+    else:
+        lines.append("Нет ready candidates в allowlist.")
+    if report.needs_review or report.failed:
+        lines.extend(["", "Не будут подключены:"])
+        lines.extend(f"- {item.display_name} — {item.status}: {item.reason}" for item in (*report.needs_review, *report.failed)[:10])
+    if report.already_connected:
+        lines.extend(["", "Уже подключены:"])
+        lines.extend(f"- {item.display_name}" for item in report.already_connected[:10])
+    return "\n".join(lines)
+
+
+def format_docs_activate_ready_result(result: DocsQueueActivationResult) -> str:
+    """Format batch activation result without raw JSON."""
+    lines = ["Activation queue result", ""]
+    if result.activated:
+        lines.append("Подключено:")
+        lines.extend(
+            f"✅ {item.plan.display_name} — {item.quality_gate.quality}, chunks={item.chunks_total}"
+            for item in result.activated
+        )
+    else:
+        lines.append("Подключено: нет данных")
+    if result.errors:
+        lines.extend(["", "Ошибки:"])
+        lines.extend(f"❌ {error}" for error in result.errors[:5])
+    skipped_review = tuple(item for item in result.skipped if item.status in {"needs_review", "failed"})
+    if skipped_review:
+        lines.extend(["", "Не подключались:"])
+        lines.extend(f"- {item.display_name} — {item.status}: {item.reason}" for item in skipped_review[:10])
+    return "\n".join(lines)
+
+
 def format_docs_activation_plan(plan: DocsActivationPlan) -> str:
     """Format a pre-confirm activation plan."""
     lines = [
@@ -356,7 +563,7 @@ def format_docs_activation_result(result: DocsActivationResult) -> str:
         [
             "",
             (
-                "OpenRouter docs indexed through controlled activation."
+                f"{result.plan.display_name} docs indexed through controlled activation."
                 if result.quality_gate.passed
                 else "Activation needs review before relying on this source."
             ),
@@ -471,6 +678,16 @@ def _load_candidates(loader: Callable[[], tuple[DocsSourceCandidate, ...]] | Non
         return load_docs_source_candidates_config().candidates
     except Exception:  # noqa: BLE001 - `/docs` must keep working when optional catalog is unavailable
         return ()
+
+
+def _queue_service(
+    queue_service: DocsActivationQueueReader | None,
+    *,
+    status_provider: ServiceDocsStatusReader | None,
+) -> DocsActivationQueueReader:
+    if queue_service is not None:
+        return queue_service
+    return DocsActivationQueueService(status_provider=status_provider)
 
 
 def _available_candidates(

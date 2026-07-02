@@ -166,13 +166,16 @@ Manual candidate QA report: [External Docs Candidate QA](external_docs_candidate
 
 ## Controlled Activation MVP
 
-The first activation flow is intentionally narrow:
+The activation flow is intentionally narrow:
 
-- only `openrouter` can be activated;
-- the candidate must come from `config/docs_source_candidates.yaml`;
+- candidates must come from `config/docs_source_candidates.yaml`;
+- single-service activation is still controlled by an explicit command;
+- batch activation is available only through the docs activation queue;
+- ready candidates are activated only after owner/admin confirmation;
+- MVP batch activation allowlist is `openrouter`, `telegram_bot_api`;
+- `needs_review`, `failed`, and `already_connected` candidates are skipped;
 - `risk_level` must be `low`;
-- arbitrary URLs are rejected;
-- owner/admin confirmation is required.
+- arbitrary URLs are rejected.
 
 Telegram flow:
 
@@ -188,7 +191,16 @@ This shows the activation plan only. It does not crawl, index, write to Supabase
 
 This runs controlled activation for OpenRouter through the existing crawler/extractor/indexer path, limited by the curated candidate settings. The MVP uses the existing indexer behavior after preflight policy checks; it does not introduce a new pending schema state. If a future PR needs full pending activation, that should be handled as an explicit schema/design change.
 
-All other candidates, including Telegram Bot API, Ollama, Dokploy, aiogram, and Claude Code, remain non-activated until a separate controlled experiment approves them.
+Other candidates outside the MVP allowlist, including Ollama, Dokploy, aiogram, and Claude Code, remain non-activated until a separate controlled experiment approves them.
+
+Batch queue commands:
+
+- `/docs_preview_all` previews curated candidates and classifies them as `ready`, `needs_review`, `failed`, or `already_connected`.
+- `/docs_ready` shows ready candidates that can be included in an activation plan.
+- `/docs_activate_ready` shows a no-write plan.
+- `/docs_activate_ready confirm` runs activation only for ready allowlisted candidates.
+
+The queue commands do not accept arbitrary URLs. Preview and plan commands do not index documents, write to Supabase, or activate docs.
 
 ## Модули
 

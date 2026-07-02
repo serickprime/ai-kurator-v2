@@ -14,10 +14,14 @@ from app.bot.access import UserAccessPolicy
 from app.bot.base_status import BaseStatus, format_base_status
 from app.bot.features.docs_registry import (
     DocsActivationReader,
+    DocsActivationQueueReader,
     DocsPreviewReader,
     send_docs_activation,
+    send_docs_activate_ready,
     send_docs_dashboard,
     send_docs_preview,
+    send_docs_preview_all,
+    send_docs_ready,
     send_docs_wizard_callback,
 )
 from app.bot.formatting import format_for_telegram, format_status
@@ -142,6 +146,7 @@ class BotServices:
     service_docs_status_provider: ServiceDocsStatusReader | None = None
     docs_preview_service: DocsPreviewReader | None = None
     docs_activation_service: DocsActivationReader | None = None
+    docs_queue_service: DocsActivationQueueReader | None = None
     base_status_provider: BaseStatusReader | None = None
     materials_provider: MaterialsReader | None = None
     conversation_repo: Any | None = None
@@ -208,6 +213,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "",
                 "Для владельца:",
                 "- /docs_preview <id>",
+                "- /docs_preview_all",
+                "- /docs_ready",
+                "- /docs_activate_ready",
                 "- /docs_activate openrouter",
                 "- /material <id>",
                 "- /archive_material <id>",
@@ -498,6 +506,7 @@ async def docs_wizard_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         status_provider=services.service_docs_status_provider,
         action=action,
         is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        queue_service=services.docs_queue_service,
         reply_markup=docs_registry_inline_keyboard(),
         safe_error=_safe_error,
     )
@@ -530,6 +539,58 @@ async def docs_activate_command(update: Update, context: ContextTypes.DEFAULT_TY
         confirm=confirm,
         is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
         activation_service=services.docs_activation_service,
+        reply_markup=main_menu_keyboard(),
+        safe_error=_safe_error,
+    )
+
+
+async def docs_preview_all_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/docs_preview_all`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    await send_docs_preview_all(
+        update,
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        queue_service=services.docs_queue_service,
+        status_provider=services.service_docs_status_provider,
+        reply_markup=main_menu_keyboard(),
+        safe_error=_safe_error,
+    )
+
+
+async def docs_ready_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/docs_ready`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    await send_docs_ready(
+        update,
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        queue_service=services.docs_queue_service,
+        status_provider=services.service_docs_status_provider,
+        reply_markup=main_menu_keyboard(),
+        safe_error=_safe_error,
+    )
+
+
+async def docs_activate_ready_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/docs_activate_ready`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    args = _command_args(update, context)
+    confirm = len(args) == 1 and args[0].casefold() == "confirm"
+    if args and not confirm:
+        if update.message is not None:
+            await update.message.reply_text(
+                "Команда не принимает URL или id сервиса. Используйте /docs_activate_ready или /docs_activate_ready confirm.",
+                reply_markup=main_menu_keyboard(),
+            )
+        return
+    await send_docs_activate_ready(
+        update,
+        confirm=confirm,
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        queue_service=services.docs_queue_service,
+        status_provider=services.service_docs_status_provider,
         reply_markup=main_menu_keyboard(),
         safe_error=_safe_error,
     )
@@ -591,6 +652,9 @@ _TEXT_COMMAND_HANDLERS: dict[str, CommandFallbackHandler] = {
     "docs": docs_command,
     "docs_preview": docs_preview_command,
     "docs_activate": docs_activate_command,
+    "docs_preview_all": docs_preview_all_command,
+    "docs_ready": docs_ready_command,
+    "docs_activate_ready": docs_activate_ready_command,
     "base_status": base_status_command,
     "debug_last": debug_last_command,
 }
@@ -781,6 +845,9 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("docs", docs_command))
     application.add_handler(CommandHandler("docs_preview", docs_preview_command))
     application.add_handler(CommandHandler("docs_activate", docs_activate_command))
+    application.add_handler(CommandHandler("docs_preview_all", docs_preview_all_command))
+    application.add_handler(CommandHandler("docs_ready", docs_ready_command))
+    application.add_handler(CommandHandler("docs_activate_ready", docs_activate_ready_command))
     application.add_handler(CommandHandler("base_status", base_status_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
     application.add_handler(CallbackQueryHandler(docs_wizard_callback, pattern=r"^docs:"))

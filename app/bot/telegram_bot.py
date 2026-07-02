@@ -11,6 +11,7 @@ from app.bot.handlers import BotServices, register_handlers
 from app.bot.materials import MaterialsProvider
 from app.config import Settings
 from app.docs_registry.activation import DocsActivationService
+from app.docs_registry.queue import DocsActivationQueueService
 from app.external_docs.extractor import ExternalDocsExtractor
 from app.external_docs.indexer import ExternalDocsIndexer
 from app.ingestion.runtime import build_ingestion_runtime_from_settings, validate_ingestion_config
@@ -56,6 +57,7 @@ def _build_services(settings: Settings) -> BotServices:
     base_status_provider = None
     materials_provider = None
     docs_activation_service = None
+    docs_queue_service = None
     status_client = None
     if rag_runtime is not None:
         status_client = rag_runtime.resources.supabase
@@ -77,6 +79,10 @@ def _build_services(settings: Settings) -> BotServices:
             ),
             workspace=settings.default_workspace_name,
         )
+    docs_queue_service = DocsActivationQueueService(
+        status_provider=service_docs_status_provider,
+        activation_service=docs_activation_service,
+    )
     rag_disabled_reason = ""
     if rag_runtime is None:
         rag_disabled_reason = (
@@ -109,6 +115,7 @@ def _build_services(settings: Settings) -> BotServices:
         ingestion_missing_config=ingestion_validation.missing,
         service_docs_status_provider=service_docs_status_provider,
         docs_activation_service=docs_activation_service,
+        docs_queue_service=docs_queue_service,
         base_status_provider=base_status_provider,
         materials_provider=materials_provider,
         conversation_repo=rag_runtime.conversation_repo if rag_runtime is not None else None,
