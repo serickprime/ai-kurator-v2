@@ -164,6 +164,32 @@ MVP для следующего блока:
 
 Manual candidate QA report: [External Docs Candidate QA](external_docs_candidate_qa.md).
 
+## Controlled Activation MVP
+
+The first activation flow is intentionally narrow:
+
+- only `openrouter` can be activated;
+- the candidate must come from `config/docs_source_candidates.yaml`;
+- `risk_level` must be `low`;
+- arbitrary URLs are rejected;
+- owner/admin confirmation is required.
+
+Telegram flow:
+
+```text
+/docs_activate openrouter
+```
+
+This shows the activation plan only. It does not crawl, index, write to Supabase, or activate docs.
+
+```text
+/docs_activate openrouter confirm
+```
+
+This runs controlled activation for OpenRouter through the existing crawler/extractor/indexer path, limited by the curated candidate settings. The MVP uses the existing indexer behavior after preflight policy checks; it does not introduce a new pending schema state. If a future PR needs full pending activation, that should be handled as an explicit schema/design change.
+
+All other candidates, including Telegram Bot API, Ollama, Dokploy, aiogram, and Claude Code, remain non-activated until a separate controlled experiment approves them.
+
 ## Модули
 
 Целевая структура:

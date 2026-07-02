@@ -10,6 +10,9 @@ from app.bot.base_status import BaseStatusProvider
 from app.bot.handlers import BotServices, register_handlers
 from app.bot.materials import MaterialsProvider
 from app.config import Settings
+from app.docs_registry.activation import DocsActivationService
+from app.external_docs.extractor import ExternalDocsExtractor
+from app.external_docs.indexer import ExternalDocsIndexer
 from app.ingestion.runtime import build_ingestion_runtime_from_settings, validate_ingestion_config
 from app.llm.model_router import ModelRouter, ModelRouterConfig
 from app.llm.openrouter_client import OpenRouterClient
@@ -52,6 +55,7 @@ def _build_services(settings: Settings) -> BotServices:
     service_docs_status_provider = None
     base_status_provider = None
     materials_provider = None
+    docs_activation_service = None
     status_client = None
     if rag_runtime is not None:
         status_client = rag_runtime.resources.supabase
@@ -64,6 +68,15 @@ def _build_services(settings: Settings) -> BotServices:
             service_status_provider=service_docs_status_provider,
         )
         materials_provider = MaterialsProvider(status_client)
+    if ingestion_runtime is not None:
+        docs_activation_service = DocsActivationService(
+            extractor=ExternalDocsExtractor(),
+            indexer=ExternalDocsIndexer(
+                repository=ingestion_runtime.repository,
+                embedding_client=ingestion_runtime.resources.embedding_client,
+            ),
+            workspace=settings.default_workspace_name,
+        )
     rag_disabled_reason = ""
     if rag_runtime is None:
         rag_disabled_reason = (
@@ -95,6 +108,7 @@ def _build_services(settings: Settings) -> BotServices:
         ingestion_disabled_reason=ingestion_disabled_reason,
         ingestion_missing_config=ingestion_validation.missing,
         service_docs_status_provider=service_docs_status_provider,
+        docs_activation_service=docs_activation_service,
         base_status_provider=base_status_provider,
         materials_provider=materials_provider,
         conversation_repo=rag_runtime.conversation_repo if rag_runtime is not None else None,
@@ -128,6 +142,9 @@ async def _shutdown_runtime_services(application: Application) -> None:
     ingestion_runtime = getattr(services, "ingestion_runtime", None)
     if ingestion_runtime is not None:
         await ingestion_runtime.close()
+    docs_activation_service = getattr(services, "docs_activation_service", None)
+    if docs_activation_service is not None and hasattr(docs_activation_service, "close"):
+        await docs_activation_service.close()
     vision_textifier = getattr(services, "vision_textifier", None)
     if vision_textifier is not None:
         await vision_textifier.close()
