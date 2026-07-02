@@ -11,10 +11,11 @@ class FakeMessage:
         self.text = text
         self.message_id = 42
         self.replies: list[str] = []
+        self.reply_markups: list[object] = []
 
     async def reply_text(self, text: str, **kwargs: object) -> None:
-        del kwargs
         self.replies.append(text)
+        self.reply_markups.append(kwargs.get("reply_markup"))
 
 
 class FakeDocsStatusProvider:
@@ -62,10 +63,10 @@ def test_docs_dashboard_shows_connected_sources() -> None:
         )
     )
 
-    assert "Документация сервисов:" in text
-    assert "Подключено:" in text
-    assert "✅ n8n — PASS" in text
-    assert "✅ Supabase — PASS" in text
+    assert "Документация сервисов" in text
+    assert "✅ Подключено: 2" in text
+    assert "➕ Можно подключить: 0" in text
+    assert "Выберите действие кнопками ниже." in text
 
 
 def test_docs_dashboard_shows_not_configured_services() -> None:
@@ -75,8 +76,7 @@ def test_docs_dashboard_shows_not_configured_services() -> None:
         )
     )
 
-    assert "Не подключено:" in text
-    assert "⚪ FlutterFlow" in text
+    assert "⚪ Не подключено: 1" in text
 
 
 def test_docs_command_is_read_only_and_does_not_mutate_runtime() -> None:
@@ -88,7 +88,8 @@ def test_docs_command_is_read_only_and_does_not_mutate_runtime() -> None:
 
     assert provider.calls == [{"scan_corpus": False}]
     assert provider.mutation_calls == []
-    assert "✅ n8n" in message.replies[-1]
+    assert "✅ Подключено: 1" in message.replies[-1]
+    assert message.reply_markups[-1] is not None
 
 
 def test_docs_command_does_not_show_json_or_dict_repr() -> None:
@@ -112,7 +113,7 @@ def test_docs_command_is_available_to_admin() -> None:
     asyncio.run(docs_command(_update(message, user_id=7), _context(services)))
 
     assert provider.calls == [{"scan_corpus": False}]
-    assert "✅ Supabase" in message.replies[-1]
+    assert "✅ Подключено: 1" in message.replies[-1]
 
 
 def test_docs_command_is_denied_to_regular_user() -> None:
@@ -145,7 +146,7 @@ def test_docs_text_fallback_does_not_call_rag() -> None:
 
     assert provider.calls == [{"scan_corpus": False}]
     assert pipeline.calls == []
-    assert "Документация сервисов:" in message.replies[-1]
+    assert "Документация сервисов" in message.replies[-1]
 
 
 def _status(

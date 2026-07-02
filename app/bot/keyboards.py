@@ -18,6 +18,12 @@ CALLBACK_VISION_OFF = "settings:vision:off"
 CALLBACK_DEBUG_ON = "settings:debug:on"
 CALLBACK_DEBUG_OFF = "settings:debug:off"
 CALLBACK_SETTINGS_BACK = "settings:back"
+CALLBACK_DOCS_CONNECTED = "docs:connected"
+CALLBACK_DOCS_CANDIDATES = "docs:candidates"
+CALLBACK_DOCS_PREVIEW_HELP = "docs:preview_help"
+CALLBACK_DOCS_OPENROUTER = "docs:openrouter"
+CALLBACK_DOCS_HELP = "docs:help"
+CALLBACK_DOCS_BACK = "docs:back"
 
 
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
@@ -66,6 +72,23 @@ def settings_inline_keyboard(
                 InlineKeyboardButton(_mark("Debug: Выкл", not debug_mode), callback_data=CALLBACK_DEBUG_OFF),
             ],
             [InlineKeyboardButton("Назад", callback_data=CALLBACK_SETTINGS_BACK)],
+        ]
+    )
+
+
+def docs_registry_inline_keyboard() -> InlineKeyboardMarkup:
+    """Return the read-only docs dashboard inline wizard keyboard."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Подключённые", callback_data=CALLBACK_DOCS_CONNECTED),
+                InlineKeyboardButton("Можно подключить", callback_data=CALLBACK_DOCS_CANDIDATES),
+            ],
+            [
+                InlineKeyboardButton("Проверить сервис", callback_data=CALLBACK_DOCS_PREVIEW_HELP),
+                InlineKeyboardButton("OpenRouter", callback_data=CALLBACK_DOCS_OPENROUTER),
+            ],
+            [InlineKeyboardButton("Помощь", callback_data=CALLBACK_DOCS_HELP)],
         ]
     )
 

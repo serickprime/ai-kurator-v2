@@ -18,6 +18,7 @@ from app.bot.features.docs_registry import (
     send_docs_activation,
     send_docs_dashboard,
     send_docs_preview,
+    send_docs_wizard_callback,
 )
 from app.bot.formatting import format_for_telegram, format_status
 from app.bot.intake_buffer import MessageIntakeBuffer, UserIntake
@@ -35,6 +36,7 @@ from app.bot.keyboards import (
     CALLBACK_SETTINGS_BACK,
     CALLBACK_VISION_AUTO,
     CALLBACK_VISION_OFF,
+    docs_registry_inline_keyboard,
     main_menu_keyboard,
     settings_inline_keyboard,
     upload_menu_keyboard,
@@ -190,20 +192,26 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             [
                 "Как работать:",
                 "- задайте вопрос обычным сообщением;",
-                "- /upload или «Загрузить материал» — загрузить материал в базу;",
-                "- /base_status — статус базы знаний;",
-                "- /docs — панель документации сервисов;",
-                "- /docs_preview <id> — предпросмотр кандидата документации;",
-                "- /docs_activate openrouter — controlled activation документации OpenRouter;",
+                "- /new или Новая тема — начать новую тему;",
+                "- /upload или Загрузить материал — загрузить материал в базу.",
+                "",
+                "База знаний:",
+                "- /docs — панель документации сервисов с кнопками;",
                 "- /materials — список загруженных материалов;",
-                "- /material <id> — карточка материала;",
-                "- /archive_material <id> — архивировать материал;",
                 "- /source_last — источники последнего ответа;",
-                "- /archive_source <id> — архивировать источник последнего ответа;",
-                "- /services — найденные сервисы и документация;",
-                "- /status — настройки и runtime-статус;",
-                "- /new — новая тема;",
-                "- /debug_last — последний debug, если нужен.",
+                "",
+                "Диагностика:",
+                "- /status",
+                "- /services",
+                "- /base_status",
+                "- /debug_last",
+                "",
+                "Для владельца:",
+                "- /docs_preview <id>",
+                "- /docs_activate openrouter",
+                "- /material <id>",
+                "- /archive_material <id>",
+                "- /archive_source <id>",
             ]
         ),
         reply_markup=main_menu_keyboard(),
@@ -474,7 +482,23 @@ async def docs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         update,
         status_provider=services.service_docs_status_provider,
         is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
-        reply_markup=main_menu_keyboard(),
+        reply_markup=docs_registry_inline_keyboard(),
+        safe_error=_safe_error,
+    )
+
+
+async def docs_wizard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle read-only `/docs` inline wizard callbacks."""
+    services = _services(context)
+    user_id = _user_id(update)
+    data = (update.callback_query.data if update.callback_query is not None else "") or ""
+    action = data.split(":", 1)[1] if ":" in data else "back"
+    await send_docs_wizard_callback(
+        update,
+        status_provider=services.service_docs_status_provider,
+        action=action,
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        reply_markup=docs_registry_inline_keyboard(),
         safe_error=_safe_error,
     )
 
@@ -759,6 +783,7 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("docs_activate", docs_activate_command))
     application.add_handler(CommandHandler("base_status", base_status_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
+    application.add_handler(CallbackQueryHandler(docs_wizard_callback, pattern=r"^docs:"))
     application.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r"^settings:"))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.Document.ALL, handle_document))

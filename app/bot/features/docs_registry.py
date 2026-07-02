@@ -102,52 +102,154 @@ def format_docs_dashboard(
     not_connected = tuple(status for status in statuses if not _is_connected(status))
     available_candidates = _available_candidates(candidates, statuses)
 
-    lines = [
-        "Документация сервисов:",
-        "",
-        "Подключено:",
-    ]
+    return "\n".join(
+        [
+            "Документация сервисов",
+            "",
+            f"✅ Подключено: {len(connected)}",
+            f"➕ Можно подключить: {len(available_candidates)}",
+            f"⚪ Не подключено: {len(not_connected)}",
+            "",
+            "Выберите действие кнопками ниже.",
+        ]
+    )
+
+
+def format_docs_connected(statuses: tuple[ServiceDocsStatus, ...]) -> str:
+    """Format connected documentation sources for the wizard."""
+    connected = tuple(status for status in statuses if _is_connected(status))
+    lines = ["Подключённая документация:"]
     if connected:
         lines.extend(_connected_line(status) for status in connected[:10])
     else:
         lines.append("нет данных")
+    lines.extend(["", "`/source_last` покажет источники последнего ответа."])
+    return "\n".join(lines)
 
-    lines.extend(["", "Не подключено:"])
-    if not_connected:
-        lines.extend(_not_connected_line(status) for status in not_connected[:10])
-    else:
-        lines.append("нет данных")
 
-    lines.extend(["", "Можно подключить позже:"])
+def format_docs_candidates(
+    statuses: tuple[ServiceDocsStatus, ...],
+    *,
+    candidates: tuple[DocsSourceCandidate, ...] = (),
+) -> str:
+    """Format candidates that are not already connected."""
+    available_candidates = _available_candidates(candidates, statuses)
+    lines = ["Можно подключить позже:"]
     if available_candidates:
-        shown = available_candidates[:8]
-        lines.extend(f"➕ {candidate.display_name}" for candidate in shown)
+        shown = available_candidates[:10]
+        lines.extend(f"➕ {candidate.display_name} — `{candidate.service_id}`" for candidate in shown)
         hidden_count = len(available_candidates) - len(shown)
         if hidden_count > 0:
             lines.append(f"Ещё: {hidden_count}")
     else:
         lines.append("нет данных")
+    lines.extend(["", "Для безопасного предпросмотра используйте `/docs_preview <id>`."])
+    return "\n".join(lines)
 
-    lines.extend(
+
+def format_docs_preview_help() -> str:
+    """Format preview command help."""
+    return "\n".join(
         [
+            "Проверить сервис",
             "",
-            "Что можно делать:",
-            "- /services — технический статус сервисов",
-            "- /base_status — статус базы знаний",
-            "- /docs_preview <id> — безопасный предпросмотр кандидата",
-            "- /docs_activate openrouter — план controlled activation для OpenRouter",
-            "",
-            "Для предпросмотра:",
+            "Для безопасного предпросмотра:",
             "`/docs_preview <id>`",
             "",
-            "Для controlled activation:",
-            "`/docs_activate openrouter`",
+            "Примеры:",
+            "`/docs_preview openrouter`",
+            "`/docs_preview ollama`",
+            "`/docs_preview telegram_bot_api`",
             "",
-            "Следующий этап:",
-            "подключение новых official docs будет через безопасный preview/dry-run и подтверждение владельца.",
+            "Это не подключает документацию.",
         ]
     )
-    return "\n".join(lines)
+
+
+def format_docs_openrouter(statuses: tuple[ServiceDocsStatus, ...]) -> str:
+    """Format OpenRouter activation guidance without running activation."""
+    openrouter = _status_for_candidate(statuses, "openrouter", "openrouter_docs")
+    if openrouter is not None and _is_connected(openrouter):
+        return "\n".join(
+            [
+                "OpenRouter docs подключены.",
+                "",
+                "Проверьте вопросом:",
+                "`как подключить openrouter api?`",
+            ]
+        )
+    return "\n".join(
+        [
+            "OpenRouter docs пока не подключены.",
+            "",
+            "Для плана подключения:",
+            "`/docs_activate openrouter`",
+            "",
+            "Для запуска подключения:",
+            "`/docs_activate openrouter confirm`",
+            "",
+            "Запускайте confirm только если готовы реально индексировать docs.",
+        ]
+    )
+
+
+def format_docs_wizard_help() -> str:
+    """Format short docs wizard help."""
+    return "\n".join(
+        [
+            "Помощь по документации",
+            "",
+            "- /docs — панель документации",
+            "- /docs_preview <id> — проверить кандидата",
+            "- /docs_activate openrouter — план подключения OpenRouter",
+            "- /services — технический статус",
+            "- /base_status — статус базы",
+        ]
+    )
+
+
+async def send_docs_wizard_callback(
+    update: Update,
+    *,
+    status_provider: ServiceDocsStatusReader | None,
+    action: str,
+    is_allowed: bool,
+    reply_markup: Any | None = None,
+    safe_error: Callable[[Exception], str] | None = None,
+    candidate_loader: Callable[[], tuple[DocsSourceCandidate, ...]] | None = None,
+) -> None:
+    """Handle read-only inline `/docs` wizard callbacks."""
+    query = update.callback_query
+    if query is None:
+        return
+    await query.answer()
+    if not is_allowed:
+        await query.edit_message_text(
+            "Панель документации доступна владельцу бота.",
+            reply_markup=reply_markup,
+        )
+        return
+    if status_provider is None:
+        await query.edit_message_text(
+            "Панель документации пока недоступна: не подключено чтение Supabase или registry.",
+            reply_markup=reply_markup,
+        )
+        return
+    try:
+        statuses = await status_provider.list_statuses(scan_corpus=False)
+    except Exception as exc:  # noqa: BLE001 - callback should fail gracefully
+        error = safe_error(exc) if safe_error is not None else str(exc)
+        await query.edit_message_text(
+            "Не получилось получить панель документации: " + error,
+            reply_markup=reply_markup,
+        )
+        return
+
+    candidates = _load_candidates(candidate_loader)
+    await query.edit_message_text(
+        _format_docs_action(action, statuses, candidates),
+        reply_markup=reply_markup,
+    )
 
 
 async def send_docs_activation(
@@ -401,6 +503,39 @@ def _available_candidates(
         for candidate in candidates
         if candidate.service_id not in connected_service_ids and candidate.docs_source not in connected_docs_sources
     )
+
+
+def _format_docs_action(
+    action: str,
+    statuses: tuple[ServiceDocsStatus, ...],
+    candidates: tuple[DocsSourceCandidate, ...],
+) -> str:
+    if action == "connected":
+        return format_docs_connected(statuses)
+    if action == "candidates":
+        return format_docs_candidates(statuses, candidates=candidates)
+    if action == "preview_help":
+        return format_docs_preview_help()
+    if action == "openrouter":
+        return format_docs_openrouter(statuses)
+    if action == "help":
+        return format_docs_wizard_help()
+    return format_docs_dashboard(statuses, candidates=candidates)
+
+
+def _status_for_candidate(
+    statuses: tuple[ServiceDocsStatus, ...],
+    service_id: str,
+    docs_source: str,
+) -> ServiceDocsStatus | None:
+    service_needle = service_id.casefold()
+    source_needle = docs_source.casefold()
+    for status in statuses:
+        if status.service_id.casefold() == service_needle:
+            return status
+        if str(status.docs_source or "").casefold() == source_needle:
+            return status
+    return None
 
 
 def _is_connected(status: ServiceDocsStatus) -> bool:

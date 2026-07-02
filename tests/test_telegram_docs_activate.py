@@ -15,10 +15,11 @@ class FakeMessage:
         self.text = text
         self.message_id = 42
         self.replies: list[str] = []
+        self.reply_markups: list[object] = []
 
     async def reply_text(self, text: str, **kwargs: object) -> None:
-        del kwargs
         self.replies.append(text)
+        self.reply_markups.append(kwargs.get("reply_markup"))
 
 
 class FakeActivationService:
@@ -156,15 +157,16 @@ def test_help_mentions_docs_activate() -> None:
     assert "/docs_activate openrouter" in message.replies[-1]
 
 
-def test_docs_dashboard_mentions_activation_hint() -> None:
+def test_docs_dashboard_has_openrouter_wizard_button() -> None:
     provider = FakeDocsStatusProvider()
     services = BotServices(service_docs_status_provider=provider, owner_ids=(7,))
     message = FakeMessage("/docs")
 
     asyncio.run(docs_command(_update(message, user_id=7), _context(services)))
 
-    assert "/docs_activate openrouter" in message.replies[-1]
     assert "{" not in message.replies[-1]
+    keyboard = message.reply_markups[-1].inline_keyboard
+    assert any(button.callback_data == "docs:openrouter" for row in keyboard for button in row)
 
 
 def test_docs_activate_messages_do_not_show_raw_json() -> None:

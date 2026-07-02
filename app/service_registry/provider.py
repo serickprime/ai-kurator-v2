@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from app.db.supabase_client import SupabaseClient
+from app.docs_registry.candidates import load_docs_source_candidates_config
 from app.external_docs.config import DEFAULT_EXTERNAL_DOCS_CONFIG, load_external_docs_config
+from app.external_docs.validation import validate_external_docs
 from app.service_registry.config import DEFAULT_SERVICE_REGISTRY_CONFIG, load_service_registry_config
 from app.service_registry.status import build_service_docs_statuses, count_service_mentions, count_service_metadata
 from app.service_registry.types import ServiceDefinition, ServiceDocsStatus
@@ -64,7 +66,7 @@ class ServiceDocsStatusProvider:
                 chunks=corpus_chunks,
             )
 
-        return build_service_docs_statuses(
+        statuses = build_service_docs_statuses(
             services=services,
             configured_docs_sources=(source.name for source in external_config.sources),
             documents=external_documents,
@@ -72,6 +74,15 @@ class ServiceDocsStatusProvider:
             mention_counts=mention_counts,
             detected_document_counts=detected_document_counts,
             detected_chunk_counts=detected_chunk_counts,
+        )
+        return (
+            *statuses,
+            *_active_candidate_statuses(
+                existing_statuses=statuses,
+                documents=external_documents,
+                chunks=external_chunks,
+                service=service,
+            ),
         )
 
 
@@ -145,6 +156,76 @@ def _filter_services(services: tuple[ServiceDefinition, ...], query: str | None)
     if not result:
         raise KeyError(query)
     return result
+
+
+def _active_candidate_statuses(
+    *,
+    existing_statuses: tuple[ServiceDocsStatus, ...],
+    documents: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+    service: str | None = None,
+) -> tuple[ServiceDocsStatus, ...]:
+    try:
+        candidates = load_docs_source_candidates_config().candidates
+    except Exception:  # noqa: BLE001 - candidate catalog is optional for status rendering
+        return ()
+
+    existing_service_ids = {status.service_id for status in existing_statuses}
+    existing_docs_sources = {str(status.docs_source) for status in existing_statuses if status.docs_source}
+    result: list[ServiceDocsStatus] = []
+    for candidate in candidates:
+        if service and not _candidate_matches_query(candidate, service):
+            continue
+        if candidate.service_id in existing_service_ids or candidate.docs_source in existing_docs_sources:
+            continue
+        active_docs = _active_documents_for_source(documents, candidate.docs_source)
+        if not active_docs:
+            continue
+        active_doc_ids = {str(row.get("id") or "") for row in active_docs}
+        active_chunks = [row for row in chunks if str(row.get("document_id") or "") in active_doc_ids]
+        quality = validate_external_docs(
+            source_name=candidate.docs_source,
+            documents=documents,
+            chunks=chunks,
+        ).quality
+        result.append(
+            ServiceDocsStatus(
+                service_id=candidate.service_id,
+                display_name=candidate.display_name,
+                aliases=candidate.aliases,
+                docs_source=candidate.docs_source,
+                configured_status="enabled",
+                docs_status="indexed",
+                active_docs_count=len(active_docs),
+                active_chunks_count=len(active_chunks),
+                quality_status=quality,
+                docs_source_configured=False,
+                notes=("active candidate docs source",),
+            )
+        )
+    return tuple(result)
+
+
+def _candidate_matches_query(candidate: Any, query: str) -> bool:
+    needle = query.strip().casefold()
+    return (
+        candidate.service_id.casefold() == needle
+        or candidate.display_name.casefold() == needle
+        or any(str(alias).casefold() == needle for alias in candidate.aliases)
+    )
+
+
+def _active_documents_for_source(documents: list[dict[str, Any]], source_name: str) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in documents
+        if row.get("status") == "active" and _metadata(row).get("source_name") == source_name
+    ]
+
+
+def _metadata(row: dict[str, Any]) -> dict[str, Any]:
+    metadata = row.get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
 
 
 def _batches(items: list[str], size: int) -> list[list[str]]:
