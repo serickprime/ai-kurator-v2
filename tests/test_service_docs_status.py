@@ -1,5 +1,8 @@
 import json
+from types import SimpleNamespace
 
+from app.docs_registry.models import DocsSourceCandidate
+from app.service_registry.provider import _active_candidate_statuses
 from app.service_registry.status import (
     build_service_docs_statuses,
     count_service_mentions,
@@ -166,6 +169,37 @@ def test_service_docs_status_counts_service_metadata() -> None:
 
     assert document_counts == {"n8n": 1, "supabase": 1}
     assert chunk_counts == {"n8n": 1, "supabase": 1}
+
+
+def test_active_candidate_docs_are_indexed_even_when_quality_warn(monkeypatch) -> None:
+    candidate = DocsSourceCandidate(
+        service_id="openrouter",
+        display_name="OpenRouter",
+        aliases=("openrouter",),
+        docs_source="openrouter_docs",
+        official_start_urls=("https://openrouter.ai/docs",),
+        allowed_domains=("openrouter.ai",),
+        allow_patterns=(r"^https://openrouter\.ai/docs",),
+        deny_patterns=("/login",),
+        max_pages=25,
+        crawl_depth=2,
+        risk_level="low",
+        notes="test",
+    )
+    monkeypatch.setattr(
+        "app.service_registry.provider.load_docs_source_candidates_config",
+        lambda: SimpleNamespace(candidates=(candidate,)),
+    )
+
+    statuses = _active_candidate_statuses(
+        existing_statuses=(),
+        documents=[_doc("doc-1", "openrouter_docs")],
+        chunks=[_chunk("doc-1", "Short")],
+    )
+
+    assert statuses[0].service_id == "openrouter"
+    assert statuses[0].docs_status == "indexed"
+    assert statuses[0].quality_status in {"WARN", "PASS"}
 
 
 def _doc(document_id: str, source_name: str) -> dict[str, object]:

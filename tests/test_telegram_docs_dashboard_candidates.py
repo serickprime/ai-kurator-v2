@@ -1,7 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
-from app.bot.features.docs_registry import format_docs_dashboard, send_docs_dashboard
+from app.bot.features.docs_registry import format_docs_candidates, send_docs_dashboard
 from app.bot.handlers import BotServices, docs_command
 from app.docs_registry.models import DocsSourceCandidate
 from app.service_registry.types import ServiceDocsStatus
@@ -10,10 +10,11 @@ from app.service_registry.types import ServiceDocsStatus
 class FakeMessage:
     def __init__(self) -> None:
         self.replies: list[str] = []
+        self.reply_markups: list[object] = []
 
     async def reply_text(self, text: str, **kwargs: object) -> None:
-        del kwargs
         self.replies.append(text)
+        self.reply_markups.append(kwargs.get("reply_markup"))
 
 
 class FakeDocsStatusProvider:
@@ -40,14 +41,14 @@ class FakeDocsStatusProvider:
 
 
 def test_docs_dashboard_shows_candidates() -> None:
-    text = format_docs_dashboard((), candidates=(_candidate("claude_code", "Claude Code", "claude_code_docs"),))
+    text = format_docs_candidates((), candidates=(_candidate("claude_code", "Claude Code", "claude_code_docs"),))
 
     assert "Можно подключить позже:" in text
     assert "➕ Claude Code" in text
 
 
 def test_docs_dashboard_hides_already_connected_candidates() -> None:
-    text = format_docs_dashboard(
+    text = format_docs_candidates(
         (_status("claude_code", "Claude Code", "claude_code_docs"),),
         candidates=(
             _candidate("claude_code", "Claude Code", "claude_code_docs"),
@@ -60,12 +61,12 @@ def test_docs_dashboard_hides_already_connected_candidates() -> None:
 
 
 def test_docs_dashboard_truncates_long_candidate_list() -> None:
-    candidates = tuple(_candidate(f"service_{index}", f"Service {index}", f"service_{index}_docs") for index in range(10))
+    candidates = tuple(_candidate(f"service_{index}", f"Service {index}", f"service_{index}_docs") for index in range(12))
 
-    text = format_docs_dashboard((), candidates=candidates)
+    text = format_docs_candidates((), candidates=candidates)
 
-    assert "➕ Service 7" in text
-    assert "➕ Service 8" not in text
+    assert "➕ Service 9" in text
+    assert "➕ Service 10" not in text
     assert "Ещё: 2" in text
 
 
@@ -78,8 +79,9 @@ def test_docs_command_loads_real_candidates_without_mutations() -> None:
 
     assert provider.calls == [{"scan_corpus": False}]
     assert provider.mutation_calls == []
-    assert "Можно подключить позже:" in message.replies[-1]
-    assert "➕ Claude Code" in message.replies[-1]
+    assert "Документация сервисов" in message.replies[-1]
+    assert "➕ Можно подключить:" in message.replies[-1]
+    assert message.reply_markups[-1] is not None
 
 
 def test_docs_dashboard_works_when_candidates_config_is_unavailable() -> None:
@@ -96,12 +98,12 @@ def test_docs_dashboard_works_when_candidates_config_is_unavailable() -> None:
     )
 
     assert provider.calls == [{"scan_corpus": False}]
-    assert "✅ n8n" in message.replies[-1]
-    assert "Можно подключить позже:" in message.replies[-1]
+    assert "✅ Подключено: 1" in message.replies[-1]
+    assert "➕ Можно подключить: 0" in message.replies[-1]
 
 
 def test_docs_dashboard_with_candidates_does_not_show_raw_json() -> None:
-    text = format_docs_dashboard((), candidates=(_candidate("openrouter", "OpenRouter", "openrouter_docs"),))
+    text = format_docs_candidates((), candidates=(_candidate("openrouter", "OpenRouter", "openrouter_docs"),))
 
     assert "{" not in text
     assert "DocsSourceCandidate" not in text

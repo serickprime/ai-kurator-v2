@@ -34,7 +34,7 @@ Commands stay available:
 
 Read-only status commands:
 
-- `/docs` shows a read-only dashboard for documentation sources and curated candidates from `config/docs_source_candidates.yaml`. It does not crawl, sync, index, or change config; future docs activation will use preview/dry-run and owner approval.
+- `/docs` shows a read-only inline dashboard for documentation sources and curated candidates from `config/docs_source_candidates.yaml`. Its buttons let the owner/admin view connected sources, candidates, preview help, and help. It does not crawl, sync, index, activate, write to Supabase, or change config.
 - `/docs_preview <service>` runs a safe read-only dry-run for one curated candidate. It uses only configured candidate URLs/domains, does not index, does not write to Supabase, and does not activate docs.
 - `/services` shows services detected in the indexed base and whether their documentation source is connected.
 - `/base_status` shows compact knowledge base counts, external docs source status, service status, and recent uploads.
@@ -47,7 +47,7 @@ These commands do not start sync, do not crawl the internet, and do not mutate t
 Docs activation command:
 
 - `/docs_activate openrouter` shows the controlled activation plan only. It does not crawl, index, write to Supabase, or activate docs.
-- `/docs_activate openrouter confirm` is owner/admin-only and runs controlled activation for OpenRouter. MVP activation rejects arbitrary URLs and all non-OpenRouter candidates.
+- `/docs_activate openrouter confirm` is owner/admin-only and runs controlled activation for OpenRouter. MVP activation rejects arbitrary URLs and all non-OpenRouter candidates. `/docs` never runs this confirmation; it only shows guidance.
 
 Material management command:
 
