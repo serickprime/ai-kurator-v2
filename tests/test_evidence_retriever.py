@@ -9,6 +9,7 @@ class FakeChunkStore:
     def __init__(self, records: list[EvidenceChunkRecord]) -> None:
         self.records = records
         self.calls: list[tuple[str, ...]] = []
+        self.query_texts: list[str] = []
 
     async def match_chunks(
         self,
@@ -19,8 +20,9 @@ class FakeChunkStore:
         query_embedding: list[float] | None,
         match_count: int,
     ) -> list[EvidenceChunkRecord]:
-        del workspace_id, query_text, query_embedding, match_count
+        del workspace_id, query_embedding, match_count
         self.calls.append(document_ids)
+        self.query_texts.append(query_text)
         allowed = set(document_ids)
         return [record for record in self.records if record.document_id in allowed]
 
@@ -130,3 +132,38 @@ def test_supabase_chunk_store_enriches_rpc_rows_with_chunk_metadata() -> None:
     assert client.select_calls
     assert records[0].source_uri == "https://docs.n8n.io/webhooks/test"
     assert records[0].metadata["source_kind"] == "external_docs"
+
+
+def test_evidence_retriever_enriches_telegram_bot_api_send_message_query() -> None:
+    store = FakeChunkStore(
+        [
+            EvidenceChunkRecord(
+                chunk_id="send-message",
+                document_id="telegram-doc",
+                document_title="Telegram Bot API",
+                heading="sendMessage",
+                content="Use sendMessage to send text messages. Required parameters include chat_id and text.",
+                score=0.2,
+            ),
+            EvidenceChunkRecord(
+                chunk_id="overview",
+                document_id="telegram-doc",
+                document_title="Telegram Bot API",
+                heading="Overview",
+                content="Telegram Bot API provides methods for working with bots.",
+                score=0.1,
+            ),
+        ]
+    )
+    analysis = QuestionAnalyzer().analyze("как отправить сообщение через Telegram Bot API?")
+    documents = (DocumentCandidate(document_id="telegram-doc", title="Telegram Bot API", score=0.9),)
+
+    spans = asyncio.run(EvidenceRetriever(chunk_store=store, workspace_id="ws", min_score=0.0).retrieve(analysis, documents))
+
+    assert store.query_texts
+    assert "sendMessage" in store.query_texts[-1]
+    assert "chat_id" in store.query_texts[-1]
+    assert "text" in store.query_texts[-1]
+    assert spans
+    assert spans[0].evidence_id == "send-message"
+    assert "chat_id" in spans[0].text

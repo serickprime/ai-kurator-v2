@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any, Iterable
 
-from app.external_docs.validation import validate_external_docs
+from app.external_docs.validation import ExternalDocsValidationResult, validate_external_docs
 from app.service_registry.detector import ServiceDetector
 from app.service_registry.types import ServiceDefinition, ServiceDocsStatus
 
@@ -27,7 +27,7 @@ def build_service_docs_statuses(
     chunk_rows = list(chunks)
     active_docs_by_source = _active_docs_by_source(document_rows)
     active_chunks_by_source = _active_chunks_by_source(chunk_rows, active_docs_by_source)
-    quality_by_source = _quality_by_source(source_names, document_rows, chunk_rows)
+    quality_reports_by_source = _quality_reports_by_source(source_names, document_rows, chunk_rows)
 
     statuses = [
         _service_status(
@@ -35,7 +35,7 @@ def build_service_docs_statuses(
             configured_docs_sources=source_names,
             active_docs_by_source=active_docs_by_source,
             active_chunks_by_source=active_chunks_by_source,
-            quality_by_source=quality_by_source,
+            quality_reports_by_source=quality_reports_by_source,
             mention_counts=mention_counts or {},
             detected_document_counts=detected_document_counts or {},
             detected_chunk_counts=detected_chunk_counts or {},
@@ -100,7 +100,7 @@ def _service_status(
     configured_docs_sources: set[str],
     active_docs_by_source: dict[str, list[dict[str, Any]]],
     active_chunks_by_source: dict[str, list[dict[str, Any]]],
-    quality_by_source: dict[str, str],
+    quality_reports_by_source: dict[str, ExternalDocsValidationResult],
     mention_counts: dict[str, int],
     detected_document_counts: dict[str, int],
     detected_chunk_counts: dict[str, int],
@@ -129,7 +129,8 @@ def _service_status(
     source_configured = docs_source in configured_docs_sources
     active_docs = active_docs_by_source.get(docs_source, [])
     active_chunks = active_chunks_by_source.get(docs_source, [])
-    quality = quality_by_source.get(docs_source, "none")
+    quality_report = quality_reports_by_source.get(docs_source)
+    quality = quality_report.quality if quality_report is not None else "none"
     if not source_configured:
         notes.append("docs_source is not present in config/external_docs.yaml")
         final_status = "needs_review"
@@ -139,7 +140,7 @@ def _service_status(
     elif not active_docs:
         final_status = "configured_not_indexed"
     elif quality in {"FAIL", "WARN"}:
-        notes.append(f"quality gate returned {quality}")
+        notes.extend(quality_report_notes(quality_report))
         final_status = "needs_review"
     else:
         final_status = "indexed"
@@ -160,6 +161,16 @@ def _service_status(
         docs_source_configured=source_configured,
         notes=tuple(notes),
     )
+
+
+def quality_report_notes(report: ExternalDocsValidationResult | None) -> tuple[str, ...]:
+    """Return concise human-readable quality notes for status surfaces."""
+    if report is None or report.quality not in {"FAIL", "WARN"}:
+        return ()
+    notes = [f"quality gate returned {report.quality}"]
+    notes.extend(report.failures[:3])
+    notes.extend(report.warnings[:3])
+    return tuple(_dedupe([note for note in notes if note], limit=6))
 
 
 def _status(
@@ -187,12 +198,12 @@ def _status(
     )
 
 
-def _quality_by_source(
+def _quality_reports_by_source(
     source_names: set[str],
     documents: list[dict[str, Any]],
     chunks: list[dict[str, Any]],
-) -> dict[str, str]:
-    result: dict[str, str] = {}
+) -> dict[str, ExternalDocsValidationResult]:
+    result: dict[str, ExternalDocsValidationResult] = {}
     for source_name in source_names:
         active_count = sum(
             1
@@ -200,13 +211,12 @@ def _quality_by_source(
             if row.get("status") == "active" and _metadata(row).get("source_name") == source_name
         )
         if active_count <= 0:
-            result[source_name] = "none"
             continue
         result[source_name] = validate_external_docs(
             source_name=source_name,
             documents=documents,
             chunks=chunks,
-        ).quality
+        )
     return result
 
 
@@ -272,6 +282,21 @@ def _service_ids_from_metadata(row: dict[str, Any]) -> list[str]:
                 result.append(str(item["service_id"]).strip())
         return result
     return []
+
+
+def _dedupe(items: list[str], limit: int) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        clean = " ".join(str(item).split()).strip()
+        key = clean.casefold()
+        if not clean or key in seen:
+            continue
+        seen.add(key)
+        result.append(clean)
+        if len(result) >= limit:
+            break
+    return result
 
 
 def _metadata(row: dict[str, Any]) -> dict[str, Any]:

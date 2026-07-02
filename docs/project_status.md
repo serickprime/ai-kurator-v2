@@ -4,7 +4,7 @@
 
 Current main after the latest completed merge:
 
-- `421a61f add project control pack (#18)`
+- `d101b74 Add docs activation queue (#19)`
 
 ## Current project state
 
@@ -30,6 +30,9 @@ Core state:
 - OpenRouter docs are indexed as official `external_docs`.
 - `/source_last` confirms OpenRouter as official external docs source after OpenRouter questions.
 - Project control docs are present in the repository.
+- Docs Activation Queue is merged.
+- Telegram Bot API docs were activated manually by owner/admin through `/docs_activate_ready confirm`.
+- Telegram Bot API docs are indexed as official `external_docs`.
 
 ## Completed PRs
 
@@ -51,41 +54,34 @@ Core state:
 - PR #16 — controlled OpenRouter docs activation flow.
 - PR #17 — Docs UI Wizard.
 - PR #18 — project control pack.
+- PR #19 — Docs Activation Queue.
 
 ## Current branch block
 
-Docs Activation Queue implemented in branch `docs-activation-queue`:
+Telegram Bot API query quality fix implemented in branch `telegram-bot-api-query-quality-fix`:
 
-- `app/docs_registry/queue.py`
-- `/docs_preview_all`
-- `/docs_ready`
-- `/docs_activate_ready`
-- `/docs_activate_ready confirm`
-- batch classification:
-  - ready
-  - needs_review
-  - failed
-  - already_connected
-- allowlist-based MVP activation:
-  - openrouter
-  - telegram_bot_api
-- safeguards:
-  - owner/admin only
-  - no arbitrary URLs
-  - no activation for needs_review
-  - no activation for failed
-  - no activation for already_connected
-  - callbacks do not run confirm
+- service-aware query enrichment for Telegram Bot API Russian send-message questions;
+- `как отправить сообщение через Telegram Bot API?` adds retrieval anchors:
+  - `sendMessage`
+  - `chat_id`
+  - `text`
+- original user question is preserved;
+- no reindex is needed because `sendMessage` evidence already exists;
+- `/base_status`, `/docs`, and `/services` should show quality reasons instead of bare `FAIL`.
 
 ## Current focus
 
-Review and test Docs Activation Queue PR.
+Review and test Telegram Bot API query quality bugfix.
 
 ## Next recommended
 
-- manual Telegram smoke for queue;
-- inspect ready list;
-- only then decide whether to run `/docs_activate_ready confirm`.
+- manual Telegram smoke:
+  - `Новая тема`
+  - `как отправить сообщение через Telegram Bot API?`
+  - `/source_last`
+- verify the answer uses `telegram_bot_api_docs`;
+- verify accepted evidence includes `sendMessage`, `chat_id`, and `text`;
+- verify `/base_status` and `/docs` do not show unexplained bare `FAIL`.
 
 ## Later roadmap
 
@@ -113,6 +109,7 @@ Maintenance:
 - n8n docs
 - Supabase docs
 - OpenRouter docs
+- Telegram Bot API docs
 
 ## Important reminder
 

@@ -129,6 +129,27 @@ def test_connected_callback_shows_connected_docs() -> None:
     assert provider.mutation_calls == []
 
 
+def test_connected_callback_explains_quality_fail() -> None:
+    provider = FakeDocsStatusProvider(
+        (
+            _status(
+                "telegram_bot_api",
+                "Telegram Bot API",
+                "telegram_bot_api_docs",
+                quality="FAIL",
+                notes=("quality gate returned FAIL", "required smoke query missing sendMessage"),
+            ),
+        )
+    )
+    query = FakeCallbackQuery("docs:connected")
+    services = BotServices(service_docs_status_provider=provider, owner_ids=(7,))
+
+    asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
+
+    assert "✅ Telegram Bot API — FAIL: required smoke query missing sendMessage" in query.edits[-1]
+    assert "{" not in query.edits[-1]
+
+
 def test_candidates_callback_hides_already_connected_docs() -> None:
     provider = FakeDocsStatusProvider((_status("openrouter", "OpenRouter", "openrouter_docs"),))
     query = FakeCallbackQuery("docs:candidates")
@@ -273,7 +294,10 @@ def _status(
     docs_source: str | None,
     *,
     docs_status: str = "indexed",
+    quality: str | None = None,
+    notes: tuple[str, ...] = (),
 ) -> ServiceDocsStatus:
+    quality_status = quality or ("PASS" if docs_status == "indexed" else "none")
     return ServiceDocsStatus(
         service_id=service_id,
         display_name=display_name,
@@ -283,8 +307,9 @@ def _status(
         docs_status=docs_status,  # type: ignore[arg-type]
         active_docs_count=5 if docs_status == "indexed" else 0,
         active_chunks_count=25 if docs_status == "indexed" else 0,
-        quality_status="PASS" if docs_status == "indexed" else "none",
+        quality_status=quality_status,
         docs_source_configured=bool(docs_source),
+        notes=notes,
     )
 
 

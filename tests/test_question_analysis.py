@@ -1,4 +1,5 @@
 from app.rag.question_analysis import QuestionAnalyzer
+from app.rag.evidence_retriever import evidence_query_text
 
 
 def test_question_analysis_extracts_keywords() -> None:
@@ -57,3 +58,38 @@ def test_question_analysis_detects_course_catalog_intent() -> None:
 
     assert analysis.query_plan is not None
     assert "course_catalog" in analysis.query_plan.expected_content_types
+
+
+def test_telegram_bot_api_send_message_query_is_enriched() -> None:
+    question = "как отправить сообщение через Telegram Bot API?"
+    analysis = QuestionAnalyzer().analyze(question)
+    query_text = evidence_query_text(analysis)
+
+    assert analysis.original_question == question
+    assert "sendMessage" in analysis.exact_terms
+    assert "chat_id" in analysis.config_terms
+    assert "text" in analysis.config_terms
+    assert any(facet.role == "exact" and facet.text == "sendMessage" for facet in analysis.query_facets)
+    assert "sendMessage" in query_text
+    assert "chat_id" in query_text
+    assert "text" in query_text
+
+
+def test_telegram_bot_api_existing_sendmessage_query_keeps_anchors() -> None:
+    analysis = QuestionAnalyzer().analyze("как использовать sendMessage в Telegram Bot API? chat_id text")
+    query_text = evidence_query_text(analysis)
+
+    assert analysis.exact_terms.count("sendMessage") == 1
+    assert "chat_id" in analysis.config_terms
+    assert "text" in analysis.config_terms
+    assert query_text.count("sendMessage") >= 1
+    assert "chat_id" in query_text
+    assert "text" in query_text
+
+
+def test_telegram_bot_api_send_message_enrichment_is_service_scoped() -> None:
+    analysis = QuestionAnalyzer().analyze("как отправить сообщение через n8n?")
+    query_text = evidence_query_text(analysis)
+
+    assert "sendMessage" not in query_text
+    assert "chat_id" not in query_text

@@ -56,3 +56,11 @@ Reason: as the number of services grows, the menu would become cluttered.
 Decision: project status, roadmap, guardrails, and workflow must live in repository docs.
 
 Reason: agents should not rely only on chat history.
+
+## Telegram Bot API send-message queries use service-aware anchors
+
+Decision: enrich Telegram Bot API send-message questions with `sendMessage`, `chat_id`, and `text` retrieval anchors.
+
+Reason: Russian user phrasing such as "как отправить сообщение через Telegram Bot API?" can be semantically correct while missing the exact method name used in official docs. The enrichment keeps the original question unchanged, does not reindex documents, and only improves retrieval signals for the service-specific send-message intent.
+
+Status visibility: quality surfaces should show the reason for `WARN` or `FAIL`, not only the raw status label.

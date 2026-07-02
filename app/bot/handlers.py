@@ -1192,8 +1192,7 @@ def _format_services_status(statuses: tuple[ServiceDocsStatus, ...]) -> str:
     for status in statuses:
         found = _service_found_in_base(status)
         docs = _service_docs_phrase(status)
-        quality = f", {status.quality_status}" if status.quality_status not in {"", "none"} else ""
-        lines.append(f"{status.display_name} — {'найден в базе' if found else 'не найден в базе'}, {docs}{quality}")
+        lines.append(f"{status.display_name} — {'найден в базе' if found else 'не найден в базе'}, {docs}")
     return "\n".join(lines)
 
 
@@ -1211,7 +1210,9 @@ def _service_found_in_base(status: ServiceDocsStatus) -> bool:
 
 def _service_docs_phrase(status: ServiceDocsStatus) -> str:
     if status.docs_status == "indexed":
-        return "документация подключена"
+        quality = _quality_phrase(status.quality_status, status.notes)
+        suffix = f", {quality}" if quality else ""
+        return "документация подключена" + suffix
     if status.docs_status == "not_configured":
         return "документация не подключена"
     if status.docs_status == "configured_not_indexed":
@@ -1219,6 +1220,29 @@ def _service_docs_phrase(status: ServiceDocsStatus) -> str:
     if status.docs_status == "disabled":
         return "документация отключена"
     return "документация требует проверки"
+
+
+def _quality_phrase(quality: str, notes: tuple[str, ...]) -> str:
+    label = str(quality or "").strip()
+    if not label or label == "none":
+        return ""
+    reason = _first_quality_reason(notes)
+    if label in {"FAIL", "WARN"} and reason:
+        return f"{label}: {reason}"
+    return label
+
+
+def _first_quality_reason(notes: tuple[str, ...]) -> str:
+    for note in notes:
+        clean = " ".join(str(note).split()).strip()
+        if not clean or clean.startswith("quality gate returned"):
+            continue
+        return clean
+    for note in notes:
+        clean = " ".join(str(note).split()).strip()
+        if clean:
+            return clean
+    return ""
 
 
 def _safe_error(exc: Exception) -> str:

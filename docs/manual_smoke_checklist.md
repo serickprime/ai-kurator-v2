@@ -89,6 +89,38 @@ Expected:
   - source: `official`
   - source name: `openrouter_docs`
 
+## Telegram Bot API RAG smoke
+
+Run:
+
+- `Новая тема`
+- `как отправить сообщение через Telegram Bot API?`
+- `/source_last`
+
+Expected:
+
+- answer uses Telegram Bot API official docs;
+- `/source_last` shows:
+  - source type: `external_docs`
+  - source: `official`
+  - source name: `telegram_bot_api_docs`
+- accepted evidence should include:
+  - `sendMessage`
+  - `chat_id`
+  - `text`
+- answer should not fall back to a broad Bot API overview page without `sendMessage`.
+
+Status surfaces:
+
+- `/docs`
+- `/base_status`
+- `/services`
+
+Expected:
+
+- if Telegram Bot API quality is `WARN` or `FAIL`, the user-facing status includes a short reason;
+- do not show a bare `FAIL` without explanation.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:

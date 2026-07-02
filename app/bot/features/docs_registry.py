@@ -764,7 +764,7 @@ def _is_connected(status: ServiceDocsStatus) -> bool:
 
 
 def _connected_line(status: ServiceDocsStatus) -> str:
-    quality = _quality_label(status)
+    quality = _quality_phrase(status.quality_status, status.notes)
     suffix = f" — {quality}" if quality else ""
     return f"✅ {status.display_name}{suffix}"
 
@@ -775,11 +775,28 @@ def _not_connected_line(status: ServiceDocsStatus) -> str:
     return f"⚪ {status.display_name}{suffix}"
 
 
-def _quality_label(status: ServiceDocsStatus) -> str:
-    quality = (status.quality_status or "").strip()
-    if quality and quality.casefold() != "none":
-        return quality.upper()
-    return "indexed" if status.docs_status == "indexed" else ""
+def _quality_phrase(quality: str, notes: tuple[str, ...]) -> str:
+    label = (quality or "").strip()
+    if not label or label.casefold() == "none":
+        return ""
+    label = label.upper()
+    reason = _first_quality_reason(notes)
+    if label in {"FAIL", "WARN"} and reason:
+        return f"{label}: {reason}"
+    return label
+
+
+def _first_quality_reason(notes: tuple[str, ...]) -> str:
+    for note in notes:
+        clean = " ".join(str(note).split()).strip()
+        if not clean or clean.startswith("quality gate returned"):
+            continue
+        return clean
+    for note in notes:
+        clean = " ".join(str(note).split()).strip()
+        if clean:
+            return clean
+    return ""
 
 
 def _not_connected_reason(status: ServiceDocsStatus) -> str:

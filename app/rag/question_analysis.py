@@ -404,6 +404,22 @@ _CONTENT_TYPE_MARKERS: dict[ContentType, tuple[str, ...]] = {
     ),
 }
 
+_TELEGRAM_BOT_API_SERVICE_MARKERS = (
+    "telegram bot api",
+    "telegram bots api",
+    "bot api",
+)
+_TELEGRAM_SEND_MESSAGE_INTENT_MARKERS = (
+    "отправить сообщение",
+    "отправка сообщения",
+    "послать сообщение",
+    "написать сообщение",
+    "отправить текст",
+    "сообщение в чат",
+)
+_TELEGRAM_SEND_MESSAGE_EXACT_TERMS = ("sendMessage",)
+_TELEGRAM_SEND_MESSAGE_CONFIG_TERMS = ("chat_id", "text")
+
 
 class QuestionAnalyzer:
     """Extract compact routing signals from a user question."""
@@ -454,7 +470,10 @@ def analyze_question(
     requested_action = _requested_action(task_type, lowered)
     generic_terms = tuple(_generic_terms(tokens))
     exact_terms = tuple(extract_exact_terms(combined))
+    extra_facets, extra_exact_terms, extra_config_terms = _service_query_enrichment(lowered)
+    exact_terms = tuple(_dedupe([*exact_terms, *extra_exact_terms], limit=16))
     config_terms = tuple(term for term in exact_terms if guess_term_type(term) in {"config", "identifier", "function", "path_or_parameter", "endpoint_or_address"})
+    config_terms = tuple(_dedupe([*config_terms, *extra_config_terms], limit=16))
     object_terms = tuple(_object_terms(tokens, requested_action=requested_action, generic_terms=generic_terms))
     primary_object = object_terms[0] if object_terms else ""
     requested_attribute = _requested_attribute(lowered, object_terms)
@@ -482,6 +501,7 @@ def analyze_question(
         generic_terms=generic_terms,
         exact_terms=exact_terms,
         config_terms=config_terms,
+        extra_facets=extra_facets,
     )
     keywords = tuple(_dedupe([facet.text for facet in facets] + list(tokens), limit=16))
     constraints = tuple(facet.text for facet in facets if facet.role == "constraint")
@@ -624,8 +644,10 @@ def _build_facets(
     generic_terms: tuple[str, ...],
     exact_terms: tuple[str, ...],
     config_terms: tuple[str, ...],
+    extra_facets: tuple[QueryFacet, ...] = (),
 ) -> list[QueryFacet]:
     facets: list[QueryFacet] = []
+    facets.extend(extra_facets)
     platform_terms = [token for token in tokens if _is_platform_like(token)]
     facets.extend(QueryFacet("platform", token, 1.0) for token in platform_terms)
 
@@ -672,6 +694,24 @@ def _build_facets(
         facets.append(QueryFacet("source", "вложение пользователя", 0.9))
 
     return _dedupe_facets(facets)
+
+
+def _service_query_enrichment(lowered: str) -> tuple[tuple[QueryFacet, ...], tuple[str, ...], tuple[str, ...]]:
+    """Add service-specific retrieval anchors without changing the user question."""
+    if not _has_any(lowered, _TELEGRAM_BOT_API_SERVICE_MARKERS):
+        return (), (), ()
+    if not (_has_any(lowered, _TELEGRAM_SEND_MESSAGE_INTENT_MARKERS) or "sendmessage" in lowered):
+        return (), (), ()
+    return (
+        (
+            QueryFacet("platform", "Telegram Bot API", 1.0),
+            QueryFacet("exact", "sendMessage", 1.0),
+            QueryFacet("config", "chat_id", 1.0),
+            QueryFacet("config", "text", 0.9),
+        ),
+        _TELEGRAM_SEND_MESSAGE_EXACT_TERMS,
+        _TELEGRAM_SEND_MESSAGE_CONFIG_TERMS,
+    )
 
 
 def _extract_keywords(text: str) -> tuple[str, ...]:
