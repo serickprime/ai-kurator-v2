@@ -1,0 +1,270 @@
+candidates:
+  - service_id: claude_code
+    display_name: Claude Code
+    aliases:
+      - claude code
+      - claude cli
+      - anthropic claude code
+    docs_source: claude_code_docs
+    official_start_urls:
+      - https://docs.anthropic.com/en/docs/claude-code
+    allowed_domains:
+      - docs.anthropic.com
+    allow_patterns:
+      - "^https://docs\\.anthropic\\.com/.*/claude-code"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 25
+    crawl_depth: 2
+    risk_level: medium
+    notes: "official Anthropic docs path; preview before activation"
+
+  - service_id: openrouter
+    display_name: OpenRouter
+    aliases:
+      - openrouter
+      - open router
+    docs_source: openrouter_docs
+    official_start_urls:
+      - https://openrouter.ai/docs
+    allowed_domains:
+      - openrouter.ai
+    allow_patterns:
+      - "^https://openrouter\\.ai/docs"
+    deny_patterns:
+      - "/settings"
+      - "/account"
+      - "/login"
+      - "/dashboard"
+    max_pages: 25
+    crawl_depth: 2
+    risk_level: low
+    notes: "official docs path"
+
+  - service_id: ollama
+    display_name: Ollama
+    aliases:
+      - ollama
+      - оллама
+    docs_source: ollama_docs
+    official_start_urls:
+      - https://docs.ollama.com/
+    allowed_domains:
+      - docs.ollama.com
+    allow_patterns:
+      - "^https://docs\\.ollama\\.com/"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 25
+    crawl_depth: 2
+    risk_level: review
+    notes: "needs_manual_review"
+
+  - service_id: dokploy
+    display_name: Dokploy
+    aliases:
+      - dokploy
+      - докплой
+    docs_source: dokploy_docs
+    official_start_urls:
+      - https://docs.dokploy.com/
+    allowed_domains:
+      - docs.dokploy.com
+    allow_patterns:
+      - "^https://docs\\.dokploy\\.com/"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 25
+    crawl_depth: 2
+    risk_level: review
+    notes: "needs_manual_review"
+
+  - service_id: telegram_bot_api
+    display_name: Telegram Bot API
+    aliases:
+      - telegram bot api
+      - telegram bots api
+      - bot api
+    docs_source: telegram_bot_api_docs
+    official_start_urls:
+      - https://core.telegram.org/bots/api
+    allowed_domains:
+      - core.telegram.org
+    allow_patterns:
+      - "^https://core\\.telegram\\.org/bots"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 20
+    crawl_depth: 1
+    risk_level: low
+    notes: "official Telegram docs"
+
+  - service_id: aiogram
+    display_name: aiogram
+    aliases:
+      - aiogram
+      - aiogram python
+      - aiogram telegram
+    docs_source: aiogram_docs
+    official_start_urls:
+      - https://docs.aiogram.dev/
+    allowed_domains:
+      - docs.aiogram.dev
+    allow_patterns:
+      - "^https://docs\\.aiogram\\.dev/"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 25
+    crawl_depth: 2
+    risk_level: low
+    notes: "official docs domain"
+
+  - service_id: codex_openai
+    display_name: OpenAI Codex
+    aliases:
+      - codex
+      - openai codex
+      - codex cli
+    docs_source: codex_openai_docs
+    official_start_urls:
+      - https://developers.openai.com/codex/
+    allowed_domains:
+      - developers.openai.com
+    allow_patterns:
+      - "^https://developers\\.openai\\.com/codex"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 20
+    crawl_depth: 2
+    risk_level: review
+    notes: "needs_manual_review"
+
+  - service_id: cursor
+    display_name: Cursor
+    aliases:
+      - cursor
+      - cursor ai
+      - cursor editor
+    docs_source: cursor_docs
+    official_start_urls:
+      - https://docs.cursor.com/
+    allowed_domains:
+      - docs.cursor.com
+    allow_patterns:
+      - "^https://docs\\.cursor\\.com/"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 25
+    crawl_depth: 2
+    risk_level: review
+    notes: "needs_manual_review"
+
+  - service_id: gigachat
+    display_name: GigaChat
+    aliases:
+      - gigachat
+      - giga chat
+      - гигачат
+    docs_source: gigachat_docs
+    official_start_urls:
+      - https://developers.sber.ru/docs/ru/gigachat/overview
+    allowed_domains:
+      - developers.sber.ru
+    allow_patterns:
+      - "^https://developers\\.sber\\.ru/docs/.*/gigachat"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 25
+    crawl_depth: 2
+    risk_level: review
+    notes: "needs_manual_review"
+
+  - service_id: proxyapi
+    display_name: ProxyAPI
+    aliases:
+      - proxyapi
+      - proxy api
+    docs_source: proxyapi_docs
+    official_start_urls:
+      - https://docs.proxyapi.ru/
+    allowed_domains:
+      - docs.proxyapi.ru
+    allow_patterns:
+      - "^https://docs\\.proxyapi\\.ru/"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 20
+    crawl_depth: 2
+    risk_level: review
+    notes: "needs_manual_review"
+
+  - service_id: nocodb
+    display_name: NocoDB
+    aliases:
+      - nocodb
+      - noco db
+    docs_source: nocodb_docs
+    official_start_urls:
+      - https://docs.nocodb.com/
+    allowed_domains:
+      - docs.nocodb.com
+    allow_patterns:
+      - "^https://docs\\.nocodb\\.com/"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 25
+    crawl_depth: 2
+    risk_level: low
+    notes: "official docs domain"
+
+  - service_id: albato
+    display_name: Albato
+    aliases:
+      - albato
+      - альбато
+    docs_source: albato_docs
+    official_start_urls:
+      - https://docs.albato.com/
+    allowed_domains:
+      - docs.albato.com
+    allow_patterns:
+      - "^https://docs\\.albato\\.com/"
+    deny_patterns:
+      - "/login"
+      - "/account"
+      - "/admin"
+      - "/dashboard"
+    max_pages: 20
+    crawl_depth: 2
+    risk_level: review
+    notes: "needs_manual_review"

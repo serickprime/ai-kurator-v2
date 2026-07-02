@@ -32,7 +32,7 @@ Commands stay available:
 
 Read-only status commands:
 
-- `/docs` shows a read-only dashboard for documentation sources. It does not crawl, sync, index, or change config; future docs activation will use preview/dry-run and owner approval.
+- `/docs` shows a read-only dashboard for documentation sources and curated candidates from `config/docs_source_candidates.yaml`. It does not crawl, sync, index, or change config; future docs activation will use preview/dry-run and owner approval.
 - `/services` shows services detected in the indexed base and whether their documentation source is connected.
 - `/base_status` shows compact knowledge base counts, external docs source status, service status, and recent uploads.
 - `/materials` lists recent uploaded/local materials, excluding external docs.

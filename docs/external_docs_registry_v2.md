@@ -213,6 +213,8 @@ config/docs_source_candidates.yaml
 
 Назначение: безопасный каталог потенциальных official docs sources. Это не active whitelist. Кандидат не индексируется, пока owner/admin не подтвердит preview/dry-run.
 
+Первый read-only catalog уже может отображаться в `/docs`, но это только список потенциальных sources. Наличие кандидата не означает, что documentation source подключён, активирован или будет использоваться RAG.
+
 Первый список кандидатов:
 
 - `claude_code` / Anthropic Claude Code
@@ -269,6 +271,16 @@ candidates:
     risk_level: medium
     notes: "Start with dry-run and quality gate before activation."
 ```
+
+Правила для catalog:
+
+- файл валидируется локальным loader без PyYAML и без новых зависимостей;
+- `service_id` и `docs_source` должны быть уникальными;
+- `official_start_urls` должны быть внутри `allowed_domains`;
+- `allow_patterns` и `deny_patterns` должны быть валидными regex;
+- `max_pages` должен быть больше `0`;
+- `crawl_depth` должен быть `0` или больше;
+- `risk_level` допускает только `low`, `medium`, `review`.
 
 ## Безопасность
 
