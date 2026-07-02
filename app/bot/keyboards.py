@@ -21,7 +21,6 @@ CALLBACK_SETTINGS_BACK = "settings:back"
 CALLBACK_DOCS_CONNECTED = "docs:connected"
 CALLBACK_DOCS_CANDIDATES = "docs:candidates"
 CALLBACK_DOCS_PREVIEW_HELP = "docs:preview_help"
-CALLBACK_DOCS_OPENROUTER = "docs:openrouter"
 CALLBACK_DOCS_HELP = "docs:help"
 CALLBACK_DOCS_BACK = "docs:back"
 
@@ -86,9 +85,8 @@ def docs_registry_inline_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton("Проверить сервис", callback_data=CALLBACK_DOCS_PREVIEW_HELP),
-                InlineKeyboardButton("OpenRouter", callback_data=CALLBACK_DOCS_OPENROUTER),
+                InlineKeyboardButton("Помощь", callback_data=CALLBACK_DOCS_HELP),
             ],
-            [InlineKeyboardButton("Помощь", callback_data=CALLBACK_DOCS_HELP)],
         ]
     )
 

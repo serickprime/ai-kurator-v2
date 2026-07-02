@@ -20,8 +20,10 @@ class FakeMessage:
 
 
 class FakeCallbackQuery:
-    def __init__(self, data: str) -> None:
+    def __init__(self, data: str, *, fail_edit: bool = False) -> None:
         self.data = data
+        self.message = FakeMessage("callback-source")
+        self.fail_edit = fail_edit
         self.answered = False
         self.edits: list[str] = []
         self.edit_markups: list[object] = []
@@ -31,6 +33,8 @@ class FakeCallbackQuery:
         self.answered = True
 
     async def edit_message_text(self, text: str, **kwargs: object) -> None:
+        if self.fail_edit:
+            raise RuntimeError("edit failed")
         self.edits.append(text)
         self.edit_markups.append(kwargs.get("reply_markup"))
 
@@ -96,9 +100,14 @@ def test_docs_command_shows_short_dashboard_and_inline_keyboard() -> None:
     assert provider.calls == [{"scan_corpus": False}]
     assert "Документация сервисов" in message.replies[-1]
     assert "✅ Подключено: 1" in message.replies[-1]
+    assert "Помощь по документации" not in message.replies[-1]
     assert message.reply_markups[-1] is not None
     keyboard = message.reply_markups[-1].inline_keyboard
     assert any(button.callback_data == "docs:connected" for row in keyboard for button in row)
+    assert any(button.callback_data == "docs:candidates" for row in keyboard for button in row)
+    assert any(button.callback_data == "docs:preview_help" for row in keyboard for button in row)
+    assert any(button.callback_data == "docs:help" for row in keyboard for button in row)
+    assert all(button.callback_data != "docs:openrouter" for row in keyboard for button in row)
 
 
 def test_connected_callback_shows_connected_docs() -> None:
@@ -137,7 +146,7 @@ def test_candidates_callback_hides_already_connected_docs() -> None:
         )
     )
 
-    assert "➕ Claude Code — `claude_code`" in query.edits[-1]
+    assert "➕ Claude Code — claude_code" in query.edits[-1]
     assert "➕ OpenRouter" not in query.edits[-1]
 
 
@@ -148,32 +157,11 @@ def test_preview_help_callback_shows_examples() -> None:
 
     asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
 
-    assert "`/docs_preview openrouter`" in query.edits[-1]
+    assert "Проверка кандидата:" in query.edits[-1]
+    assert "`/docs_preview ollama`" in query.edits[-1]
     assert "`/docs_preview telegram_bot_api`" in query.edits[-1]
-    assert "Это не подключает документацию." in query.edits[-1]
-
-
-def test_openrouter_callback_shows_connected_state() -> None:
-    provider = FakeDocsStatusProvider((_status("openrouter", "OpenRouter", "openrouter_docs"),))
-    query = FakeCallbackQuery("docs:openrouter")
-    services = BotServices(service_docs_status_provider=provider, owner_ids=(7,))
-
-    asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
-
-    assert "OpenRouter docs подключены." in query.edits[-1]
-    assert "`как подключить openrouter api?`" in query.edits[-1]
-
-
-def test_openrouter_callback_shows_plan_when_not_connected() -> None:
-    provider = FakeDocsStatusProvider(())
-    query = FakeCallbackQuery("docs:openrouter")
-    services = BotServices(service_docs_status_provider=provider, owner_ids=(7,))
-
-    asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
-
-    assert "`/docs_activate openrouter`" in query.edits[-1]
-    assert "`/docs_activate openrouter confirm`" in query.edits[-1]
-    assert "Запускайте confirm только если готовы" in query.edits[-1]
+    assert "`/docs_preview claude_code`" in query.edits[-1]
+    assert "Это только preview. Документация не подключается." in query.edits[-1]
 
 
 def test_help_callback_shows_short_instruction() -> None:
@@ -184,6 +172,7 @@ def test_help_callback_shows_short_instruction() -> None:
     asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
 
     assert "- /docs — панель документации" in query.edits[-1]
+    assert "- /docs_preview <id> — безопасный предпросмотр" in query.edits[-1]
     assert "- /services — технический статус" in query.edits[-1]
 
 
@@ -191,7 +180,7 @@ def test_docs_callbacks_do_not_run_activation_confirm_or_rag() -> None:
     provider = FakeDocsStatusProvider((_status("openrouter", "OpenRouter", "openrouter_docs"),))
     activation = FakeActivationService()
     rag = FakeRagPipeline()
-    query = FakeCallbackQuery("docs:openrouter")
+    query = FakeCallbackQuery("docs:connected")
     services = BotServices(
         rag_pipeline=rag,
         service_docs_status_provider=provider,
@@ -205,6 +194,29 @@ def test_docs_callbacks_do_not_run_activation_confirm_or_rag() -> None:
     assert activation.activate_calls == []
     assert rag.calls == []
     assert provider.mutation_calls == []
+
+
+def test_docs_callback_falls_back_to_reply_when_edit_fails() -> None:
+    provider = FakeDocsStatusProvider((_status("n8n", "n8n", "n8n_docs"),))
+    query = FakeCallbackQuery("docs:connected", fail_edit=True)
+    services = BotServices(service_docs_status_provider=provider, owner_ids=(7,))
+
+    asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
+
+    assert query.answered
+    assert query.edits == []
+    assert "Подключённая документация:" in query.message.replies[-1]
+
+
+def test_docs_callbacks_all_answer_with_edit_or_reply() -> None:
+    provider = FakeDocsStatusProvider((_status("n8n", "n8n", "n8n_docs"),))
+    services = BotServices(service_docs_status_provider=provider, owner_ids=(7,))
+
+    for action in ("docs:connected", "docs:candidates", "docs:preview_help", "docs:help"):
+        query = FakeCallbackQuery(action)
+        asyncio.run(docs_wizard_callback(_callback_update(query, user_id=7), _context(services)))
+        assert query.answered
+        assert query.edits or query.message.replies
 
 
 def test_docs_callback_is_denied_to_regular_user() -> None:

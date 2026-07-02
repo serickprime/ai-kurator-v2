@@ -157,7 +157,7 @@ def test_help_mentions_docs_activate() -> None:
     assert "/docs_activate openrouter" in message.replies[-1]
 
 
-def test_docs_dashboard_has_openrouter_wizard_button() -> None:
+def test_docs_dashboard_has_no_openrouter_specific_button() -> None:
     provider = FakeDocsStatusProvider()
     services = BotServices(service_docs_status_provider=provider, owner_ids=(7,))
     message = FakeMessage("/docs")
@@ -166,7 +166,8 @@ def test_docs_dashboard_has_openrouter_wizard_button() -> None:
 
     assert "{" not in message.replies[-1]
     keyboard = message.reply_markups[-1].inline_keyboard
-    assert any(button.callback_data == "docs:openrouter" for row in keyboard for button in row)
+    assert all(button.callback_data != "docs:openrouter" for row in keyboard for button in row)
+    assert any(button.callback_data == "docs:connected" for row in keyboard for button in row)
 
 
 def test_docs_activate_messages_do_not_show_raw_json() -> None:

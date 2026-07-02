@@ -137,13 +137,13 @@ def format_docs_candidates(
     lines = ["Можно подключить позже:"]
     if available_candidates:
         shown = available_candidates[:10]
-        lines.extend(f"➕ {candidate.display_name} — `{candidate.service_id}`" for candidate in shown)
+        lines.extend(f"➕ {candidate.display_name} — {candidate.service_id}" for candidate in shown)
         hidden_count = len(available_candidates) - len(shown)
         if hidden_count > 0:
             lines.append(f"Ещё: {hidden_count}")
     else:
         lines.append("нет данных")
-    lines.extend(["", "Для безопасного предпросмотра используйте `/docs_preview <id>`."])
+    lines.extend(["", "Для проверки:", "`/docs_preview <id>`"])
     return "\n".join(lines)
 
 
@@ -151,44 +151,16 @@ def format_docs_preview_help() -> str:
     """Format preview command help."""
     return "\n".join(
         [
-            "Проверить сервис",
+            "Проверка кандидата:",
             "",
-            "Для безопасного предпросмотра:",
             "`/docs_preview <id>`",
             "",
             "Примеры:",
-            "`/docs_preview openrouter`",
             "`/docs_preview ollama`",
             "`/docs_preview telegram_bot_api`",
+            "`/docs_preview claude_code`",
             "",
-            "Это не подключает документацию.",
-        ]
-    )
-
-
-def format_docs_openrouter(statuses: tuple[ServiceDocsStatus, ...]) -> str:
-    """Format OpenRouter activation guidance without running activation."""
-    openrouter = _status_for_candidate(statuses, "openrouter", "openrouter_docs")
-    if openrouter is not None and _is_connected(openrouter):
-        return "\n".join(
-            [
-                "OpenRouter docs подключены.",
-                "",
-                "Проверьте вопросом:",
-                "`как подключить openrouter api?`",
-            ]
-        )
-    return "\n".join(
-        [
-            "OpenRouter docs пока не подключены.",
-            "",
-            "Для плана подключения:",
-            "`/docs_activate openrouter`",
-            "",
-            "Для запуска подключения:",
-            "`/docs_activate openrouter confirm`",
-            "",
-            "Запускайте confirm только если готовы реально индексировать docs.",
+            "Это только preview. Документация не подключается.",
         ]
     )
 
@@ -197,10 +169,10 @@ def format_docs_wizard_help() -> str:
     """Format short docs wizard help."""
     return "\n".join(
         [
-            "Помощь по документации",
+            "Помощь по документации:",
             "",
             "- /docs — панель документации",
-            "- /docs_preview <id> — проверить кандидата",
+            "- /docs_preview <id> — безопасный предпросмотр",
             "- /docs_activate openrouter — план подключения OpenRouter",
             "- /services — технический статус",
             "- /base_status — статус базы",
@@ -224,13 +196,15 @@ async def send_docs_wizard_callback(
         return
     await query.answer()
     if not is_allowed:
-        await query.edit_message_text(
+        await _edit_or_reply_callback(
+            query,
             "Панель документации доступна владельцу бота.",
             reply_markup=reply_markup,
         )
         return
     if status_provider is None:
-        await query.edit_message_text(
+        await _edit_or_reply_callback(
+            query,
             "Панель документации пока недоступна: не подключено чтение Supabase или registry.",
             reply_markup=reply_markup,
         )
@@ -239,17 +213,32 @@ async def send_docs_wizard_callback(
         statuses = await status_provider.list_statuses(scan_corpus=False)
     except Exception as exc:  # noqa: BLE001 - callback should fail gracefully
         error = safe_error(exc) if safe_error is not None else str(exc)
-        await query.edit_message_text(
+        await _edit_or_reply_callback(
+            query,
             "Не получилось получить панель документации: " + error,
             reply_markup=reply_markup,
         )
         return
 
     candidates = _load_candidates(candidate_loader)
-    await query.edit_message_text(
+    await _edit_or_reply_callback(
+        query,
         _format_docs_action(action, statuses, candidates),
         reply_markup=reply_markup,
     )
+
+
+async def _edit_or_reply_callback(query: Any, text: str, *, reply_markup: Any | None = None) -> None:
+    """Edit a callback message, or send a new message if Telegram rejects the edit."""
+    try:
+        await query.edit_message_text(text, reply_markup=reply_markup)
+        return
+    except Exception:  # noqa: BLE001 - fallback keeps button presses visible to the user
+        message = getattr(query, "message", None)
+        reply_text = getattr(message, "reply_text", None)
+        if reply_text is None:
+            raise
+        await reply_text(text, reply_markup=reply_markup)
 
 
 async def send_docs_activation(
@@ -516,26 +505,9 @@ def _format_docs_action(
         return format_docs_candidates(statuses, candidates=candidates)
     if action == "preview_help":
         return format_docs_preview_help()
-    if action == "openrouter":
-        return format_docs_openrouter(statuses)
     if action == "help":
         return format_docs_wizard_help()
     return format_docs_dashboard(statuses, candidates=candidates)
-
-
-def _status_for_candidate(
-    statuses: tuple[ServiceDocsStatus, ...],
-    service_id: str,
-    docs_source: str,
-) -> ServiceDocsStatus | None:
-    service_needle = service_id.casefold()
-    source_needle = docs_source.casefold()
-    for status in statuses:
-        if status.service_id.casefold() == service_needle:
-            return status
-        if str(status.docs_source or "").casefold() == source_needle:
-            return status
-    return None
 
 
 def _is_connected(status: ServiceDocsStatus) -> bool:
