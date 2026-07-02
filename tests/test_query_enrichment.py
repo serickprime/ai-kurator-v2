@@ -84,6 +84,31 @@ def test_unrelated_query_is_not_enriched() -> None:
     assert enrichment.is_empty
 
 
+def test_query_enricher_supports_future_services_from_yaml_without_python_changes(tmp_path: Path) -> None:
+    path = tmp_path / "query_glossary.yaml"
+    path.write_text(
+        """fake_service:
+  aliases:
+    - Fake Service
+  rules:
+    - phrases:
+        - создать объект
+      exact_terms:
+        - createObject
+      config_terms:
+        - object_id
+""",
+        encoding="utf-8",
+    )
+
+    enrichment = QueryEnricher.from_config(path, strict=True).enrich("как создать объект в Fake Service?")
+
+    assert enrichment.service_ids == ("fake_service",)
+    assert "createObject" in enrichment.exact_terms
+    assert "object_id" in enrichment.config_terms
+    assert any(facet.role == "platform" and facet.text == "Fake Service" for facet in enrichment.facets)
+
+
 def test_query_enricher_missing_config_is_safe(tmp_path: Path) -> None:
     enricher = QueryEnricher.from_config(tmp_path / "missing.yaml")
 

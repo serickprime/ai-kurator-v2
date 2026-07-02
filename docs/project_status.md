@@ -63,12 +63,16 @@ Retrieval Query Quality Framework implemented in branch `retrieval-query-quality
 - `app/rag/query_enrichment.py`;
 - `config/query_glossary.yaml`;
 - service-aware query enrichment from a curated glossary;
+- replaces the one-off Telegram Bot API enrichment with a generic glossary-driven mechanism;
 - bridges natural-language questions and technical documentation anchors;
-- current glossary includes:
+- `query_glossary.yaml` is an extensible seed glossary, not the final list of all topics;
+- current services are seed examples:
   - Telegram Bot API send-message and webhook anchors;
   - OpenRouter API key and model anchors;
   - n8n HTTP Request and Webhook node anchors;
   - Supabase vector search anchors;
+- designed for future uploaded materials, courses, service topics, and official docs;
+- new topics should be added by reviewed config updates or reviewed glossary candidates, not Python hardcoding;
 - original user question is preserved;
 - glossary never generates answers and never replaces evidence;
 - no reindex is needed because enrichment changes retrieval queries, not indexed chunks;
@@ -92,6 +96,16 @@ Review and test Retrieval Query Quality Framework.
 ## Retrieval quality principle
 
 Do not fix one user question with one-off code. If a natural-language question misses technical docs terms, improve a general retrieval/evidence mechanism and add regression tests for the class of questions.
+
+The knowledge base will keep growing with uploaded materials, courses, service docs, and official docs. Query quality should grow through reviewed glossary/config changes and future candidate discovery, not by adding service-specific `if` branches to Python.
+
+Future Glossary Candidate Discovery should:
+
+- analyze new uploaded materials and external docs;
+- extract candidate methods, parameters, node names, endpoints, and recurring technical terms;
+- group candidates by service/source;
+- suggest glossary updates to the owner/admin;
+- apply nothing automatically without owner/admin approval.
 
 ## Later roadmap
 

@@ -22,6 +22,9 @@ If the task conflicts with guardrails, stop and report the conflict.
 - Do not start the next roadmap item.
 - Keep Telegram handlers thin.
 - Put business logic in feature/service modules.
+- For retrieval query quality, prefer reviewed glossary/config updates over hardcoded Python rules.
+- Treat `config/query_glossary.yaml` as a seed glossary; do not assume it covers every future topic.
+- Do not apply automatically discovered glossary candidates without owner/admin approval.
 - Use fake services in tests.
 - Do not use real Supabase unless explicitly required.
 - Do not run crawl, sync, indexing, or activation unless explicitly required.

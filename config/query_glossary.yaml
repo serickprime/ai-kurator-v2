@@ -1,3 +1,14 @@
+# Seed glossary for retrieval-only query enrichment.
+#
+# This is a curated starting set, not a final list of all future topics.
+# Add new services, course topics, material domains, and official-docs anchors
+# here after review instead of hardcoding service rules in Python.
+#
+# Glossary entries are not answers. They only bridge natural user wording to
+# technical search anchors such as method names, node names, parameters,
+# endpoints, config keys, or RPC names. Final answers still require accepted
+# evidence from uploaded materials or official external docs.
+
 telegram_bot_api:
   display_name: Telegram Bot API
   aliases:
