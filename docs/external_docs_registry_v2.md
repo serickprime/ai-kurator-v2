@@ -151,6 +151,17 @@ MVP для следующего блока:
 - candidates catalog;
 - docs preview/dry-run.
 
+Первый preview command:
+
+- `/docs_preview <service>` читает только `config/docs_source_candidates.yaml`;
+- не принимает произвольные URL;
+- запускает только safe dry-run для URL и domains из curated candidate;
+- ограничивает preview максимум 5 страницами;
+- не индексирует документы;
+- не пишет в Supabase;
+- не меняет config;
+- не активирует docs source.
+
 ## Модули
 
 Целевая структура:

@@ -134,6 +134,7 @@ External Docs Registry v2 design: [docs/external_docs_registry_v2.md](docs/exter
 Useful read-only Telegram status commands:
 
 - `/docs` shows a read-only documentation dashboard and curated candidates from `config/docs_source_candidates.yaml`. It does not crawl, sync, index, or change config.
+- `/docs_preview <service>` safely checks one curated docs candidate without indexing, writing to Supabase, or activating docs.
 - `/services` shows detected services and whether their docs source is connected.
 - `/base_status` shows knowledge base counts, external docs status, service status, and recent documents.
 - `/materials` lists recent uploaded/local materials and excludes external docs.
