@@ -91,5 +91,6 @@ These rules protect the project from uncontrolled growth and accidental regressi
 - Keep backlog ideas separate from the current branch. Record them as backlog
   or a recommended next prompt instead of mixing unrelated work into the active
   PR.
-- During Phase 4A, do not start Phase 4B, Supabase setup docs, MCP, or other
-  unrelated work until Phase 4A is merged or the owner explicitly changes focus.
+- During Phase 4B, do not start Supabase setup docs, MCP, Telegram UI for
+  glossary review, or other unrelated work until Phase 4B is merged or the
+  owner explicitly changes focus.

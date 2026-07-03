@@ -49,6 +49,8 @@ Core state:
 - Handoff sanity check passed: a new agent can restore project context from repository docs without chat history.
 - Answer formatting postprocessing strips leaked `Evidence:` support artifacts and rewrites wide API parameter tables into Telegram-friendly lists.
 - Phase 4A read-only Glossary Candidate Discovery MVP suggests retrieval anchors from existing glossary, term statistics, evidence logs, and active document metadata without applying changes automatically.
+- Phase 4A quality cleanup filters noisy candidate anchors and marks sensitive-looking candidates for separate review.
+- Phase 4B owner/admin CLI review/apply MVP is the current implementation focus.
 
 ## Completed PRs
 
@@ -76,6 +78,9 @@ Core state:
 - PR #21 - Project handoff context and prompting playbook.
 - PR #22 - Project status update after handoff merge.
 - PR #23 - Stable project status baseline policy.
+- PR #24 - Answer formatting artifact cleanup.
+- PR #25 - Phase 4A read-only Glossary Candidate Discovery MVP.
+- PR #26 - Phase 4A glossary candidate quality cleanup.
 
 ## Latest completed project block
 
@@ -100,9 +105,9 @@ Project handoff context was merged in PR #21:
 
 Current active roadmap focus:
 
-- Phase 4A - Glossary Candidate Discovery read-only MVP.
-- Current branch: `glossary-candidate-discovery-readonly`.
-- Until Phase 4A is merged, do not start Phase 4B, Supabase setup docs, MCP,
+- Phase 4B - Glossary Candidate Review/Apply CLI MVP.
+- Current branch: `phase4b-glossary-review-apply`.
+- Until Phase 4B is merged, do not start Supabase setup docs, MCP,
   docs health/stale refresh, or unrelated work unless the owner explicitly
   changes focus.
 
@@ -112,7 +117,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `glossary-candidate-discovery-readonly` after the branch is
+- open a PR for `phase4b-glossary-review-apply` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;
@@ -149,6 +154,18 @@ Phase 4A scope:
 - keep `config/query_glossary.yaml` unchanged until a future review/apply block;
 - write nothing to Supabase;
 - scale retrieval quality through reviewed anchors instead of hardcoded one-question fixes.
+
+Phase 4B scope:
+
+- export a manual owner/admin review file from Phase 4A candidates;
+- validate pending, approved, rejected, and edited decisions;
+- build an apply plan without changing config by default;
+- write reviewed output to `reports/` or `tmp/` by default;
+- require both `--write-config` and `--confirm-reviewed-apply` before direct
+  writes to `config/query_glossary.yaml`;
+- require separate `allow_sensitive_apply: true` for sensitive-review
+  candidates;
+- no Telegram UI in this block.
 
 ## Later roadmap
 

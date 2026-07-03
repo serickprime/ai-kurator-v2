@@ -26,9 +26,9 @@ recommendation only; it must not authorize the agent to start the next project
 block without an explicit owner command.
 
 Prompts should preserve one active roadmap focus. State the current focus and
-what must not be started in the same branch. For the current Phase 4A branch,
-do not start Phase 4B, Supabase setup docs, MCP, or unrelated work until Phase
-4A is merged or the owner explicitly changes focus.
+what must not be started in the same branch. For the current Phase 4B branch,
+do not start Supabase setup docs, MCP, Telegram UI for glossary review, or
+unrelated work until Phase 4B is merged or the owner explicitly changes focus.
 
 Do not treat `docs/project_status.md` as an automatic latest-main pointer.
 Project status should record durable project state and meaningful milestones.

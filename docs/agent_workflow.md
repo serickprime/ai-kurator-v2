@@ -91,11 +91,12 @@ the active PR. Small docs rule updates are allowed inside the active branch only
 when the owner explicitly permits them and they directly protect the current
 workflow.
 
-Current Phase 4A focus:
+Current Phase 4B focus:
 
-- Phase 4A - Glossary Candidate Discovery read-only MVP.
-- Do not start Phase 4B, Supabase setup docs, MCP, or other unrelated tasks
-  until Phase 4A is merged or the owner explicitly changes focus.
+- Phase 4B - Glossary Candidate Review/Apply CLI MVP.
+- Do not start Supabase setup docs, MCP, Telegram UI for glossary review, or
+  other unrelated tasks until Phase 4B is merged or the owner explicitly
+  changes focus.
 
 ## After work
 
