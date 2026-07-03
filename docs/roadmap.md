@@ -2,15 +2,14 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 4A -
-Glossary Candidate Discovery read-only MVP. Until Phase 4A is merged, do not
-start Phase 4B, Supabase setup docs, MCP, docs health/stale refresh, or other
+Use one active roadmap focus at a time. The current focus is Phase 4B -
+Glossary Candidate Review/Apply CLI MVP. Until Phase 4B is merged, do not
+start Supabase setup docs, MCP, docs health/stale refresh, or other
 unrelated tasks unless the owner explicitly changes focus.
 
 Backlog items should be recorded without being started in the active branch:
 
 - Supabase setup docs for a new developer;
-- Phase 4B owner/admin review/apply flow;
 - docs health/stale refresh;
 - long-running activation UX progress;
 - future MCP setup.
@@ -95,6 +94,20 @@ Phase 4A read-only MVP:
 - do not modify `config/query_glossary.yaml`;
 - leave owner/admin review and apply flow to a later block.
 
+Status: merged in PR #25, with candidate quality cleanup merged in PR #26.
+
+Phase 4B CLI owner/admin review/apply MVP:
+
+- export Phase 4A candidates to an owner-editable review file;
+- require manual pending, approved, rejected, or edited decisions;
+- validate review files before any apply plan;
+- build a dry-run apply plan that skips pending, rejected, duplicates, and
+  unconfirmed sensitive-review candidates;
+- write a reviewed glossary copy under `reports/` or `tmp/` by default;
+- allow direct `config/query_glossary.yaml` writes only with explicit
+  `--write-config --confirm-reviewed-apply`;
+- keep Telegram UI out of this block.
+
 Planned behavior:
 
 - analyze newly indexed uploaded materials and external docs;
@@ -125,7 +138,7 @@ This phase should extend the retrieval/query quality layer for all future
 uploaded materials and official docs. It must not become a sequence of
 hardcoded one-question fixes.
 
-Status: Phase 4A read-only MVP is the current implementation block.
+Status: Phase 4B CLI review/apply MVP is the current implementation block.
 
 ## Phase 5 — Service-aware suggestions
 

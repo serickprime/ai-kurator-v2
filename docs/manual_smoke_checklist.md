@@ -179,6 +179,30 @@ Expected:
 - Supabase is not written to;
 - activation, crawl, sync, indexing, and reindex are not run.
 
+## Glossary Candidate Review/Apply smoke
+
+Run after Phase 4B CLI review/apply changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\review_query_glossary_candidates.py --help
+.\.venv\Scripts\python.exe scripts\review_query_glossary_candidates.py export-review --limit 10 --output reports\glossary_candidates_review.sample.yaml
+.\.venv\Scripts\python.exe scripts\review_query_glossary_candidates.py validate-review --review-file reports\glossary_candidates_review.sample.yaml
+.\.venv\Scripts\python.exe scripts\review_query_glossary_candidates.py plan-apply --review-file reports\glossary_candidates_review.sample.yaml
+```
+
+Expected:
+
+- review file mode is `owner-review-required`;
+- new candidates default to `owner_decision: pending`;
+- pending and rejected candidates are not in the apply plan;
+- sensitive-review candidates require `allow_sensitive_apply: true`;
+- `plan-apply` is dry-run only;
+- `apply-reviewed` is not run with `--write-config` unless the owner explicitly
+  asks for direct config application;
+- `config/query_glossary.yaml` is not changed by export, validate, or plan;
+- Supabase is not written to;
+- activation, crawl, sync, indexing, and reindex are not run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:

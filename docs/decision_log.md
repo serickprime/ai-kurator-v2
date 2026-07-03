@@ -100,6 +100,28 @@ Boundaries:
 - no AnswerGenerator, retrieval/router, or RAG pipeline changes;
 - no one-question hardcoded fixes.
 
+## Glossary candidate apply requires explicit review
+
+Decision: Phase 4B may create owner/admin review files and reviewed glossary
+outputs, but candidates must not be applied automatically.
+
+Reason: glossary candidates are retrieval-anchor proposals. They can improve
+future retrieval only after an owner/admin has approved, rejected, or edited
+them.
+
+Boundaries:
+
+- pending and rejected candidates are skipped;
+- edited candidates use `edited_terms`;
+- duplicates from the existing seed glossary are skipped;
+- sensitive-review candidates require a separate `allow_sensitive_apply: true`;
+- default apply output goes to `reports/` or `tmp/`;
+- direct writes to `config/query_glossary.yaml` require both `--write-config`
+  and `--confirm-reviewed-apply`;
+- no Supabase writes, migrations, activation, crawl, sync, indexing, reindex,
+  Telegram UI, AnswerGenerator, retrieval/router, or RAG pipeline changes in
+  the Phase 4B CLI MVP.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops
