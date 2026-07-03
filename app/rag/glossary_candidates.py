@@ -26,6 +26,11 @@ _PARAMETER_HINT_RE = re.compile(r"\b[A-Za-z][A-Za-z0-9_]*(?:_id|_url|_key|_token
 _HEXISH_RE = re.compile(r"^[a-f0-9]{16,}$", re.IGNORECASE)
 _UUID_RE = re.compile(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$", re.IGNORECASE)
 _TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}:\d{2}")
+_RANDOM_SAMPLE_RE = re.compile(r"^[A-Za-z0-9-]{10,}$")
+_SENSITIVE_RE = re.compile(
+    r"(api[_-]?key|secret|service[_-]?role|token|bearer|authorization|password|db[_-]?pass|passphrase)",
+    re.IGNORECASE,
+)
 _NOISE_TERMS = {
     "definition_candidate",
     "primary_definition",
@@ -37,6 +42,38 @@ _NOISE_TERMS = {
     "canonical_url",
     "content_hash",
     "document_key",
+}
+_COMMON_ANCHOR_NOISE = {
+    "api",
+    "delete",
+    "docs",
+    "documentation",
+    "example",
+    "github",
+    "head",
+    "http",
+    "https",
+    "html",
+    "javascript",
+    "json",
+    "openai",
+    "options",
+    "patch",
+    "post",
+    "python",
+    "request",
+    "response",
+    "rest",
+    "typescript",
+    "your",
+    "yourport",
+}
+_LOCAL_SOURCE_HINTS = {
+    "local",
+    "smoke",
+    "test",
+    "tmp",
+    "upload",
 }
 
 
@@ -55,6 +92,7 @@ class GlossaryCandidate:
     source_refs: tuple[str, ...] = ()
     confidence: float = 0.0
     status: str = "suggested"
+    review_flags: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-safe representation."""
@@ -70,6 +108,7 @@ class GlossaryCandidate:
             "source_refs": list(self.source_refs),
             "confidence": self.confidence,
             "status": self.status,
+            "review_flags": list(self.review_flags),
             "next_action": "review manually; do not auto-apply",
         }
 
@@ -232,6 +271,8 @@ def format_glossary_candidate_report(report: GlossaryCandidateReport) -> str:
                 *_bullet_lines(candidate.source_refs),
                 f"- confidence: {candidate.confidence:.2f}",
                 f"- status: {candidate.status}",
+                "- review flags:",
+                *_bullet_lines(candidate.review_flags),
                 "- next action: review manually; do not auto-apply",
             ]
         )
@@ -469,7 +510,21 @@ def _candidate_from_group(
     first = group[0]
     reasons = _dedupe([item.reason for item in group if item.reason], limit=4)
     source_refs = _dedupe([ref for item in group for ref in item.source_refs], limit=8)
-    confidence = _confidence(group, exact_terms=exact_terms, config_terms=config_terms, user_phrases=user_phrases)
+    review_flags, quality_notes = _candidate_review_flags(
+        group,
+        user_phrases=user_phrases,
+        technical_terms=technical_terms,
+        exact_terms=exact_terms,
+        config_terms=config_terms,
+    )
+    confidence = _confidence(
+        group,
+        exact_terms=exact_terms,
+        config_terms=config_terms,
+        user_phrases=user_phrases,
+        review_flags=review_flags,
+    )
+    status = _candidate_status(review_flags)
     return (
         GlossaryCandidate(
             service_id=first.service_id,
@@ -479,10 +534,11 @@ def _candidate_from_group(
             technical_terms=tuple(technical_terms),
             exact_terms=tuple(exact_terms),
             config_terms=tuple(config_terms),
-            reason="; ".join(reasons),
+            reason="; ".join(_dedupe([*reasons, *quality_notes], limit=8)),
             source_refs=tuple(source_refs),
             confidence=confidence,
-            status="suggested",
+            status=status,
+            review_flags=tuple(review_flags),
         ),
         skipped,
     )
@@ -666,6 +722,7 @@ def _confidence(
     exact_terms: Sequence[str],
     config_terms: Sequence[str],
     user_phrases: Sequence[str],
+    review_flags: Sequence[str],
 ) -> float:
     base = max((item.confidence for item in group), default=0.45)
     base += min(len(group) * 0.025, 0.18)
@@ -675,7 +732,43 @@ def _confidence(
         base += 0.08
     if user_phrases:
         base += 0.05
-    return round(min(base, 0.95), 2)
+    ceiling = 0.95
+    if "sensitive-review" in review_flags:
+        ceiling = min(ceiling, 0.88)
+    if "low-confidence" in review_flags:
+        ceiling = min(ceiling, 0.58)
+    return round(min(base, ceiling), 2)
+
+
+def _candidate_review_flags(
+    group: Sequence[_Observation],
+    *,
+    user_phrases: Sequence[str],
+    technical_terms: Sequence[str],
+    exact_terms: Sequence[str],
+    config_terms: Sequence[str],
+) -> tuple[list[str], list[str]]:
+    flags: list[str] = []
+    notes: list[str] = []
+    all_terms = [*technical_terms, *exact_terms, *config_terms]
+    if any(_is_sensitive_like(term) for term in all_terms):
+        flags.append("sensitive-review")
+        notes.append("sensitive-looking anchors require owner review before any glossary update")
+    if any(_is_local_or_unreviewed_source(item) for item in group):
+        flags.append("low-confidence")
+        notes.append("local, unknown, smoke, upload, test, or tmp source; do not promote without review")
+    if any(_looks_broken_text(phrase) for phrase in user_phrases):
+        flags.append("low-confidence")
+        notes.append("broken or mojibake user phrase was detected")
+    return _dedupe(flags, limit=4), _dedupe(notes, limit=4)
+
+
+def _candidate_status(review_flags: Sequence[str]) -> str:
+    if "sensitive-review" in review_flags:
+        return "sensitive-review"
+    if "low-confidence" in review_flags:
+        return "low-confidence"
+    return "suggested"
 
 
 def _unknown_terms(terms: Sequence[str], existing: _ExistingGlossaryIndex, *, limit: int) -> tuple[list[str], int]:
@@ -747,7 +840,7 @@ def _service_from_source(source_id: str | None) -> str | None:
 
 def _safe_phrase(value: object) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
-    if not text or len(text) < 4:
+    if not text or len(text) < 4 or _looks_broken_text(text):
         return ""
     return text[:180]
 
@@ -770,21 +863,70 @@ def _is_noise_term(text: str) -> bool:
     key = _term_key(clean)
     if not clean:
         return True
+    if _looks_broken_text(clean):
+        return True
+    if key in _COMMON_ANCHOR_NOISE:
+        return True
     if key in _NOISE_TERMS or key.endswith("_docs"):
         return True
     if len(clean) < 3 and not clean.startswith(("/", "--")):
         return True
+    if clean.count("(") != clean.count(")"):
+        return True
     if clean.isdigit() or _UUID_RE.fullmatch(clean) or _HEXISH_RE.fullmatch(clean):
+        return True
+    if _looks_random_sample_token(clean):
         return True
     if _TIMESTAMP_RE.search(clean):
         return True
     if clean.startswith("/") and (".." in clean or re.search(r"\.[a-z]{2,}(?:/|$)", clean, flags=re.IGNORECASE)):
+        return True
+    if clean.startswith("/") and "your" in key:
         return True
     if clean.startswith("/") and re.search(r"/\d{5,}(?:/|$)", clean):
         return True
     if "." in clean and re.fullmatch(r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}", clean):
         return True
     return False
+
+
+def _looks_broken_text(text: str) -> bool:
+    clean = str(text or "").strip()
+    if not clean:
+        return False
+    if "\ufffd" in clean or "Ð" in clean or "Ã" in clean:
+        return True
+    question_marks = clean.count("?")
+    return question_marks >= 3 and question_marks / max(len(clean), 1) >= 0.12
+
+
+def _looks_random_sample_token(text: str) -> bool:
+    clean = text.strip()
+    if clean.startswith(("/", "--")) or "_" in clean or "." in clean or "(" in clean or ")" in clean:
+        return False
+    if not _RANDOM_SAMPLE_RE.fullmatch(clean) and not re.fullmatch(r"[a-z]{2,}\d+[a-z0-9]{2,}", clean):
+        return False
+    if not (re.search(r"[A-Za-z]", clean) and re.search(r"\d", clean)):
+        return False
+    if re.search(r"^(?:send|set|get|delete|answer|create|update|match)[A-Z_]", clean):
+        return False
+    return True
+
+
+def _is_sensitive_like(term: str) -> bool:
+    clean = str(term or "").strip()
+    return bool(clean and _SENSITIVE_RE.search(clean))
+
+
+def _is_local_or_unreviewed_source(item: _Observation) -> bool:
+    source = item.source_id or ""
+    service = item.service_id or ""
+    text = " ".join([service, source, item.topic, *item.source_refs]).casefold()
+    if not service and (not source or not source.endswith("_docs")):
+        return True
+    if source.endswith("_docs"):
+        return False
+    return any(hint in text for hint in _LOCAL_SOURCE_HINTS)
 
 
 def _term_key(value: str) -> str:
