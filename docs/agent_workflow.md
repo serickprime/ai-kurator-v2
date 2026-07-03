@@ -17,6 +17,11 @@ This document defines how Codex or any coding agent should work in this reposito
 
 If the task conflicts with guardrails, stop and report the conflict.
 
+Use `git log --oneline -5`, `git status -sb`, or GitHub for the exact latest
+`main` commit when it matters. `docs/project_status.md` records project state
+and stable milestones; it is not an automatic latest-main pointer that must be
+updated after every docs-only or status-only merge.
+
 Repository identity:
 
 - GitHub repository: `serickprime/ai-kurator-v2`

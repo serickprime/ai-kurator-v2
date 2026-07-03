@@ -11,7 +11,8 @@ Every substantial prompt should include:
 - repository: `serickprime/ai-kurator-v2`;
 - local path: `D:\Downloads\ai-kurator-v2`;
 - target branch or branch to create;
-- current known main commit when relevant;
+- current recorded baseline or milestone, and the exact current `main` commit
+  only when the task depends on it;
 - exact task objective;
 - files or modules to inspect;
 - explicit forbidden actions;
@@ -23,6 +24,12 @@ Every prompt that asks an agent to report results should also require a
 `Recommended next prompt` block at the end of the final answer. The block is a
 recommendation only; it must not authorize the agent to start the next project
 block without an explicit owner command.
+
+Do not treat `docs/project_status.md` as an automatic latest-main pointer.
+Project status should record durable project state and meaningful milestones.
+When an exact commit matters, ask the agent to check `git log --oneline -5` or
+GitHub instead of manually maintaining a latest-commit field after every
+docs-only merge.
 
 ## Required Guardrails
 

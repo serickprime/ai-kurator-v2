@@ -1,10 +1,19 @@
 # Project Status
 
-## Current main
+## Latest recorded stable project milestone
 
-Current main after the latest completed merge:
+This file records project state and completed milestones. It is not an
+automatic pointer to the latest Git commit.
 
-- `aa7fde5 Add project handoff context (#21)`
+Latest recorded baseline:
+
+- PR #22 merged: project handoff/status docs are in `main`.
+- Reference commit: `8eac6a5 update project status after handoff merge (#22)`.
+
+The reference commit is a stable context point, not a field that must be
+updated after every docs-only or status-only merge. Check the exact latest
+`main` commit with `git log --oneline -5`, `git status -sb`, or GitHub when the
+exact commit matters for a task.
 
 ## Current project state
 
@@ -63,6 +72,7 @@ Core state:
 
 - PR #20 - Retrieval Query Quality Framework.
 - PR #21 - Project handoff context and prompting playbook.
+- PR #22 - Project status update after handoff merge.
 
 ## Latest completed project block
 
@@ -85,7 +95,9 @@ Project handoff context was merged in PR #21:
 
 ## Current focus
 
-Project handoff docs are in `main`. No next roadmap item is in progress.
+Project handoff/status docs are in `main`. No next roadmap item is in progress.
+`docs/project_status.md` tracks project state and stable milestones, not an
+exact latest-main pointer after every technical docs merge.
 
 ## Next recommended
 
