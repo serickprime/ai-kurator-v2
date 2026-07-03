@@ -4,7 +4,7 @@
 
 Current main after the latest completed merge:
 
-- `d101b74 Add docs activation queue (#19)`
+- `f08bed0 Add retrieval query quality framework (#20)`
 
 ## Current project state
 
@@ -33,6 +33,7 @@ Core state:
 - Docs Activation Queue is merged.
 - Telegram Bot API docs were activated manually by owner/admin through `/docs_activate_ready confirm`.
 - Telegram Bot API docs are indexed as official `external_docs`.
+- Retrieval Query Quality Framework is merged and uses a generic seed glossary for retrieval-only query enrichment.
 
 ## Completed PRs
 
@@ -56,33 +57,38 @@ Core state:
 - PR #18 — project control pack.
 - PR #19 — Docs Activation Queue.
 
+- PR #20 - Retrieval Query Quality Framework.
+
 ## Current branch block
 
-Retrieval Query Quality Framework implemented in branch `retrieval-query-quality-framework`:
+Project handoff context implemented in branch `project-handoff-context`:
 
-- `app/rag/query_enrichment.py`;
-- `config/query_glossary.yaml`;
-- service-aware query enrichment from a curated glossary;
-- replaces the one-off Telegram Bot API enrichment with a generic glossary-driven mechanism;
-- bridges natural-language questions and technical documentation anchors;
-- `query_glossary.yaml` is an extensible seed glossary, not the final list of all topics;
-- current services are seed examples:
-  - Telegram Bot API send-message and webhook anchors;
-  - OpenRouter API key and model anchors;
-  - n8n HTTP Request and Webhook node anchors;
-  - Supabase vector search anchors;
-- designed for future uploaded materials, courses, service topics, and official docs;
-- new topics should be added by reviewed config updates or reviewed glossary candidates, not Python hardcoding;
-- original user question is preserved;
-- glossary never generates answers and never replaces evidence;
-- no reindex is needed because enrichment changes retrieval queries, not indexed chunks;
-- `/base_status`, `/docs`, and `/services` should show quality reasons instead of bare `FAIL` or `WARN`.
+- `docs/project_handoff_context.md` is the first-stop context for future agents;
+- `docs/prompting_playbook.md` defines how future prompts should describe scope, guardrails, checks, and reports;
+- final reports now require a `Recommended next prompt` block with rationale,
+  guardrails, and a copy-paste prompt, while making clear that the next block
+  must not start without explicit owner instruction;
+- project identity is documented:
+  - GitHub repository: `serickprime/ai-kurator-v2`;
+  - local path: `D:\Downloads\ai-kurator-v2`;
+- Supabase data/table lookup rules are documented;
+- git workflow, push, PR, and merge rules are documented;
+- secrets policy is documented: secrets are not stored in the repository;
+- retrieval/query quality principle is documented:
+  - do not fix one user question point-wise;
+  - build a general retrieval/query quality layer for uploaded materials and official docs.
 
 ## Current focus
 
-Review and test Retrieval Query Quality Framework.
+Review and merge project handoff context docs.
 
 ## Next recommended
+
+- open a PR for `project-handoff-context`;
+- after merge, use `docs/project_handoff_context.md` before nontrivial work;
+- use `docs/prompting_playbook.md` before writing new prompts;
+- keep building retrieval/query quality as a general layer, not as one-off fixes;
+- keep the Retrieval Query Quality smoke below as a regression check for PR #20.
 
 - manual Telegram smoke:
   - `Новая тема`

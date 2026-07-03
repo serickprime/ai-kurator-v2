@@ -2,6 +2,16 @@
 
 Use this checklist after meaningful Telegram, RAG, docs registry, or runtime changes.
 
+## Project control docs
+
+- Read `docs/project_handoff_context.md` before nontrivial work.
+- Read `docs/prompting_playbook.md` before writing or changing prompts.
+- Confirm GitHub repository: `serickprime/ai-kurator-v2`.
+- Confirm local path: `D:\Downloads\ai-kurator-v2`.
+- Confirm Supabase lookup starts from `app/db/schema.sql`, `app/db/repositories.py`, and read-only scripts.
+- Confirm no `.env`, local credentials, service role keys, GitHub PATs, Telegram bot tokens, or secret-bearing logs are staged.
+- Confirm the task does not fix one question point-wise when a general retrieval/query quality layer is needed.
+
 ## General Telegram
 
 - `/start`
