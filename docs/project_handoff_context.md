@@ -9,7 +9,7 @@ reading chat history.
 - GitHub repository: `serickprime/ai-kurator-v2`
 - Local path: `D:\Downloads\ai-kurator-v2`
 - Default branch: `main`
-- Current main after PR #20: `f08bed0 Add retrieval query quality framework (#20)`
+- Current main after PR #21: `aa7fde5 Add project handoff context (#21)`
 
 ## What This Bot Is
 
