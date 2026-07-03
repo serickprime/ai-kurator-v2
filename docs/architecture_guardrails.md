@@ -64,6 +64,7 @@ These rules protect the project from uncontrolled growth and accidental regressi
 ## Workflow rules
 
 - One branch = one meaningful block.
+- One active roadmap focus at a time.
 - Keep PRs small.
 - Start work from fresh `main` unless the user gives a different branch.
 - Push feature branches only after requested checks pass.
@@ -74,3 +75,21 @@ These rules protect the project from uncontrolled growth and accidental regressi
 - Do not start the next roadmap item without explicit instruction.
 - Every completed project block must update docs/project_status.md.
 - Manual smoke checks should be recorded or summarized before moving to the next risky block.
+
+## Streamlined workflow guardrails
+
+- Keep the GitHub loop short: implement, test, commit/push, open PR when
+  requested, check CI, merge only after explicit owner command, then continue
+  only when the owner asks.
+- Do not run a separate sanity-check loop after every merge when CI is green,
+  the tree is clean, docs use stable baseline policy, and there is no conflict.
+- Use manual smoke after runtime or user-visible changes, not after every
+  docs-only merge.
+- Create docs-only PRs only for blocking context, outdated guardrails,
+  misleading roadmap/status docs, architecture decisions, or explicit owner
+  requests. Do not create them for latest-commit churn or cosmetic cleanup.
+- Keep backlog ideas separate from the current branch. Record them as backlog
+  or a recommended next prompt instead of mixing unrelated work into the active
+  PR.
+- During Phase 4A, do not start Phase 4B, Supabase setup docs, MCP, or other
+  unrelated work until Phase 4A is merged or the owner explicitly changes focus.

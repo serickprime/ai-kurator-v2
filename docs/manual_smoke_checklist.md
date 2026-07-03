@@ -160,6 +160,25 @@ Expected:
 
 Do not treat glossary anchors as answer content. The answer still needs accepted evidence.
 
+## Glossary Candidate Discovery smoke
+
+Run after Phase 4A read-only discovery changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\suggest_query_glossary_candidates.py --help
+.\.venv\Scripts\python.exe scripts\suggest_query_glossary_candidates.py --limit 10
+```
+
+Expected:
+
+- report mode is `read-only`;
+- candidates have `status: suggested`;
+- output says candidates are not auto-applied;
+- source refs are compact and do not print full chunks;
+- `config/query_glossary.yaml` is not changed;
+- Supabase is not written to;
+- activation, crawl, sync, indexing, and reindex are not run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:

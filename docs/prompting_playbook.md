@@ -25,11 +25,43 @@ Every prompt that asks an agent to report results should also require a
 recommendation only; it must not authorize the agent to start the next project
 block without an explicit owner command.
 
+Prompts should preserve one active roadmap focus. State the current focus and
+what must not be started in the same branch. For the current Phase 4A branch,
+do not start Phase 4B, Supabase setup docs, MCP, or unrelated work until Phase
+4A is merged or the owner explicitly changes focus.
+
 Do not treat `docs/project_status.md` as an automatic latest-main pointer.
 Project status should record durable project state and meaningful milestones.
 When an exact commit matters, ask the agent to check `git log --oneline -5` or
 GitHub instead of manually maintaining a latest-commit field after every
 docs-only merge.
+
+## Streamlined Workflow Prompts
+
+Use the shortest workflow that preserves safety:
+
+1. implement one focused block;
+2. run checks;
+3. commit and push;
+4. open a PR only when requested;
+5. check CI and mergeability;
+6. merge only after explicit owner command;
+7. run manual smoke only for runtime or user-visible changes;
+8. move to the next roadmap block only after explicit owner command.
+
+Do not ask for a separate sanity check after every merge when the PR was
+docs-only, CI was green, the tree is clean, project docs already use stable
+baseline policy, and no conflict is visible.
+
+Docs-only prompts should be used only when documentation blocks the next agent,
+guardrails are outdated, roadmap/status docs are misleading, an architecture
+decision must be recorded, or the owner explicitly asks. Do not create docs-only
+work only to update latest commit values or for cosmetic cleanup.
+
+Keep backlog separate from current focus. Backlog examples include Supabase
+setup docs for a new developer, Phase 4B owner/admin review/apply flow,
+docs health/stale refresh, long-running activation UX progress, and future MCP
+setup.
 
 ## Required Guardrails
 
@@ -190,11 +222,25 @@ chat history. It should be specific enough for the next agent to work safely,
 but it must not ask the agent to begin any later roadmap item unless the owner
 has explicitly chosen that next step.
 
+The recommended prompt should be useful without creating extra process loops:
+
+- do not recommend a sanity check by default after every merge;
+- do not recommend docs-only cleanup unless there is a real blocking reason;
+- if a feature branch is ready, recommend opening the PR;
+- if a PR is open, recommend checking CI and merging after explicit owner
+  approval;
+- if a PR is merged and manual smoke is not needed, recommend the next roadmap
+  block;
+- if manual smoke is needed, recommend one short, concrete smoke check instead
+  of a new docs loop.
+
 ## Final Report Template
 
 Ask for a final answer that includes:
 
+- current roadmap focus;
 - branch;
+- current PR, if any;
 - commit;
 - what changed;
 - files changed;
@@ -205,6 +251,8 @@ Ask for a final answer that includes:
 - `scripts/runtime_healthcheck.py` status;
 - what was not touched;
 - what to check manually;
+- next roadmap step;
+- what is explicitly not being started;
 - whether working tree is clean;
 - confirmation that `.env` and secrets were not touched;
 - confirmation that activation/crawl/sync/indexing/reindex were not run;

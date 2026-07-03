@@ -83,6 +83,41 @@ Principle: do not fix one question with one-off code. Improve retrieval quality 
 
 Status visibility: quality surfaces should show the reason for `WARN` or `FAIL`, not only the raw status label.
 
+## Glossary candidate discovery is read-only and review-first
+
+Decision: Phase 4A may suggest glossary candidates from existing read-only
+runtime data, but it must not apply them automatically.
+
+Reason: discovered terms are retrieval-anchor proposals, not evidence and not
+answers. Owner/admin review is required before any candidate can update
+`config/query_glossary.yaml` or affect query enrichment.
+
+Boundaries:
+
+- no Supabase writes;
+- no changes to `config/query_glossary.yaml`;
+- no crawl, sync, indexing, reindex, or activation;
+- no AnswerGenerator, retrieval/router, or RAG pipeline changes;
+- no one-question hardcoded fixes.
+
+## Development workflow should stay streamlined
+
+Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops
+after every completed PR.
+
+Reason: branch, tests, PR review, CI, and explicit owner-controlled merge are
+enough for normal safety. Extra sanity loops and docs-only PRs are useful only
+when they unblock the next agent, fix misleading guardrails/status, record an
+architecture decision, or the owner explicitly asks.
+
+Boundaries:
+
+- PR merge still requires explicit owner command;
+- CI must be green and the PR must be clean/mergeable before merge;
+- manual smoke is for runtime or user-visible changes, not every docs-only PR;
+- backlog ideas stay outside the active branch unless the owner explicitly
+  allows a small directly related docs rule update.
+
 ## Project handoff context is required before nontrivial work
 
 Decision: agents must read `docs/project_handoff_context.md` before nontrivial
