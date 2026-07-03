@@ -68,6 +68,15 @@ Status: merged in PR #20.
 
 Goal: make query quality scalable as uploaded materials, courses, service docs, and official external docs keep growing.
 
+Phase 4A read-only MVP:
+
+- discover candidate retrieval anchors from the existing seed glossary, term statistics, evidence logs, active documents, document cards, sections, and chunks;
+- group candidates by service/source/topic;
+- print an owner-facing report only;
+- do not write to Supabase;
+- do not modify `config/query_glossary.yaml`;
+- leave owner/admin review and apply flow to a later block.
+
 Planned behavior:
 
 - analyze newly indexed uploaded materials and external docs;
@@ -98,7 +107,7 @@ This phase should extend the retrieval/query quality layer for all future
 uploaded materials and official docs. It must not become a sequence of
 hardcoded one-question fixes.
 
-Status: future phase; not implemented in the current PR.
+Status: Phase 4A read-only MVP is the current implementation block.
 
 ## Phase 5 — Service-aware suggestions
 

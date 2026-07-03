@@ -83,6 +83,23 @@ Principle: do not fix one question with one-off code. Improve retrieval quality 
 
 Status visibility: quality surfaces should show the reason for `WARN` or `FAIL`, not only the raw status label.
 
+## Glossary candidate discovery is read-only and review-first
+
+Decision: Phase 4A may suggest glossary candidates from existing read-only
+runtime data, but it must not apply them automatically.
+
+Reason: discovered terms are retrieval-anchor proposals, not evidence and not
+answers. Owner/admin review is required before any candidate can update
+`config/query_glossary.yaml` or affect query enrichment.
+
+Boundaries:
+
+- no Supabase writes;
+- no changes to `config/query_glossary.yaml`;
+- no crawl, sync, indexing, reindex, or activation;
+- no AnswerGenerator, retrieval/router, or RAG pipeline changes;
+- no one-question hardcoded fixes.
+
 ## Project handoff context is required before nontrivial work
 
 Decision: agents must read `docs/project_handoff_context.md` before nontrivial

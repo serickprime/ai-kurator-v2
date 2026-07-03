@@ -48,6 +48,7 @@ Core state:
 - Final reports require a `Recommended next prompt` block with rationale, guardrails, and a copy-paste prompt.
 - Handoff sanity check passed: a new agent can restore project context from repository docs without chat history.
 - Answer formatting postprocessing strips leaked `Evidence:` support artifacts and rewrites wide API parameter tables into Telegram-friendly lists.
+- Phase 4A read-only Glossary Candidate Discovery MVP suggests retrieval anchors from existing glossary, term statistics, evidence logs, and active document metadata without applying changes automatically.
 
 ## Completed PRs
 
@@ -130,6 +131,13 @@ Future Glossary Candidate Discovery should:
 - group candidates by service/source;
 - suggest glossary updates to the owner/admin;
 - apply nothing automatically without owner/admin approval.
+
+Phase 4A scope:
+
+- produce an owner-facing read-only report of suggested glossary candidates;
+- keep `config/query_glossary.yaml` unchanged until a future review/apply block;
+- write nothing to Supabase;
+- scale retrieval quality through reviewed anchors instead of hardcoded one-question fixes.
 
 ## Later roadmap
 
