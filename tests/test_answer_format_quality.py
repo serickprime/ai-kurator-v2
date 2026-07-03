@@ -130,3 +130,89 @@ n8n start
 
     assert "```bash\nnpm install -g n8n\nn8n start\n```" in cleaned
     assert "Итог: Запустите команду из терминала." in cleaned
+
+
+def test_clean_answer_format_removes_evidence_artifact_line_and_keeps_sources() -> None:
+    raw = """OpenRouter uses an Authorization header with a Bearer token.
+
+Evidence: “The API requires an Authorization header.”
+
+Sources:
+- OpenRouter docs"""
+
+    cleaned = clean_answer_format(raw)
+
+    assert "OpenRouter uses an Authorization header" in cleaned
+    assert "Evidence:" not in cleaned
+    assert "The API requires an Authorization header" not in cleaned
+    assert "Sources:" in cleaned
+    assert "OpenRouter docs" in cleaned
+
+
+def test_clean_answer_format_removes_multiple_evidence_fragments() -> None:
+    raw = """Use the base URL from the official docs. Evidence: “The base URL is documented.”
+- Evidence: “This bullet is a support quote.”
+Send Authorization as Bearer token. Evidence: copied support sentence"""
+
+    cleaned = clean_answer_format(raw)
+
+    assert "Use the base URL from the official docs." in cleaned
+    assert "Send Authorization as Bearer token." in cleaned
+    assert "Evidence:" not in cleaned
+    assert "support quote" not in cleaned
+    assert "copied support sentence" not in cleaned
+
+
+def test_clean_answer_format_preserves_evidence_text_inside_code_blocks() -> None:
+    raw = """Keep this diagnostic example:
+
+```text
+Evidence: "this is literal code output"
+| Parameter | Description |
+| --- | --- |
+| token | keep this table inside code |
+```
+
+Evidence: “remove this support quote”"""
+
+    cleaned = clean_answer_format(raw)
+
+    assert 'Evidence: "this is literal code output"' in cleaned
+    assert "| token | keep this table inside code |" in cleaned
+    assert "remove this support quote" not in cleaned
+
+
+def test_clean_answer_format_rewrites_wide_api_parameter_table() -> None:
+    raw = """Parameters:
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| chat_id | integer or string | yes | Unique identifier for the target chat or username of the target channel. |
+| text | string | yes | Text of the message to send after entities are parsed. |"""
+
+    cleaned = clean_answer_format(raw)
+
+    assert "| Parameter | Type | Required | Description |" not in cleaned
+    assert "- chat_id - Type: integer or string; Required: yes; Description: Unique identifier" in cleaned
+    assert "- text - Type: string; Required: yes; Description: Text of the message" in cleaned
+
+
+def test_clean_answer_format_keeps_short_markdown_table() -> None:
+    raw = """Small table:
+
+| Key | Value |
+| --- | --- |
+| mode | safe |"""
+
+    cleaned = clean_answer_format(raw)
+
+    assert "| Key | Value |" in cleaned
+    assert "| mode | safe |" in cleaned
+
+
+def test_clean_answer_format_keeps_normal_answer_unchanged() -> None:
+    raw = "Use the official API base URL and pass the token in the Authorization header."
+
+    cleaned = clean_answer_format(raw)
+
+    assert cleaned == raw

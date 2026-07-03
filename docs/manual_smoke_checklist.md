@@ -94,6 +94,7 @@ Run:
 Expected:
 
 - answer uses OpenRouter official docs;
+- answer does not show raw `Evidence:` labels or support quotes;
 - `/source_last` shows:
   - source type: `external_docs`
   - source: `official`
@@ -119,6 +120,7 @@ Expected:
   - `chat_id`
   - `text`
 - answer should not fall back to a broad Bot API overview page without `sendMessage`.
+- API parameter details should be readable in Telegram and should not depend on a wide markdown table rendering correctly.
 
 Status surfaces:
 
