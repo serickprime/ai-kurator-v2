@@ -7,6 +7,8 @@ Goal: keep the current system understandable and safe before adding more automat
 Tasks:
 
 - Add project control pack.
+- Add `docs/project_handoff_context.md` as the first-stop context for future agents.
+- Add `docs/prompting_playbook.md` for future task/prompt writing.
 - Keep project status in repository docs.
 - Keep manual smoke checklist current.
 - Avoid new activation until control docs are merged.
@@ -60,7 +62,7 @@ Not allowed:
 - replacing evidence with glossary content;
 - changing AnswerGenerator to guess without evidence.
 
-Status: implemented in branch `retrieval-query-quality-framework`; pending review and manual Telegram smoke.
+Status: merged in PR #20.
 
 ## Phase 4 — Glossary Candidate Discovery
 
@@ -91,6 +93,10 @@ Not allowed:
 - automatic application of unknown rules;
 - answer generation from glossary candidates;
 - crawl, sync, indexing, or activation from glossary discovery by itself.
+
+This phase should extend the retrieval/query quality layer for all future
+uploaded materials and official docs. It must not become a sequence of
+hardcoded one-question fixes.
 
 Status: future phase; not implemented in the current PR.
 

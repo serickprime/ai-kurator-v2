@@ -2,6 +2,14 @@
 
 These rules protect the project from uncontrolled growth and accidental regressions.
 
+## Project context rules
+
+- GitHub repository: `serickprime/ai-kurator-v2`.
+- Local path: `D:\Downloads\ai-kurator-v2`.
+- Before nontrivial work, read `docs/project_handoff_context.md`.
+- Before writing or changing prompts, read `docs/prompting_playbook.md`.
+- Do not rely on chat history as the only source of project state.
+
 ## Core RAG rules
 
 - Do not change RAG pipeline unless explicitly requested.
@@ -45,15 +53,24 @@ These rules protect the project from uncontrolled growth and accidental regressi
 ## Database and secrets rules
 
 - Do not change Supabase schema without explicit approval.
+- Start Supabase data/table lookup from `app/db/schema.sql`, `app/db/repositories.py`, and read-only scripts.
+- Do not delete Supabase data manually without checking code paths and getting explicit approval.
 - Do not touch `.env`.
 - Do not reveal secrets.
 - Do not print keys, tokens, or service role values.
+- Secrets are not stored in this repository.
 - Prefer fake services in tests.
 
 ## Workflow rules
 
 - One branch = one meaningful block.
 - Keep PRs small.
+- Start work from fresh `main` unless the user gives a different branch.
+- Push feature branches only after requested checks pass.
+- Open PRs only when requested.
+- Do not merge PRs unless explicitly requested.
+- Merge only when CI is green and the PR is clean/mergeable.
+- Prefer squash merge when the user asks to merge.
 - Do not start the next roadmap item without explicit instruction.
 - Every completed project block must update docs/project_status.md.
 - Manual smoke checks should be recorded or summarized before moving to the next risky block.

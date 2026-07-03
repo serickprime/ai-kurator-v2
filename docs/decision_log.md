@@ -82,3 +82,28 @@ Boundaries:
 Principle: do not fix one question with one-off code. Improve retrieval quality for a class of questions and keep regression tests for that class.
 
 Status visibility: quality surfaces should show the reason for `WARN` or `FAIL`, not only the raw status label.
+
+## Project handoff context is required before nontrivial work
+
+Decision: agents must read `docs/project_handoff_context.md` before nontrivial
+work.
+
+Reason: project direction, GitHub repository, local path, Supabase lookup rules,
+git/PR workflow, connected docs state, and forbidden actions must be available
+from repository files without relying on chat history.
+
+## Prompting playbook is required before prompt work
+
+Decision: agents must read `docs/prompting_playbook.md` before writing or
+changing prompts.
+
+Reason: prompts should consistently include scope, guardrails, checks, git
+workflow, final report requirements, and the retrieval/query quality principle.
+
+## Secrets do not belong in the repository
+
+Decision: real secrets, local credentials, `.env`, service role keys, GitHub
+PATs, Telegram bot tokens, and logs with secrets must not be committed.
+
+Reason: the bot uses privileged server-side keys and Telegram tokens. The repo
+must contain only placeholders and safe examples.
