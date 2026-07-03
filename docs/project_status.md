@@ -4,7 +4,7 @@
 
 Current main after the latest completed merge:
 
-- `f08bed0 Add retrieval query quality framework (#20)`
+- `aa7fde5 Add project handoff context (#21)`
 
 ## Current project state
 
@@ -34,6 +34,10 @@ Core state:
 - Telegram Bot API docs were activated manually by owner/admin through `/docs_activate_ready confirm`.
 - Telegram Bot API docs are indexed as official `external_docs`.
 - Retrieval Query Quality Framework is merged and uses a generic seed glossary for retrieval-only query enrichment.
+- Project handoff context docs are merged into `main`.
+- `docs/project_handoff_context.md` and `docs/prompting_playbook.md` are available in `main`.
+- Final reports require a `Recommended next prompt` block with rationale, guardrails, and a copy-paste prompt.
+- Handoff sanity check passed: a new agent can restore project context from repository docs without chat history.
 
 ## Completed PRs
 
@@ -58,10 +62,11 @@ Core state:
 - PR #19 — Docs Activation Queue.
 
 - PR #20 - Retrieval Query Quality Framework.
+- PR #21 - Project handoff context and prompting playbook.
 
-## Current branch block
+## Latest completed project block
 
-Project handoff context implemented in branch `project-handoff-context`:
+Project handoff context was merged in PR #21:
 
 - `docs/project_handoff_context.md` is the first-stop context for future agents;
 - `docs/prompting_playbook.md` defines how future prompts should describe scope, guardrails, checks, and reports;
@@ -80,12 +85,11 @@ Project handoff context implemented in branch `project-handoff-context`:
 
 ## Current focus
 
-Review and merge project handoff context docs.
+Project handoff docs are in `main`. No next roadmap item is in progress.
 
 ## Next recommended
 
-- open a PR for `project-handoff-context`;
-- after merge, use `docs/project_handoff_context.md` before nontrivial work;
+- keep using `docs/project_handoff_context.md` before nontrivial work;
 - use `docs/prompting_playbook.md` before writing new prompts;
 - keep building retrieval/query quality as a general layer, not as one-off fixes;
 - keep the Retrieval Query Quality smoke below as a regression check for PR #20.
