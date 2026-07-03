@@ -9,7 +9,13 @@ reading chat history.
 - GitHub repository: `serickprime/ai-kurator-v2`
 - Local path: `D:\Downloads\ai-kurator-v2`
 - Default branch: `main`
-- Current main after PR #21: `aa7fde5 Add project handoff context (#21)`
+- Latest recorded baseline: PR #22 merged project handoff/status docs into
+  `main`.
+- Reference commit: `8eac6a5 update project status after handoff merge (#22)`.
+
+The reference commit is not an automatic latest-main pointer. Check exact
+current `main` with `git log --oneline -5`, `git status -sb`, or GitHub when a
+task depends on the latest commit.
 
 ## What This Bot Is
 
