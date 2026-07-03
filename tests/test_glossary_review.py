@@ -1,3 +1,4 @@
+from difflib import unified_diff
 from pathlib import Path
 
 import pytest
@@ -162,6 +163,70 @@ def test_apply_reviewed_writes_output_file_without_changing_config_by_default(tm
     assert any("sendPhoto" in rule.exact_terms for service in loaded.services for rule in service.rules)
 
 
+def test_apply_reviewed_output_preserves_existing_glossary_shape(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "query_glossary.yaml"
+    original = _existing_glossary_with_header_and_unrelated_text()
+    config_path.write_text(original, encoding="utf-8")
+    review = _review_with(
+        _review_candidate(
+            "approved-1",
+            owner_decision="approved",
+            exact_terms=("sendPhoto",),
+            config_terms=("caption",),
+        ),
+        _review_candidate(
+            "edited-1",
+            service_id="n8n",
+            source_id="n8n_docs",
+            owner_decision="edited",
+            edited_terms=("Webhook Response node", "response_code"),
+        ),
+        _review_candidate("rejected-1", owner_decision="rejected", exact_terms=("setChatMenuButton",)),
+        _review_candidate("pending-1", service_id="n8n", owner_decision="pending", exact_terms=("Execute Workflow node",)),
+    )
+
+    plan, written = apply_reviewed_candidates(
+        review=review,
+        config_path=config_path,
+        output_path=Path("tmp/query_glossary.reviewed.yaml"),
+    )
+
+    assert plan.approved == 1
+    assert plan.edited == 1
+    assert plan.rejected == 1
+    assert plan.pending_skipped == 1
+    assert written is not None
+    output = written.read_text(encoding="utf-8")
+    assert config_path.read_text(encoding="utf-8") == original
+    assert "# Keep this header comment." in output
+    assert "    - telegram bot api\n" in output
+    assert "        - webhook\n      exact_terms:\n        - Webhook node\n" in output
+    assert "sendPhoto" in output
+    assert "Webhook Response node" in output
+    assert "setChatMenuButton" not in output
+    assert "Execute Workflow node" not in output
+
+    diff_lines = list(unified_diff(original.splitlines(), output.splitlines(), lineterm=""))
+    removed = [line for line in diff_lines if line.startswith("-") and not line.startswith("---")]
+    added = [line[1:] for line in diff_lines if line.startswith("+") and not line.startswith("+++")]
+    assert removed == []
+    assert set(added) <= {
+        "    - phrases:",
+        "        - send a message",
+        "      exact_terms:",
+        "        - sendPhoto",
+        "      config_terms:",
+        "        - caption",
+        "        - Webhook Response node",
+        "        - response_code",
+    }
+
+    loaded = load_query_glossary_config(written)
+    assert any("sendPhoto" in rule.exact_terms for service in loaded.services for rule in service.rules)
+    assert any("Webhook Response node" in rule.exact_terms for service in loaded.services for rule in service.rules)
+
+
 def test_direct_write_requires_both_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     config_path = tmp_path / "query_glossary.yaml"
@@ -276,4 +341,35 @@ def _existing_glossary_text() -> str:
         - sendMessage
       config_terms:
         - chat_id
+"""
+
+
+def _existing_glossary_with_header_and_unrelated_text() -> str:
+    return """# Seed glossary for retrieval-only query enrichment.
+# Keep this header comment.
+
+telegram_bot_api:
+  display_name: Telegram Bot API
+  aliases:
+    - Telegram Bot API
+    - telegram bot api
+  rules:
+    - phrases:
+        - send a message
+      exact_terms:
+        - sendMessage
+      config_terms:
+        - chat_id
+
+n8n:
+  display_name: n8n
+  aliases:
+    - n8n
+  rules:
+    - phrases:
+        - webhook
+      exact_terms:
+        - Webhook node
+      config_terms:
+        - production URL
 """
