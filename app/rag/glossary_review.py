@@ -433,14 +433,54 @@ def apply_reviewed_candidates(
     if not plan.has_changes:
         return plan, None
 
-    merged = reviewed_glossary_config(existing, plan)
-    text = dump_query_glossary_config(merged)
+    original_text = config_path.read_text(encoding="utf-8")
+    text = _append_apply_plan_to_glossary_text(original_text, existing, plan)
     target = config_path if write_config else Path(output_path or DEFAULT_REVIEWED_GLOSSARY_OUTPUT)
     if not write_config:
         target = _safe_generated_output_path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
     return plan, target
+
+
+def _append_apply_plan_to_glossary_text(
+    original_text: str,
+    existing_glossary: QueryGlossaryConfig,
+    plan: ApplyPlan,
+) -> str:
+    """Append reviewed rules while preserving existing glossary text."""
+    lines = original_text.splitlines()
+    spans = _top_level_service_spans(lines)
+    existing_service_ids = {service.service_id for service in existing_glossary.services}
+    items_by_service: dict[str, list[ApplyItem]] = {}
+    service_order: list[str] = []
+    for item in plan.items:
+        items_by_service.setdefault(item.service_id, []).append(item)
+        if item.service_id not in service_order:
+            service_order.append(item.service_id)
+
+    existing_to_insert = [service_id for service_id in service_order if service_id in existing_service_ids]
+    for service_id in sorted(existing_to_insert, key=lambda value: spans.get(value, (10**9, 10**9))[0], reverse=True):
+        if service_id not in spans:
+            raise GlossaryReviewError(f"Cannot find service section in query glossary: {service_id}")
+        start, end = spans[service_id]
+        _require_rules_section(lines, service_id=service_id, start=start, end=end)
+        insert_at = _service_rule_insert_index(lines, start=start, end=end)
+        block = _rule_block_lines(items_by_service[service_id])
+        lines[insert_at:insert_at] = block
+
+    new_service_ids = [service_id for service_id in service_order if service_id not in existing_service_ids]
+    if new_service_ids:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines:
+            lines.append("")
+        for index, service_id in enumerate(new_service_ids):
+            lines.extend(_new_service_block_lines(service_id, items_by_service[service_id]))
+            if index < len(new_service_ids) - 1:
+                lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _review_candidate_from_mapping(row: Any, *, index: int) -> ReviewCandidate:
@@ -463,6 +503,87 @@ def _review_candidate_from_mapping(row: Any, *, index: int) -> ReviewCandidate:
         edited_terms=tuple(_as_list(row.get("edited_terms"))),
         allow_sensitive_apply=_as_bool(row.get("allow_sensitive_apply")),
     )
+
+
+def _top_level_service_spans(lines: Sequence[str]) -> dict[str, tuple[int, int]]:
+    starts: list[tuple[str, int]] = []
+    for index, line in enumerate(lines):
+        if line.startswith(" ") or not line.strip() or line.lstrip().startswith("#"):
+            continue
+        clean = line.split("#", 1)[0].strip()
+        if clean.endswith(":") and not clean.startswith("- "):
+            starts.append((clean[:-1].strip().casefold(), index))
+
+    spans: dict[str, tuple[int, int]] = {}
+    for index, (service_id, start) in enumerate(starts):
+        end = starts[index + 1][1] if index + 1 < len(starts) else len(lines)
+        spans[service_id] = (start, end)
+    return spans
+
+
+def _require_rules_section(lines: Sequence[str], *, service_id: str, start: int, end: int) -> None:
+    for line in lines[start + 1 : end]:
+        if re.match(r"^  rules:\s*(?:#.*)?$", line):
+            return
+    raise GlossaryReviewError(f"Cannot safely insert reviewed rules: service {service_id} has no rules section.")
+
+
+def _service_rule_insert_index(lines: Sequence[str], *, start: int, end: int) -> int:
+    insert_at = end
+    while insert_at > start and not lines[insert_at - 1].strip():
+        insert_at -= 1
+    return insert_at
+
+
+def _rule_block_lines(items: Sequence[ApplyItem]) -> list[str]:
+    lines: list[str] = []
+    for item in items:
+        lines.extend(_single_rule_lines(item))
+    return lines
+
+
+def _single_rule_lines(item: ApplyItem) -> list[str]:
+    if not item.exact_terms and not item.config_terms:
+        raise GlossaryReviewError(f"Candidate {item.candidate_id}: reviewed rule has no terms.")
+    lines = ["    - phrases:"]
+    lines.extend(_glossary_list_lines(item.phrases, indent=8))
+    if item.exact_terms:
+        lines.append("      exact_terms:")
+        lines.extend(_glossary_list_lines(item.exact_terms, indent=8))
+    if item.config_terms:
+        lines.append("      config_terms:")
+        lines.extend(_glossary_list_lines(item.config_terms, indent=8))
+    return lines
+
+
+def _new_service_block_lines(service_id: str, items: Sequence[ApplyItem]) -> list[str]:
+    return [
+        f"{service_id}:",
+        f"  display_name: {_display_name(service_id)}",
+        "  aliases:",
+        f"    - {service_id}",
+        "  rules:",
+        *_rule_block_lines(items),
+    ]
+
+
+def _glossary_list_lines(items: Sequence[str], *, indent: int) -> list[str]:
+    prefix = " " * indent
+    values: list[str] = []
+    for item in items:
+        clean = _glossary_scalar(item)
+        if clean:
+            values.append(clean)
+    if not values:
+        raise GlossaryReviewError("Reviewed glossary rule cannot contain an empty list.")
+    return [f"{prefix}- {value}" for value in values]
+
+
+def _glossary_scalar(value: object) -> str:
+    clean = _clean_term(value)
+    if "\n" in str(value or "") or "\r" in str(value or "") or "#" in clean:
+        raise GlossaryReviewError("Cannot safely write glossary value with unsupported characters.")
+    return clean
 
 
 def _parse_review_yaml(text: str) -> dict[str, Any]:
