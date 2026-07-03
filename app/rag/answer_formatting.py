@@ -21,6 +21,13 @@ INLINE_SUMMARY_HEADING_LABELS = {
     "вывод",
 }
 
+EVIDENCE_LABEL_PATTERN = r"(?:accepted\s+evidence|supporting\s+evidence|evidence\s+quote|evidence)"
+EVIDENCE_QUOTED_FRAGMENT_RE = re.compile(
+    rf"\s*(?:\(\s*)?{EVIDENCE_LABEL_PATTERN}\s*:\s*(?:[\"'“«].*?[\"'”»])\s*\)?",
+    flags=re.IGNORECASE,
+)
+EVIDENCE_TRAILING_FRAGMENT_RE = re.compile(rf"\s*(?:\(\s*)?{EVIDENCE_LABEL_PATTERN}\s*:\s+.*$", flags=re.IGNORECASE)
+
 
 def clean_answer_format(text: str) -> str:
     """Remove broken list/reference fragments while preserving useful content."""
@@ -56,12 +63,20 @@ def _split_fenced_code(text: str) -> list[tuple[str, str]]:
 
 def _clean_text_block(text: str) -> str:
     raw_lines = [line.rstrip() for line in _normalize_text(text).splitlines()]
+    raw_lines = _rewrite_wide_markdown_tables(raw_lines)
     lines: list[str] = []
     index = 0
     while index < len(raw_lines):
         line = raw_lines[index].strip()
         if not line:
             lines.append("")
+            index += 1
+            continue
+        if _is_evidence_artifact_line(line):
+            index += 1
+            continue
+        line = _strip_inline_evidence_artifacts(line)
+        if not line:
             index += 1
             continue
         if _is_empty_numbered_item(line) or _is_orphan_reference(line):
@@ -89,6 +104,95 @@ def _normalize_text(text: str) -> str:
     normalized = re.sub(r"\(\s*см\.\s*\n\s*раздел\s+([^)]+)\)\.?", r"", normalized, flags=re.IGNORECASE)
     normalized = re.sub(r"\(\s*see\s*\n\s*section\s+([^)]+)\)\.?", r"", normalized, flags=re.IGNORECASE)
     return normalized
+
+
+def _is_evidence_artifact_line(line: str) -> bool:
+    clean = re.sub(r"^(?:[-*]\s+|\d+[\.)]\s+)", "", line.strip())
+    return bool(re.match(rf"^{EVIDENCE_LABEL_PATTERN}\s*:", clean, flags=re.IGNORECASE))
+
+
+def _strip_inline_evidence_artifacts(line: str) -> str:
+    cleaned = EVIDENCE_QUOTED_FRAGMENT_RE.sub("", line)
+    cleaned = EVIDENCE_TRAILING_FRAGMENT_RE.sub("", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned)
+    cleaned = cleaned.strip()
+    if cleaned in {"-", "*"}:
+        return ""
+    return cleaned
+
+
+def _rewrite_wide_markdown_tables(lines: list[str]) -> list[str]:
+    result: list[str] = []
+    index = 0
+    while index < len(lines):
+        if _starts_markdown_table(lines, index):
+            end = index + 2
+            while end < len(lines) and _is_table_line(lines[end]):
+                end += 1
+            block = lines[index:end]
+            converted = _convert_wide_markdown_table(block)
+            if converted is not None:
+                result.extend(converted)
+                index = end
+                continue
+        result.append(lines[index])
+        index += 1
+    return result
+
+
+def _starts_markdown_table(lines: list[str], index: int) -> bool:
+    return index + 2 < len(lines) and _is_table_line(lines[index]) and _is_separator_row(lines[index + 1])
+
+
+def _is_table_line(line: str) -> bool:
+    stripped = line.strip()
+    return bool(stripped) and stripped.count("|") >= 2
+
+
+def _is_separator_row(line: str) -> bool:
+    cells = _split_table_row(line)
+    return bool(cells) and all(re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in cells)
+
+
+def _split_table_row(line: str) -> list[str]:
+    stripped = line.strip()
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|"):
+        stripped = stripped[:-1]
+    return [cell.strip() for cell in stripped.split("|")]
+
+
+def _convert_wide_markdown_table(block: list[str]) -> list[str] | None:
+    headers = _split_table_row(block[0])
+    rows = [_split_table_row(line) for line in block[2:] if _is_table_line(line) and not _is_separator_row(line)]
+    rows = [row for row in rows if any(cell.strip() for cell in row)]
+    if not headers or not rows or not _should_convert_table(block, headers, rows):
+        return None
+
+    return [_format_table_row_as_list_item(headers, row) for row in rows]
+
+
+def _should_convert_table(block: list[str], headers: list[str], rows: list[list[str]]) -> bool:
+    max_line_length = max((len(line.strip()) for line in block), default=0)
+    max_cell_length = max((len(cell.strip()) for row in rows for cell in row), default=0)
+    return max_line_length > 88 or len(headers) >= 4 or max_cell_length > 42
+
+
+def _format_table_row_as_list_item(headers: list[str], row: list[str]) -> str:
+    cells = row + [""] * max(0, len(headers) - len(row))
+    label = (cells[0] or headers[0] or "Item").strip()
+    details: list[str] = []
+    for index, header in enumerate(headers[1:], start=1):
+        if index >= len(cells):
+            break
+        value = cells[index].strip()
+        if value:
+            details.append(f"{header.strip() or f'Column {index + 1}'}: {value}")
+    if not details:
+        return f"- {label}"
+    return f"- {label} - {'; '.join(details)}"
 
 
 def _is_empty_numbered_item(line: str) -> bool:

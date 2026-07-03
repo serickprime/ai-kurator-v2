@@ -47,6 +47,7 @@ Core state:
 - `docs/project_handoff_context.md` and `docs/prompting_playbook.md` are available in `main`.
 - Final reports require a `Recommended next prompt` block with rationale, guardrails, and a copy-paste prompt.
 - Handoff sanity check passed: a new agent can restore project context from repository docs without chat history.
+- Answer formatting postprocessing strips leaked `Evidence:` support artifacts and rewrites wide API parameter tables into Telegram-friendly lists.
 
 ## Completed PRs
 
@@ -73,6 +74,7 @@ Core state:
 - PR #20 - Retrieval Query Quality Framework.
 - PR #21 - Project handoff context and prompting playbook.
 - PR #22 - Project status update after handoff merge.
+- PR #23 - Stable project status baseline policy.
 
 ## Latest completed project block
 
