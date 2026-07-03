@@ -233,6 +233,24 @@ git log --oneline -5
 - Delete branches only when the user requested it or the merge command was
   explicitly asked to delete the remote branch.
 
+## Final Reports And Next Prompts
+
+Every Codex or agent final report should follow `docs/prompting_playbook.md`.
+It must include the branch, commit, changed files, checks, manual smoke notes,
+and confirmations that forbidden actions were not run.
+
+End every final report with `Recommended next prompt`:
+
+- what should be done next;
+- why it is the logical next step;
+- why the agent is not starting it automatically;
+- the guardrails that matter for that next step;
+- a copy-paste prompt the owner can send if they approve the next block.
+
+This is only a recommendation. Agents must not start the next roadmap item,
+open a PR, merge, activate docs, crawl, sync, index, reindex, migrate, or begin
+any other next block without an explicit owner command.
+
 ## Secrets Rules
 
 Secrets are not stored in the repository.
@@ -283,4 +301,3 @@ High-signal checks:
 - one unknown/out-of-base question
 
 Do not run activation confirm during smoke unless explicitly requested.
-

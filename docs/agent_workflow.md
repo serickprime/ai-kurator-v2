@@ -78,3 +78,21 @@ git diff -- . ":!*.env"
 Before push/PR, confirm no `.env`, local credentials, service role keys, GitHub
 PATs, Telegram bot tokens, or secret-bearing logs are staged or untracked for
 commit.
+
+## Final report
+
+Every final report must include the fields defined in
+`docs/prompting_playbook.md`, including branch, commit, changed files, checks,
+manual smoke notes, and confirmations about forbidden actions.
+
+End every report with a `Recommended next prompt` block. This block must:
+
+- describe what should be done next;
+- explain why it is the logical next step;
+- explain why the agent is not starting it automatically;
+- list the important guardrails for that next step;
+- provide a ready-to-copy prompt.
+
+The recommended prompt is only a recommendation. Do not start the next project
+block, roadmap item, PR, merge, activation, crawl, sync, indexing, reindex, or
+migration unless the owner explicitly requests that action.

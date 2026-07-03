@@ -65,6 +65,9 @@ Project handoff context implemented in branch `project-handoff-context`:
 
 - `docs/project_handoff_context.md` is the first-stop context for future agents;
 - `docs/prompting_playbook.md` defines how future prompts should describe scope, guardrails, checks, and reports;
+- final reports now require a `Recommended next prompt` block with rationale,
+  guardrails, and a copy-paste prompt, while making clear that the next block
+  must not start without explicit owner instruction;
 - project identity is documented:
   - GitHub repository: `serickprime/ai-kurator-v2`;
   - local path: `D:\Downloads\ai-kurator-v2`;

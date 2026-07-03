@@ -19,6 +19,11 @@ Every substantial prompt should include:
 - commit, push, and PR instructions;
 - final report fields.
 
+Every prompt that asks an agent to report results should also require a
+`Recommended next prompt` block at the end of the final answer. The block is a
+recommendation only; it must not authorize the agent to start the next project
+block without an explicit owner command.
+
 ## Required Guardrails
 
 Include the relevant guardrails directly in the task prompt:
@@ -112,18 +117,91 @@ Important:
 - Secrets were not added to the repository.
 ```
 
+## Recommended Next Prompt Block
+
+Every final report from Codex or another agent must end with a block named
+`Recommended next prompt`.
+
+The block must include:
+
+- what should be done next;
+- why that is the logical next step;
+- why the agent is not starting it automatically;
+- which guardrails matter for that next step;
+- a ready-to-copy prompt for the owner to use if they approve the next block.
+
+Use this format:
+
+````markdown
+## Recommended next prompt
+
+Why this is the next step:
+<short explanation>
+
+Why I am not starting it:
+<short explanation, such as: owner review, manual smoke, merge PR, or explicit confirmation is required>
+
+Copy-paste prompt:
+
+```text
+Ты работаешь в проекте:
+
+D:\Downloads\ai-kurator-v2
+
+GitHub repository:
+
+serickprime/ai-kurator-v2
+
+Контекст
+
+...
+
+Цель
+
+...
+
+Важно
+
+...
+
+Шаги
+
+...
+
+Проверки
+
+...
+
+Ответ
+
+...
+```
+````
+
+The copy-paste prompt must repeat relevant guardrails instead of relying on
+chat history. It should be specific enough for the next agent to work safely,
+but it must not ask the agent to begin any later roadmap item unless the owner
+has explicitly chosen that next step.
+
 ## Final Report Template
 
 Ask for a final answer that includes:
 
-- branch used;
+- branch;
+- commit;
+- what changed;
 - files changed;
-- checks passed;
+- tests added;
+- compileall status;
 - pytest count;
-- runtime_healthcheck status;
+- `scripts/check_tracked_secrets.py` status;
+- `scripts/runtime_healthcheck.py` status;
+- what was not touched;
+- what to check manually;
 - whether working tree is clean;
 - confirmation that `.env` and secrets were not touched;
 - confirmation that activation/crawl/sync/indexing/reindex were not run;
 - confirmation that Supabase schema/migrations were not run;
-- next manual smoke step, if useful.
-
+- `Recommended next prompt`;
+- why that prompt is the next logical step;
+- why the agent is not starting it automatically.
