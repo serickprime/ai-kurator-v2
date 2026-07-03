@@ -202,6 +202,90 @@ def test_active_candidate_docs_are_indexed_even_when_quality_warn(monkeypatch) -
     assert statuses[0].quality_status in {"WARN", "PASS"}
 
 
+def test_active_candidate_docs_include_quality_failure_reason(monkeypatch) -> None:
+    candidate = DocsSourceCandidate(
+        service_id="telegram_bot_api",
+        display_name="Telegram Bot API",
+        aliases=("telegram bot api",),
+        docs_source="telegram_bot_api_docs",
+        official_start_urls=("https://core.telegram.org/bots/api",),
+        allowed_domains=("core.telegram.org",),
+        allow_patterns=(r"^https://core\.telegram\.org/bots/api",),
+        deny_patterns=("/login",),
+        max_pages=25,
+        crawl_depth=2,
+        risk_level="low",
+        notes="test",
+    )
+    monkeypatch.setattr(
+        "app.service_registry.provider.load_docs_source_candidates_config",
+        lambda: SimpleNamespace(candidates=(candidate,)),
+    )
+
+    statuses = _active_candidate_statuses(
+        existing_statuses=(),
+        documents=[
+            {
+                "id": "telegram-doc",
+                "filename": "telegram.html",
+                "document_key": "https://core.telegram.org/bots/api",
+                "title": "Telegram Bot API",
+                "status": "active",
+                "metadata": {"source_name": "telegram_bot_api_docs"},
+            }
+        ],
+        chunks=[
+            _chunk(
+                "telegram-doc",
+                "The sendMessage method sends text messages. Parameters include chat_id and text.",
+            )
+        ],
+    )
+
+    assert statuses[0].service_id == "telegram_bot_api"
+    assert statuses[0].quality_status == "FAIL"
+    assert "quality gate returned FAIL" in statuses[0].notes
+    assert "active docs without source_url/canonical_url" in statuses[0].notes
+
+
+def test_service_docs_status_includes_quality_failure_reason() -> None:
+    services = (
+        ServiceDefinition(
+            service_id="telegram_bot_api",
+            display_name="Telegram Bot API",
+            aliases=("telegram bot api",),
+            docs_source="telegram_bot_api_docs",
+            status="enabled",
+        ),
+    )
+
+    statuses = build_service_docs_statuses(
+        services=services,
+        configured_docs_sources=("telegram_bot_api_docs",),
+        documents=[
+            {
+                "id": "telegram-doc",
+                "filename": "telegram.html",
+                "document_key": "https://core.telegram.org/bots/api",
+                "title": "Telegram Bot API",
+                "status": "active",
+                "metadata": {"source_name": "telegram_bot_api_docs"},
+            }
+        ],
+        chunks=[
+            _chunk(
+                "telegram-doc",
+                "The sendMessage method sends text messages. Parameters include chat_id and text.",
+            )
+        ],
+    )
+
+    assert statuses[0].docs_status == "needs_review"
+    assert statuses[0].quality_status == "FAIL"
+    assert "quality gate returned FAIL" in statuses[0].notes
+    assert "active docs without source_url/canonical_url" in statuses[0].notes
+
+
 def _doc(document_id: str, source_name: str) -> dict[str, object]:
     return {
         "id": document_id,

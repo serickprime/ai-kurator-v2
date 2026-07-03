@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from app.external_docs.policy import freshness_required as external_docs_freshness_required
 from app.rag.course_resolver import CourseHintResolver
+from app.rag.query_enrichment import QueryEnricher
 from app.rag.term_scoring import exact_terms as extract_exact_terms
 from app.rag.term_scoring import guess_term_type
 from app.rag.types import ContentType, QueryFacet, QueryPlan, QuestionAnalysis
@@ -404,7 +405,6 @@ _CONTENT_TYPE_MARKERS: dict[ContentType, tuple[str, ...]] = {
     ),
 }
 
-
 class QuestionAnalyzer:
     """Extract compact routing signals from a user question."""
 
@@ -454,7 +454,10 @@ def analyze_question(
     requested_action = _requested_action(task_type, lowered)
     generic_terms = tuple(_generic_terms(tokens))
     exact_terms = tuple(extract_exact_terms(combined))
+    query_enrichment = QueryEnricher.default().enrich(combined)
+    exact_terms = tuple(_dedupe([*exact_terms, *query_enrichment.exact_terms], limit=16))
     config_terms = tuple(term for term in exact_terms if guess_term_type(term) in {"config", "identifier", "function", "path_or_parameter", "endpoint_or_address"})
+    config_terms = tuple(_dedupe([*config_terms, *query_enrichment.config_terms], limit=16))
     object_terms = tuple(_object_terms(tokens, requested_action=requested_action, generic_terms=generic_terms))
     primary_object = object_terms[0] if object_terms else ""
     requested_attribute = _requested_attribute(lowered, object_terms)
@@ -482,6 +485,7 @@ def analyze_question(
         generic_terms=generic_terms,
         exact_terms=exact_terms,
         config_terms=config_terms,
+        extra_facets=query_enrichment.facets,
     )
     keywords = tuple(_dedupe([facet.text for facet in facets] + list(tokens), limit=16))
     constraints = tuple(facet.text for facet in facets if facet.role == "constraint")
@@ -624,8 +628,10 @@ def _build_facets(
     generic_terms: tuple[str, ...],
     exact_terms: tuple[str, ...],
     config_terms: tuple[str, ...],
+    extra_facets: tuple[QueryFacet, ...] = (),
 ) -> list[QueryFacet]:
     facets: list[QueryFacet] = []
+    facets.extend(extra_facets)
     platform_terms = [token for token in tokens if _is_platform_like(token)]
     facets.extend(QueryFacet("platform", token, 1.0) for token in platform_terms)
 

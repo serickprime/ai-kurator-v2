@@ -10,6 +10,17 @@ These rules protect the project from uncontrolled growth and accidental regressi
 - Answers must remain evidence-first.
 - Sources must come from accepted evidence.
 - Do not include raw candidate chunks directly in final answer generation.
+- Do not fix one user question with one-off Python logic; improve a general retrieval/evidence mechanism.
+
+## Query quality and glossary rules
+
+- `config/query_glossary.yaml` is an extensible seed glossary, not a final topic catalog.
+- Query glossary entries are retrieval anchors only; they are not answers and not evidence.
+- New services, uploaded-material topics, course topics, and official-doc anchors should be added through config or reviewed glossary candidates.
+- Do not hardcode per-service or per-question query enrichment rules in Python.
+- Query enrichment must preserve the original user question.
+- Query enrichment must not change AnswerGenerator, replace evidence, or bypass evidence-first source flow.
+- Automatic glossary candidate discovery may suggest rules, but owner/admin approval is required before applying them.
 
 ## External docs rules
 

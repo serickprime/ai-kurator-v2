@@ -10,7 +10,12 @@ from app.docs_registry.candidates import load_docs_source_candidates_config
 from app.external_docs.config import DEFAULT_EXTERNAL_DOCS_CONFIG, load_external_docs_config
 from app.external_docs.validation import validate_external_docs
 from app.service_registry.config import DEFAULT_SERVICE_REGISTRY_CONFIG, load_service_registry_config
-from app.service_registry.status import build_service_docs_statuses, count_service_mentions, count_service_metadata
+from app.service_registry.status import (
+    build_service_docs_statuses,
+    count_service_mentions,
+    count_service_metadata,
+    quality_report_notes,
+)
 from app.service_registry.types import ServiceDefinition, ServiceDocsStatus
 
 
@@ -183,11 +188,11 @@ def _active_candidate_statuses(
             continue
         active_doc_ids = {str(row.get("id") or "") for row in active_docs}
         active_chunks = [row for row in chunks if str(row.get("document_id") or "") in active_doc_ids]
-        quality = validate_external_docs(
+        quality_report = validate_external_docs(
             source_name=candidate.docs_source,
             documents=documents,
             chunks=chunks,
-        ).quality
+        )
         result.append(
             ServiceDocsStatus(
                 service_id=candidate.service_id,
@@ -198,9 +203,9 @@ def _active_candidate_statuses(
                 docs_status="indexed",
                 active_docs_count=len(active_docs),
                 active_chunks_count=len(active_chunks),
-                quality_status=quality,
+                quality_status=quality_report.quality,
                 docs_source_configured=False,
-                notes=("active candidate docs source",),
+                notes=("active candidate docs source", *quality_report_notes(quality_report)),
             )
         )
     return tuple(result)

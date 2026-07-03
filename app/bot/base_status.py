@@ -36,6 +36,7 @@ class ExternalSourceStatus:
     active_docs_count: int = 0
     active_chunks_count: int = 0
     quality_status: str = "none"
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -127,7 +128,7 @@ def format_base_status(status: BaseStatus) -> str:
     ]
     if status.external_sources:
         for source in status.external_sources[:10]:
-            quality = source.quality_status if source.quality_status not in {"", "none"} else "нет данных"
+            quality = _quality_phrase(source.quality_status, source.notes)
             lines.append(f"{source.source_name} — {source.active_docs_count} docs, {quality}")
     else:
         lines.append("нет данных")
@@ -184,6 +185,7 @@ def _external_sources_from_services(statuses: tuple[ServiceDocsStatus, ...]) -> 
             active_docs_count=int(status.active_docs_count or 0),
             active_chunks_count=int(status.active_chunks_count or 0),
             quality_status=str(status.quality_status or "none"),
+            notes=tuple(status.notes),
         )
         if current is None or candidate.active_docs_count > current.active_docs_count:
             by_source[source_name] = candidate
@@ -215,7 +217,9 @@ def _document_label(row: dict[str, Any]) -> str:
 
 def _service_docs_phrase(status: ServiceDocsStatus) -> str:
     if status.docs_status == "indexed":
-        return "документация подключена"
+        quality = _quality_phrase(status.quality_status, status.notes, empty="")
+        suffix = f", {quality}" if quality else ""
+        return "документация подключена" + suffix
     if status.docs_status == "not_configured":
         return "документация не подключена"
     if status.docs_status == "configured_not_indexed":
@@ -223,6 +227,29 @@ def _service_docs_phrase(status: ServiceDocsStatus) -> str:
     if status.docs_status == "disabled":
         return "документация отключена"
     return "документация требует проверки"
+
+
+def _quality_phrase(quality: str, notes: tuple[str, ...], *, empty: str = "нет данных") -> str:
+    clean_quality = str(quality or "").strip()
+    if clean_quality in {"", "none"}:
+        return empty
+    reason = _first_quality_reason(notes)
+    if clean_quality in {"FAIL", "WARN"} and reason:
+        return f"{clean_quality}: {reason}"
+    return clean_quality
+
+
+def _first_quality_reason(notes: tuple[str, ...]) -> str:
+    for note in notes:
+        clean = " ".join(str(note).split()).strip()
+        if not clean or clean.startswith("quality gate returned"):
+            continue
+        return clean
+    for note in notes:
+        clean = " ".join(str(note).split()).strip()
+        if clean:
+            return clean
+    return ""
 
 
 def _batches(items: list[str], size: int) -> list[list[str]]:

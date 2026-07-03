@@ -1,0 +1,115 @@
+# Seed glossary for retrieval-only query enrichment.
+#
+# This is a curated starting set, not a final list of all future topics.
+# Add new services, course topics, material domains, and official-docs anchors
+# here after review instead of hardcoding service rules in Python.
+#
+# Glossary entries are not answers. They only bridge natural user wording to
+# technical search anchors such as method names, node names, parameters,
+# endpoints, config keys, or RPC names. Final answers still require accepted
+# evidence from uploaded materials or official external docs.
+
+telegram_bot_api:
+  display_name: Telegram Bot API
+  aliases:
+    - Telegram Bot API
+    - telegram bot api
+    - telegram bots api
+    - bot api
+    - телеграм бот апи
+    - телеграм бот
+  rules:
+    - phrases:
+        - отправить сообщение
+        - отправка сообщения
+        - послать сообщение
+        - написать сообщение
+        - отправить текст
+        - сообщение в чат
+      exact_terms:
+        - sendMessage
+      config_terms:
+        - chat_id
+        - text
+    - phrases:
+        - вебхук
+        - webhook
+        - настроить вебхук
+      exact_terms:
+        - setWebhook
+      config_terms:
+        - webhook
+        - url
+
+openrouter:
+  display_name: OpenRouter
+  aliases:
+    - OpenRouter
+    - openrouter
+    - open router
+  rules:
+    - phrases:
+        - подключить openrouter
+        - api ключ openrouter
+        - как подключить openrouter
+      exact_terms:
+        - API key
+      config_terms:
+        - base_url
+        - Authorization
+        - Bearer
+    - phrases:
+        - выбрать модель
+        - список моделей
+      exact_terms:
+        - models
+      config_terms:
+        - model routing
+        - endpoints
+
+n8n:
+  display_name: n8n
+  aliases:
+    - n8n
+    - н8н
+    - нейтн
+  rules:
+    - phrases:
+        - http запрос
+        - запрос к api
+        - запрос к апи
+        - отправить запрос
+      exact_terms:
+        - HTTP Request node
+      config_terms:
+        - method
+        - headers
+        - body
+    - phrases:
+        - вебхук
+        - webhook
+        - принять запрос
+      exact_terms:
+        - Webhook node
+      config_terms:
+        - production URL
+        - test URL
+
+supabase:
+  display_name: Supabase
+  aliases:
+    - Supabase
+    - supabase
+    - супабейс
+    - супабейз
+  rules:
+    - phrases:
+        - векторная база
+        - векторный поиск
+        - поиск по документам
+      exact_terms:
+        - pgvector
+        - match_documents
+      config_terms:
+        - embeddings
+        - similarity search

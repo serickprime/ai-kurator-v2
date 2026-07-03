@@ -122,6 +122,33 @@ def test_base_status_format_contains_counts_external_services_and_recent_docs() 
     assert "- service_discovery_test" in text
 
 
+def test_base_status_format_explains_external_docs_quality_fail() -> None:
+    text = format_base_status(
+        BaseStatus(
+            external_sources=(
+                ExternalSourceStatus(
+                    "telegram_bot_api_docs",
+                    active_docs_count=11,
+                    quality_status="FAIL",
+                    notes=("quality gate returned FAIL", "required smoke query missing sendMessage"),
+                ),
+            ),
+            services=(
+                _service_status(
+                    "telegram_bot_api",
+                    "Telegram Bot API",
+                    "telegram_bot_api_docs",
+                    quality="FAIL",
+                    notes=("quality gate returned FAIL", "required smoke query missing sendMessage"),
+                ),
+            ),
+        )
+    )
+
+    assert "telegram_bot_api_docs — 11 docs, FAIL: required smoke query missing sendMessage" in text
+    assert "Telegram Bot API — документация подключена, FAIL: required smoke query missing sendMessage" in text
+
+
 def test_base_status_format_does_not_show_json_or_dict_repr() -> None:
     text = format_base_status(BaseStatus(active_documents_count=1, recent_documents=(RecentDocument("lesson"),)))
 
@@ -193,6 +220,7 @@ def _service_status(
     active_chunks: int = 1,
     quality: str = "PASS",
     docs_status: str = "indexed",
+    notes: tuple[str, ...] = (),
 ) -> ServiceDocsStatus:
     return ServiceDocsStatus(
         service_id=service_id,
@@ -205,6 +233,7 @@ def _service_status(
         active_chunks_count=active_chunks,
         quality_status=quality,
         docs_source_configured=bool(docs_source),
+        notes=notes,
     )
 
 

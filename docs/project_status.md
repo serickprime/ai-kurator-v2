@@ -4,7 +4,7 @@
 
 Current main after the latest completed merge:
 
-- `421a61f add project control pack (#18)`
+- `d101b74 Add docs activation queue (#19)`
 
 ## Current project state
 
@@ -30,6 +30,9 @@ Core state:
 - OpenRouter docs are indexed as official `external_docs`.
 - `/source_last` confirms OpenRouter as official external docs source after OpenRouter questions.
 - Project control docs are present in the repository.
+- Docs Activation Queue is merged.
+- Telegram Bot API docs were activated manually by owner/admin through `/docs_activate_ready confirm`.
+- Telegram Bot API docs are indexed as official `external_docs`.
 
 ## Completed PRs
 
@@ -51,41 +54,58 @@ Core state:
 - PR #16 — controlled OpenRouter docs activation flow.
 - PR #17 — Docs UI Wizard.
 - PR #18 — project control pack.
+- PR #19 — Docs Activation Queue.
 
 ## Current branch block
 
-Docs Activation Queue implemented in branch `docs-activation-queue`:
+Retrieval Query Quality Framework implemented in branch `retrieval-query-quality-framework`:
 
-- `app/docs_registry/queue.py`
-- `/docs_preview_all`
-- `/docs_ready`
-- `/docs_activate_ready`
-- `/docs_activate_ready confirm`
-- batch classification:
-  - ready
-  - needs_review
-  - failed
-  - already_connected
-- allowlist-based MVP activation:
-  - openrouter
-  - telegram_bot_api
-- safeguards:
-  - owner/admin only
-  - no arbitrary URLs
-  - no activation for needs_review
-  - no activation for failed
-  - no activation for already_connected
-  - callbacks do not run confirm
+- `app/rag/query_enrichment.py`;
+- `config/query_glossary.yaml`;
+- service-aware query enrichment from a curated glossary;
+- replaces the one-off Telegram Bot API enrichment with a generic glossary-driven mechanism;
+- bridges natural-language questions and technical documentation anchors;
+- `query_glossary.yaml` is an extensible seed glossary, not the final list of all topics;
+- current services are seed examples:
+  - Telegram Bot API send-message and webhook anchors;
+  - OpenRouter API key and model anchors;
+  - n8n HTTP Request and Webhook node anchors;
+  - Supabase vector search anchors;
+- designed for future uploaded materials, courses, service topics, and official docs;
+- new topics should be added by reviewed config updates or reviewed glossary candidates, not Python hardcoding;
+- original user question is preserved;
+- glossary never generates answers and never replaces evidence;
+- no reindex is needed because enrichment changes retrieval queries, not indexed chunks;
+- `/base_status`, `/docs`, and `/services` should show quality reasons instead of bare `FAIL` or `WARN`.
 
 ## Current focus
 
-Review and test Docs Activation Queue PR.
+Review and test Retrieval Query Quality Framework.
 
 ## Next recommended
 
-- manual Telegram smoke for queue;
-- inspect ready list;
-- only then decide whether to run `/docs_activate_ready confirm`.
+- manual Telegram smoke:
+  - `Новая тема`
+  - `как отправить сообщение через Telegram Bot API?`
+  - `/source_last`
+- verify the answer uses `telegram_bot_api_docs`;
+- verify accepted evidence includes `sendMessage`, `chat_id`, and `text`;
+- test n8n/OpenRouter/Supabase glossary cases from `docs/manual_smoke_checklist.md`;
+- verify `/base_status` and `/docs` do not show unexplained bare `FAIL`.
+
+## Retrieval quality principle
+
+Do not fix one user question with one-off code. If a natural-language question misses technical docs terms, improve a general retrieval/evidence mechanism and add regression tests for the class of questions.
+
+The knowledge base will keep growing with uploaded materials, courses, service docs, and official docs. Query quality should grow through reviewed glossary/config changes and future candidate discovery, not by adding service-specific `if` branches to Python.
+
+Future Glossary Candidate Discovery should:
+
+- analyze new uploaded materials and external docs;
+- extract candidate methods, parameters, node names, endpoints, and recurring technical terms;
+- group candidates by service/source;
+- suggest glossary updates to the owner/admin;
+- apply nothing automatically without owner/admin approval.
 
 ## Later roadmap
 
@@ -113,6 +133,7 @@ Maintenance:
 - n8n docs
 - Supabase docs
 - OpenRouter docs
+- Telegram Bot API docs
 
 ## Important reminder
 

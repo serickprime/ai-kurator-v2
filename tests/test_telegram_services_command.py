@@ -69,6 +69,39 @@ def test_services_command_shows_indexed_and_not_configured_services() -> None:
     assert provider.calls == [{"scan_corpus": True}]
 
 
+def test_services_command_explains_quality_fail() -> None:
+    provider = FakeStatusProvider(
+        (
+            ServiceDocsStatus(
+                service_id="telegram_bot_api",
+                display_name="Telegram Bot API",
+                aliases=("telegram bot api",),
+                docs_source="telegram_bot_api_docs",
+                configured_status="enabled",
+                docs_status="indexed",
+                active_docs_count=11,
+                active_chunks_count=1369,
+                detected_documents_count=1,
+                detected_chunks_count=3,
+                quality_status="FAIL",
+                notes=("quality gate returned FAIL", "required smoke query missing sendMessage"),
+                docs_source_configured=True,
+            ),
+        )
+    )
+    services = BotServices(service_docs_status_provider=provider)
+    message = FakeMessage()
+
+    asyncio.run(services_command(_update(message), _context(services)))
+
+    reply = message.replies[-1]
+    assert (
+        "Telegram Bot API — найден в базе, документация подключена, "
+        "FAIL: required smoke query missing sendMessage"
+    ) in reply
+    assert "{" not in reply
+
+
 def test_services_command_does_not_show_json_or_dict_repr() -> None:
     provider = FakeStatusProvider(
         (
