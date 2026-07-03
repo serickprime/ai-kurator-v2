@@ -100,6 +100,24 @@ Boundaries:
 - no AnswerGenerator, retrieval/router, or RAG pipeline changes;
 - no one-question hardcoded fixes.
 
+## Development workflow should stay streamlined
+
+Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops
+after every completed PR.
+
+Reason: branch, tests, PR review, CI, and explicit owner-controlled merge are
+enough for normal safety. Extra sanity loops and docs-only PRs are useful only
+when they unblock the next agent, fix misleading guardrails/status, record an
+architecture decision, or the owner explicitly asks.
+
+Boundaries:
+
+- PR merge still requires explicit owner command;
+- CI must be green and the PR must be clean/mergeable before merge;
+- manual smoke is for runtime or user-visible changes, not every docs-only PR;
+- backlog ideas stay outside the active branch unless the owner explicitly
+  allows a small directly related docs rule update.
+
 ## Project handoff context is required before nontrivial work
 
 Decision: agents must read `docs/project_handoff_context.md` before nontrivial

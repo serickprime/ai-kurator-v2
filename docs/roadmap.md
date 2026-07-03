@@ -1,5 +1,23 @@
 # Roadmap
 
+## Roadmap focus discipline
+
+Use one active roadmap focus at a time. The current focus is Phase 4A -
+Glossary Candidate Discovery read-only MVP. Until Phase 4A is merged, do not
+start Phase 4B, Supabase setup docs, MCP, docs health/stale refresh, or other
+unrelated tasks unless the owner explicitly changes focus.
+
+Backlog items should be recorded without being started in the active branch:
+
+- Supabase setup docs for a new developer;
+- Phase 4B owner/admin review/apply flow;
+- docs health/stale refresh;
+- long-running activation UX progress;
+- future MCP setup.
+
+If a new idea appears during an active branch, keep it as backlog or a
+recommended next prompt. Do not mix unrelated changes into the current PR.
+
 ## Phase 1 — Stabilize current Docs Registry
 
 Goal: keep the current system understandable and safe before adding more automation.

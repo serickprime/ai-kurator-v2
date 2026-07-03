@@ -98,18 +98,29 @@ Project handoff context was merged in PR #21:
 
 ## Current focus
 
-Project handoff/status docs are in `main`. No next roadmap item is in progress.
+Current active roadmap focus:
+
+- Phase 4A - Glossary Candidate Discovery read-only MVP.
+- Current branch: `glossary-candidate-discovery-readonly`.
+- Until Phase 4A is merged, do not start Phase 4B, Supabase setup docs, MCP,
+  docs health/stale refresh, or unrelated work unless the owner explicitly
+  changes focus.
+
 `docs/project_status.md` tracks project state and stable milestones, not an
-exact latest-main pointer after every technical docs merge.
+exact latest-main pointer after every technical docs merge. Do not create
+docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- keep using `docs/project_handoff_context.md` before nontrivial work;
-- use `docs/prompting_playbook.md` before writing new prompts;
-- keep building retrieval/query quality as a general layer, not as one-off fixes;
-- keep the Retrieval Query Quality smoke below as a regression check for PR #20.
+- open a PR for `glossary-candidate-discovery-readonly` after the branch is
+  ready and pushed;
+- check CI and mergeability after the PR is open;
+- merge only after explicit owner command;
+- do not run a separate sanity-check/docs loop by default after merge unless
+  there is a concrete conflict or user-visible runtime risk.
 
-- manual Telegram smoke:
+- optional retrieval-quality manual smoke when a future runtime/query enrichment
+  change needs it:
   - `Новая тема`
   - `как отправить сообщение через Telegram Bot API?`
   - `/source_last`
