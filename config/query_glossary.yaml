@@ -40,6 +40,15 @@ telegram_bot_api:
       config_terms:
         - webhook
         - url
+    - phrases:
+        - как отправить сообщение через Telegram Bot API
+      exact_terms:
+        - getFile
+        - MessageEntity
+      config_terms:
+        - parse_mode
+        - link_preview_options
+        - message_thread_id
 
 openrouter:
   display_name: OpenRouter
@@ -66,6 +75,12 @@ openrouter:
       config_terms:
         - model routing
         - endpoints
+    - phrases:
+        - как подключить OpenRouter API
+      exact_terms:
+        - /completions
+        - /chat/completions
+        - /api/v1/models
 
 n8n:
   display_name: n8n
