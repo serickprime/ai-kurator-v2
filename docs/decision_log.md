@@ -203,6 +203,28 @@ Boundaries:
 - OpenRouter WARN and Telegram Bot API FAIL remediation is a separate future
   owner-approved block.
 
+## Source quality remediation starts offline
+
+Decision: Phase 7A improves external docs cleaning and quality validation with
+local fixtures and tests before any live source reprocessing.
+
+Reason: OpenRouter WARN and Telegram Bot API FAIL are quality/cleaning issues,
+not staleness or connectivity issues. Code and validation behavior should be
+made safe first, then a separate owner-approved block can decide whether to
+refresh or reindex affected sources.
+
+Boundaries:
+
+- existing Supabase documents/chunks are not modified in Phase 7A;
+- no activation, crawl, sync, indexing, reindex, refresh, migrations, schema
+  changes, or Supabase writes are part of Phase 7A;
+- quality gate must still catch real page garbage and should not be weakened
+  just to turn statuses green;
+- useful endpoints, method names, parameters, code blocks, and safe inline HTML
+  examples must be preserved;
+- runtime health may continue to report existing OpenRouter WARN and Telegram
+  Bot API FAIL until a future owner-approved reprocessing block.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops

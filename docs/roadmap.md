@@ -2,15 +2,16 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 6B -
-owner/admin Telegram preview for Docs Source Health Report. Until Phase 6B is
-merged, do not start docs refresh/remediation, Supabase setup docs, MCP, or
-other unrelated tasks unless the owner explicitly changes focus.
+Use one active roadmap focus at a time. The current focus is Phase 7A -
+offline source-quality remediation for OpenRouter and Telegram Bot API. Until
+Phase 7A is merged, do not start real source reprocessing, docs
+refresh/indexing, Supabase setup docs, MCP, or other unrelated tasks unless
+the owner explicitly changes focus.
 
 Backlog items should be recorded without being started in the active branch:
 
 - Supabase setup docs for a new developer;
-- owner-approved OpenRouter WARN and Telegram Bot API FAIL remediation;
+- Phase 7B owner-approved reprocessing of affected docs sources;
 - explicit owner-approved docs refresh flow;
 - long-running activation UX progress;
 - future MCP setup.
@@ -205,6 +206,32 @@ Phase 6B owner/admin Telegram preview:
 - no automatic refresh, repair, activation, crawl, sync, indexing, reindex,
   status edit, Supabase write, migration, action callback, or normal RAG flow
   change.
+
+Status: Phase 6B is complete and merged in PR #33.
+
+## Phase 7 - Source quality remediation
+
+Goal: improve the quality of already connected official docs without turning
+health visibility into automatic refresh or indexing.
+
+Phase 7A offline cleaning/quality MVP:
+
+- improve external docs extraction/cleaning and quality validation using small
+  synthetic fixtures;
+- target the current OpenRouter generator-boilerplate WARN class and Telegram
+  Bot API raw HTML/navigation/footer/cookie FAIL class;
+- preserve useful endpoints, method names, parameter names, code blocks, model
+  names, headers, and safe inline HTML examples;
+- keep quality gate strict for real page garbage and readable about reasons;
+- do not crawl, refresh, sync, index, reindex, activate, write Supabase, run
+  migrations, change schema, or change normal RAG flow.
+
+Phase 7B future reprocessing:
+
+- run only after Phase 7A is merged and the owner explicitly approves exact
+  source reprocessing commands;
+- reprocess affected sources in an approved runtime environment;
+- verify docs health and answer quality after reprocessing.
 
 Later maintenance features:
 

@@ -18,6 +18,8 @@ RAW_HTML_RE = re.compile(
     r"|class=|data-[\w-]+=",
     re.IGNORECASE,
 )
+HTML_TAG_RE = re.compile(r"</?([A-Za-z][A-Za-z0-9:-]*)\b[^>]*>", re.IGNORECASE)
+HTML_ATTR_RE = re.compile(r"\s([A-Za-z_:][A-Za-z0-9_.:-]*)\s*=", re.IGNORECASE)
 PREVIOUS_NEXT_RE = re.compile(r"\bprevious\b.+\bnext\b", re.IGNORECASE)
 TOKEN_RE = re.compile(r"[A-Za-z0-9_#+./:-]{2,}", re.IGNORECASE)
 
@@ -58,6 +60,23 @@ ARCHIVED_ACTIVE_WARN_RATIO = 3.0
 VERY_SHORT_USEFUL_WORDS = 8
 MIN_USEFUL_WORDS = 5
 HUGE_CHUNK_CHARS = 12000
+SAFE_INLINE_HTML_TAGS = {
+    "a",
+    "b",
+    "blockquote",
+    "code",
+    "del",
+    "em",
+    "i",
+    "ins",
+    "pre",
+    "s",
+    "span",
+    "strike",
+    "strong",
+    "tg-spoiler",
+    "u",
+}
 
 
 @dataclass(frozen=True)
@@ -265,7 +284,10 @@ def _matching_chunks(
 
 
 def _has_raw_html(text: str) -> bool:
-    return bool(RAW_HTML_RE.search(without_fenced_code(text)))
+    prose = without_fenced_code(text)
+    if not RAW_HTML_RE.search(prose):
+        return False
+    return not _looks_like_safe_inline_html_example(prose)
 
 
 def _has_nav_footer_noise(text: str) -> bool:
@@ -279,6 +301,25 @@ def _has_nav_footer_noise(text: str) -> bool:
 def _has_generator_boilerplate(text: str) -> bool:
     lowered = text.casefold()
     return any(marker in lowered for marker in GENERATOR_MARKERS)
+
+
+def _looks_like_safe_inline_html_example(text: str) -> bool:
+    tags = [tag.casefold() for tag in HTML_TAG_RE.findall(text)]
+    if not tags:
+        return False
+    if any(tag not in SAFE_INLINE_HTML_TAGS for tag in tags):
+        return False
+    if re.search(r"\bdata-[\w-]+\s*=", text, flags=re.IGNORECASE):
+        return False
+    attrs = {attr.casefold() for attr in HTML_ATTR_RE.findall(text)}
+    if not attrs:
+        return True
+    allowed_attrs = {"href", "class"}
+    if attrs - allowed_attrs:
+        return False
+    if "class" in attrs and not re.search(r"class\s*=\s*([\"'])[^\"']*\btg-spoiler\b", text, flags=re.IGNORECASE):
+        return False
+    return True
 
 
 def _is_very_short(text: str) -> bool:

@@ -300,6 +300,30 @@ Expected:
 - command does not refresh, repair, activate, crawl, sync, index, reindex,
   edit docs status, run migrations, or write Supabase.
 
+## Source Quality Cleanup smoke
+
+Run after Phase 7A external docs cleaning/quality changes:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\test_external_docs_extractor.py tests\test_external_docs_validation.py -q
+.\.venv\Scripts\python.exe scripts\runtime_healthcheck.py
+```
+
+Expected:
+
+- generator/page-template boilerplate is removed from cleaned fixtures;
+- API endpoints, method names, parameters, headers, code blocks, and safe inline
+  HTML examples are preserved;
+- raw page HTML, navigation/footer, and cookie chrome fixtures are removed;
+- quality gate still fails truly dirty raw page HTML fixtures;
+- quality gate does not fail only because of useful fenced or safe inline HTML
+  examples;
+- runtime health may still show OpenRouter WARN and Telegram Bot API FAIL until
+  a separate owner-approved reprocessing block;
+- Supabase is not written to;
+- activation, crawl, sync, indexing, reindex, migrations, and direct docs status
+  edits are not run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:
