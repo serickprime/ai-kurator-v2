@@ -182,6 +182,27 @@ Boundaries:
   AnswerGenerator, retrieval/router, RAG pipeline, schema, or normal user flow
   changes are part of Phase 6A.
 
+## Docs health Telegram preview is owner/admin-only
+
+Decision: Phase 6B exposes the Phase 6A docs health report through an explicit
+owner/admin Telegram command instead of adding health notices to ordinary RAG
+answers.
+
+Reason: docs source health is an operational owner/admin preview. It should
+explain WARN, FAIL, inactive, stale, and runtime-unavailable states without
+turning a status check into remediation work.
+
+Boundaries:
+
+- ordinary users do not receive the technical health report;
+- handlers stay thin and delegate report formatting to a feature module;
+- the command is preview-only and does not run refresh, repair, activation,
+  crawl, sync, indexing, reindex, migrations, status edits, action callbacks,
+  config writes, or Supabase writes;
+- operational failure and staleness remain separate in the preview;
+- OpenRouter WARN and Telegram Bot API FAIL remediation is a separate future
+  owner-approved block.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops

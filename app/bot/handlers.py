@@ -24,6 +24,7 @@ from app.bot.features.docs_registry import (
     send_docs_ready,
     send_docs_wizard_callback,
 )
+from app.bot.features.docs_health import DocsHealthReportReader, send_docs_health_preview
 from app.bot.features.service_suggestions import send_service_suggestion_preview
 from app.bot.formatting import format_for_telegram, format_status
 from app.bot.intake_buffer import MessageIntakeBuffer, UserIntake
@@ -145,6 +146,7 @@ class BotServices:
     ingestion_disabled_reason: str = ""
     ingestion_missing_config: tuple[str, ...] = ()
     service_docs_status_provider: ServiceDocsStatusReader | None = None
+    docs_health_report_provider: DocsHealthReportReader | None = None
     docs_preview_service: DocsPreviewReader | None = None
     docs_activation_service: DocsActivationReader | None = None
     docs_queue_service: DocsActivationQueueReader | None = None
@@ -215,6 +217,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "Для владельца:",
                 "- /docs_preview <id>",
                 "- /docs_preview_all",
+                "- /docs_health [service_id]",
                 "- /service_suggest <question>",
                 "- /docs_ready",
                 "- /docs_activate_ready",
@@ -577,6 +580,21 @@ async def service_suggest_command(update: Update, context: ContextTypes.DEFAULT_
     )
 
 
+async def docs_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/docs_health`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    await send_docs_health_preview(
+        update,
+        filter_text=_command_remainder(update, context),
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        report_provider=services.docs_health_report_provider,
+        status_provider=services.service_docs_status_provider,
+        reply_markup=main_menu_keyboard(),
+        safe_error=_safe_error,
+    )
+
+
 async def docs_ready_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle `/docs_ready`."""
     services = _services(context)
@@ -690,6 +708,7 @@ _TEXT_COMMAND_HANDLERS: dict[str, CommandFallbackHandler] = {
     "docs_preview": docs_preview_command,
     "docs_activate": docs_activate_command,
     "docs_preview_all": docs_preview_all_command,
+    "docs_health": docs_health_command,
     "service_suggest": service_suggest_command,
     "docs_ready": docs_ready_command,
     "docs_activate_ready": docs_activate_ready_command,
@@ -884,6 +903,7 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("docs_preview", docs_preview_command))
     application.add_handler(CommandHandler("docs_activate", docs_activate_command))
     application.add_handler(CommandHandler("docs_preview_all", docs_preview_all_command))
+    application.add_handler(CommandHandler("docs_health", docs_health_command))
     application.add_handler(CommandHandler("service_suggest", service_suggest_command))
     application.add_handler(CommandHandler("docs_ready", docs_ready_command))
     application.add_handler(CommandHandler("docs_activate_ready", docs_activate_ready_command))

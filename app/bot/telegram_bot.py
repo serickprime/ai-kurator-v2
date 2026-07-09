@@ -19,6 +19,7 @@ from app.llm.model_router import ModelRouter, ModelRouterConfig
 from app.llm.openrouter_client import OpenRouterClient
 from app.llm.vision import VisionTextifier
 from app.rag.runtime import build_rag_runtime_from_settings, validate_runtime_config
+from app.service_registry.docs_health import DocsHealthReportProvider
 from app.service_registry.provider import ServiceDocsStatusProvider
 
 LOGGER = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ def _build_services(settings: Settings) -> BotServices:
     ingestion_runtime = build_ingestion_runtime_from_settings(settings, vision_describer=vision_textifier)
     ingestion_validation = validate_ingestion_config(settings)
     service_docs_status_provider = None
+    docs_health_report_provider = None
     base_status_provider = None
     materials_provider = None
     docs_activation_service = None
@@ -65,6 +67,7 @@ def _build_services(settings: Settings) -> BotServices:
         status_client = ingestion_runtime.resources.supabase
     if status_client is not None:
         service_docs_status_provider = ServiceDocsStatusProvider(status_client)
+        docs_health_report_provider = DocsHealthReportProvider(status_client)
         base_status_provider = BaseStatusProvider(
             status_client,
             service_status_provider=service_docs_status_provider,
@@ -114,6 +117,7 @@ def _build_services(settings: Settings) -> BotServices:
         ingestion_disabled_reason=ingestion_disabled_reason,
         ingestion_missing_config=ingestion_validation.missing,
         service_docs_status_provider=service_docs_status_provider,
+        docs_health_report_provider=docs_health_report_provider,
         docs_activation_service=docs_activation_service,
         docs_queue_service=docs_queue_service,
         base_status_provider=base_status_provider,

@@ -54,7 +54,8 @@ Core state:
 - Phase 4B reviewed glossary additions batch 1 is in `config/query_glossary.yaml`.
 - Phase 5A read-only Service-aware Suggestions MVP is merged and verified.
 - Phase 5B owner/admin Telegram preview integration is merged and verified.
-- Phase 6A read-only Docs Source Health/Stale Report is the current implementation focus.
+- Phase 6A read-only Docs Source Health/Stale Report is merged and verified.
+- Phase 6B owner/admin Telegram preview for docs health is the current implementation focus.
 
 ## Completed PRs
 
@@ -90,30 +91,31 @@ Core state:
 - PR #29 - Reviewed glossary additions batch 1.
 - PR #30 - Phase 5A read-only Service-aware Suggestions MVP.
 - PR #31 - Phase 5B service suggestion admin preview.
+- PR #32 - Phase 6A read-only Docs Source Health/Stale Report.
 
 ## Latest completed project block
 
-Phase 5B was completed through PR #31:
+Phase 6A was completed through PR #32:
 
-- owner/admin-only `/service_suggest <question>` Telegram preview is
-  available;
-- handlers stay thin and delegate detection/formatting to feature/service
-  modules;
-- ordinary user RAG flow is unchanged;
-- auto activation remains disabled;
-- no Supabase writes, activation, crawl, sync, indexing, reindex, migrations,
-  RAG pipeline, AnswerGenerator, retrieval/router, or schema changes were
-  introduced.
+- read-only docs source health/stale report is available via CLI;
+- report shows registered source, service, active state, last-known status and
+  reason, timestamps when available, stale state, counts, owner-review need,
+  and safe next action;
+- operational `WARN`/`FAIL` are separated from staleness;
+- runtime unavailable is shown as not verified instead of a source failure;
+- no refresh, activation, crawl, sync, indexing, reindex, Supabase writes,
+  migrations, RAG pipeline, AnswerGenerator, retrieval/router, schema, or
+  normal user flow changes were introduced.
 
 ## Current focus
 
 Current active roadmap focus:
 
-- Phase 6A - read-only Docs Source Health/Stale Report.
-- Current branch: `phase6a-docs-health-stale-report`.
-- Until Phase 6A is merged, do not start Phase 6B Telegram integration,
-  Supabase setup docs, MCP, or unrelated work unless the owner explicitly
-  changes focus.
+- Phase 6B - owner/admin Telegram preview for Docs Source Health Report.
+- Current branch: `phase6b-docs-health-admin-preview`.
+- Until Phase 6B is merged, do not start docs refresh/remediation, Supabase
+  setup docs, MCP, or unrelated work unless the owner explicitly changes
+  focus.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -121,7 +123,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase6a-docs-health-stale-report` after the branch is
+- open a PR for `phase6b-docs-health-admin-preview` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;
@@ -206,6 +208,17 @@ Phase 6A scope:
   Supabase writes, schema changes, Telegram UI, RAG pipeline, AnswerGenerator,
   or retrieval/router changes.
 
+Phase 6B scope:
+
+- add an explicit owner/admin-only Telegram command for the same docs health
+  report;
+- support `/docs_health` and `/docs_health <service_id>` as read-only previews;
+- keep handlers thin by delegating report formatting to a feature module;
+- keep ordinary user questions on the normal RAG path;
+- do not refresh, repair, activate, crawl, sync, index, reindex, write
+  Supabase, run migrations, change docs status, add action callbacks, or change
+  RAG pipeline, AnswerGenerator, retrieval/router, or schema.
+
 ## Later roadmap
 
 Service-aware suggestions after Phase 5B:
@@ -215,11 +228,11 @@ Service-aware suggestions after Phase 5B:
 - possible curated docs candidate workflow for owner-approved missing services;
 - do not auto-index from a normal user question.
 
-Maintenance after Phase 6A:
+Maintenance after Phase 6B:
 
 - refresh connected docs;
 - disable docs source;
-- optional owner/admin Telegram preview for docs health.
+- owner-approved remediation for OpenRouter WARN and Telegram Bot API FAIL.
 
 ## Needs review
 
