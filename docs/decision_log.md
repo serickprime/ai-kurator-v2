@@ -122,6 +122,27 @@ Boundaries:
   Telegram UI, AnswerGenerator, retrieval/router, or RAG pipeline changes in
   the Phase 4B CLI MVP.
 
+## Service-aware suggestions are read-only previews
+
+Decision: Phase 5A may detect known service mentions and report whether docs
+are active, inactive, or missing, but it must not perform activation or
+indexing.
+
+Reason: ordinary user questions should not trigger docs connection work. The
+owner/admin needs a preview boundary before any future docs preview,
+activation, crawl, sync, indexing, or config change.
+
+Boundaries:
+
+- suggestions are not answers and not evidence;
+- active services continue through the normal RAG flow without owner
+  suggestion;
+- unknown or ambiguous services must not be treated as confident detections;
+- detection aliases can be extended through config without Python hardcoding;
+- Telegram owner UI is future Phase 5B, not part of the Phase 5A CLI MVP;
+- no Supabase writes, migrations, activation, crawl, sync, indexing, reindex,
+  AnswerGenerator, retrieval/router, RAG pipeline, or schema changes.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops

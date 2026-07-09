@@ -1,0 +1,26 @@
+services:
+  - service_id: stripe
+    display_name: Stripe
+    aliases:
+      - stripe
+      - stripe api
+      - stripe webhook
+    docs_source: null
+    status: not_configured
+
+  - service_id: notion
+    display_name: Notion
+    aliases:
+      - notion
+      - notion api
+    docs_source: null
+    status: not_configured
+
+  - service_id: airtable
+    display_name: Airtable
+    aliases:
+      - airtable
+      - airtable api
+      - airtable webhook
+    docs_source: null
+    status: not_configured

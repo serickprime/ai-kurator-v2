@@ -50,7 +50,9 @@ Core state:
 - Answer formatting postprocessing strips leaked `Evidence:` support artifacts and rewrites wide API parameter tables into Telegram-friendly lists.
 - Phase 4A read-only Glossary Candidate Discovery MVP suggests retrieval anchors from existing glossary, term statistics, evidence logs, and active document metadata without applying changes automatically.
 - Phase 4A quality cleanup filters noisy candidate anchors and marks sensitive-looking candidates for separate review.
-- Phase 4B owner/admin CLI review/apply MVP is the current implementation focus.
+- Phase 4B owner/admin CLI review/apply MVP is complete.
+- Phase 4B reviewed glossary additions batch 1 is in `config/query_glossary.yaml`.
+- Phase 5A read-only Service-aware Suggestions MVP is the current implementation focus.
 
 ## Completed PRs
 
@@ -81,33 +83,30 @@ Core state:
 - PR #24 - Answer formatting artifact cleanup.
 - PR #25 - Phase 4A read-only Glossary Candidate Discovery MVP.
 - PR #26 - Phase 4A glossary candidate quality cleanup.
+- PR #27 - Phase 4B glossary candidate review/apply flow.
+- PR #28 - Phase 4B minimal-diff glossary output writer.
+- PR #29 - Reviewed glossary additions batch 1.
 
 ## Latest completed project block
 
-Project handoff context was merged in PR #21:
+Phase 4B was completed through PR #27, PR #28, and PR #29:
 
-- `docs/project_handoff_context.md` is the first-stop context for future agents;
-- `docs/prompting_playbook.md` defines how future prompts should describe scope, guardrails, checks, and reports;
-- final reports now require a `Recommended next prompt` block with rationale,
-  guardrails, and a copy-paste prompt, while making clear that the next block
-  must not start without explicit owner instruction;
-- project identity is documented:
-  - GitHub repository: `serickprime/ai-kurator-v2`;
-  - local path: `D:\Downloads\ai-kurator-v2`;
-- Supabase data/table lookup rules are documented;
-- git workflow, push, PR, and merge rules are documented;
-- secrets policy is documented: secrets are not stored in the repository;
-- retrieval/query quality principle is documented:
-  - do not fix one user question point-wise;
-  - build a general retrieval/query quality layer for uploaded materials and official docs.
+- owner/admin review files can be exported, validated, planned, and applied to
+  output files without writing config by default;
+- direct config writes remain gated by `--write-config` and
+  `--confirm-reviewed-apply`;
+- reviewed glossary additions for Telegram Bot API and OpenRouter were applied
+  with a minimal `config/query_glossary.yaml` diff;
+- Phase 4B smoke confirmed query enrichment and routing for the reviewed
+  Telegram Bot API and OpenRouter questions.
 
 ## Current focus
 
 Current active roadmap focus:
 
-- Phase 4B - Glossary Candidate Review/Apply CLI MVP.
-- Current branch: `phase4b-glossary-review-apply`.
-- Until Phase 4B is merged, do not start Supabase setup docs, MCP,
+- Phase 5A - Service-aware Suggestions read-only MVP.
+- Current branch: `phase5a-service-aware-suggestions`.
+- Until Phase 5A is merged, do not start Supabase setup docs, MCP,
   docs health/stale refresh, or unrelated work unless the owner explicitly
   changes focus.
 
@@ -117,7 +116,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase4b-glossary-review-apply` after the branch is
+- open a PR for `phase5a-service-aware-suggestions` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;
@@ -167,12 +166,25 @@ Phase 4B scope:
   candidates;
 - no Telegram UI in this block.
 
+Phase 5A scope:
+
+- detect service mentions from registry aliases, docs candidates, query
+  glossary aliases, and a small detection-only config seed;
+- return read-only owner/admin suggestions for known services whose docs are
+  missing or inactive;
+- return `supported-active` without owner suggestion when docs are already
+  active;
+- return unknown or ambiguous statuses without confident auto-action;
+- no Telegram UI, Supabase writes, config writes, crawl, sync, indexing,
+  reindex, activation, migrations, RAG pipeline changes, retrieval/router
+  changes, or AnswerGenerator changes.
+
 ## Later roadmap
 
-Service-aware suggestions:
+Service-aware suggestions after Phase 5A:
 
-- detect service in user question;
-- if docs are missing and candidate exists, suggest preview;
+- optional Phase 5B owner/admin Telegram UI for the read-only preview;
+- keep ordinary user questions on the normal RAG path;
 - do not auto-index from a normal user question.
 
 Maintenance:

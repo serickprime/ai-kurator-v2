@@ -2,8 +2,8 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 4B -
-Glossary Candidate Review/Apply CLI MVP. Until Phase 4B is merged, do not
+Use one active roadmap focus at a time. The current focus is Phase 5A -
+Service-aware Suggestions read-only MVP. Until Phase 5A is merged, do not
 start Supabase setup docs, MCP, docs health/stale refresh, or other
 unrelated tasks unless the owner explicitly changes focus.
 
@@ -108,6 +108,9 @@ Phase 4B CLI owner/admin review/apply MVP:
   `--write-config --confirm-reviewed-apply`;
 - keep Telegram UI out of this block.
 
+Status: merged in PR #27, with minimal-diff output cleanup merged in PR #28
+and reviewed glossary additions batch 1 merged in PR #29.
+
 Planned behavior:
 
 - analyze newly indexed uploaded materials and external docs;
@@ -138,19 +141,30 @@ This phase should extend the retrieval/query quality layer for all future
 uploaded materials and official docs. It must not become a sequence of
 hardcoded one-question fixes.
 
-Status: Phase 4B CLI review/apply MVP is the current implementation block.
+Status: Phase 4B CLI review/apply MVP is complete.
 
 ## Phase 5 — Service-aware suggestions
 
 Goal: make the bot notice when a user asks about a service whose docs are not connected.
 
-Planned behavior:
+Phase 5A read-only MVP:
 
 - user asks about a service;
-- bot detects service by aliases;
-- bot checks whether docs are connected;
-- if docs are missing and candidate exists, bot suggests preview;
-- bot does not auto-index from the normal question.
+- a service-layer detector uses existing registry aliases, docs candidates,
+  query glossary aliases, and a small detection-only config seed;
+- the CLI prints an owner/admin preview for known services whose docs are
+  missing or inactive;
+- active supported services return `supported-active` and continue through the
+  normal RAG flow;
+- unknown or ambiguous services do not create confident suggestions;
+- suggestions never activate, crawl, sync, index, reindex, write to Supabase,
+  or change `config/query_glossary.yaml`.
+
+Phase 5B future scope:
+
+- optional owner/admin Telegram UI around the same preview boundary;
+- keep ordinary user questions on the normal RAG path;
+- keep handlers thin and do not run activation from callbacks.
 
 ## Phase 6 — Maintenance
 
