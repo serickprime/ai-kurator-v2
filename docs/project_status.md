@@ -56,7 +56,8 @@ Core state:
 - Phase 5B owner/admin Telegram preview integration is merged and verified.
 - Phase 6A read-only Docs Source Health/Stale Report is merged and verified.
 - Phase 6B owner/admin Telegram preview for docs health is merged and verified.
-- Phase 7A offline source-quality remediation for OpenRouter and Telegram Bot API is the current implementation focus.
+- Phase 7A offline source-quality remediation for OpenRouter and Telegram Bot API is merged.
+- Phase 7B.0 safe source-scoped reprocessing preparation tooling is the current implementation focus.
 
 ## Completed PRs
 
@@ -94,30 +95,32 @@ Core state:
 - PR #31 - Phase 5B service suggestion admin preview.
 - PR #32 - Phase 6A read-only Docs Source Health/Stale Report.
 - PR #33 - Phase 6B docs health admin preview.
+- PR #34 - Phase 7A offline source-quality remediation.
 
 ## Latest completed project block
 
-Phase 6B was completed through PR #33:
+Phase 7A was completed through PR #34:
 
-- owner/admin-only `/docs_health` Telegram preview is available;
-- `/docs_health`, `/docs_health openrouter`, and
-  `/docs_health telegram_bot_api` show read-only docs health/stale status;
-- handlers stay thin and delegate formatting to `app/bot/features`;
-- ordinary user RAG flow is unchanged;
-- automatic refresh remains disabled;
-- no refresh, activation, crawl, sync, indexing, reindex, Supabase writes,
-  migrations, RAG pipeline, AnswerGenerator, retrieval/router, schema, or
-  normal user flow changes were introduced.
+- external docs extraction/cleaning removes OpenRouter generator/page-template
+  boilerplate in local fixtures;
+- Telegram Bot API raw page HTML, navigation/footer, and cookie chrome are
+  cleaned in local fixtures;
+- useful endpoints, methods, parameters, fenced code, and safe inline HTML
+  examples are preserved;
+- quality validation still fails truly dirty raw page HTML;
+- existing Supabase documents/chunks were not reprocessed, so runtime
+  OpenRouter WARN and Telegram Bot API FAIL may remain until a separate
+  owner-approved reprocessing block.
 
 ## Current focus
 
 Current active roadmap focus:
 
-- Phase 7A - offline source-quality remediation for OpenRouter and Telegram Bot API.
-- Current branch: `phase7a-source-quality-cleanup`.
-- Until Phase 7A is merged, do not start real source reprocessing, docs
-  refresh/indexing, Supabase setup docs, MCP, or unrelated work unless the
-  owner explicitly changes focus.
+- Phase 7B.0 - safe source-scoped reprocessing preparation tooling.
+- Current branch: `phase7b-safe-reprocessing-tooling`.
+- Until Phase 7B.0 is merged, do not start real source reprocessing, docs
+  refresh/indexing, activation, Supabase setup docs, MCP, or unrelated work
+  unless the owner explicitly changes focus.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -125,7 +128,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase7a-source-quality-cleanup` after the branch is
+- open a PR for `phase7b-safe-reprocessing-tooling` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;
@@ -233,11 +236,15 @@ Phase 7A scope:
   migrations, change existing runtime rows, or change RAG pipeline,
   AnswerGenerator, retrieval/router, query enrichment, or normal user flow.
 
-Phase 7B future scope:
+Phase 7B.0 scope:
 
-- owner-approved reprocessing of affected sources after Phase 7A is merged;
-- confirm exact command and runtime environment before any refresh/indexing;
-- do not start automatically from Phase 7A.
+- add read-only source-scoped preflight planning before any reprocessing;
+- create and verify local baseline manifests with checksums and drift checks;
+- expose reusable execution precondition validation for future owner-approved
+  OpenRouter reprocessing;
+- do not run `/docs_activate`, activation, crawl, sync, indexing, reindex,
+  rollback writes, migrations, Supabase writes, or real production backup
+  creation in the implementation block.
 
 ## Later roadmap
 

@@ -2,11 +2,11 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 7A -
-offline source-quality remediation for OpenRouter and Telegram Bot API. Until
-Phase 7A is merged, do not start real source reprocessing, docs
-refresh/indexing, Supabase setup docs, MCP, or other unrelated tasks unless
-the owner explicitly changes focus.
+Use one active roadmap focus at a time. The current focus is Phase 7B.0 - safe
+source-scoped reprocessing preparation tooling. Until Phase 7B.0 is merged, do
+not start real source reprocessing, docs refresh/indexing, activation,
+Supabase setup docs, MCP, or other unrelated tasks unless the owner explicitly
+changes focus.
 
 Backlog items should be recorded without being started in the active branch:
 
@@ -226,12 +226,34 @@ Phase 7A offline cleaning/quality MVP:
 - do not crawl, refresh, sync, index, reindex, activate, write Supabase, run
   migrations, change schema, or change normal RAG flow.
 
-Phase 7B future reprocessing:
+Status: Phase 7A is complete and merged in PR #34.
 
-- run only after Phase 7A is merged and the owner explicitly approves exact
-  source reprocessing commands;
-- reprocess affected sources in an approved runtime environment;
-- verify docs health and answer quality after reprocessing.
+Phase 7B.0 safe reprocessing preparation tooling:
+
+- build a read-only source-scoped preflight plan for one service/source;
+- export a local baseline manifest with source-scoped rows, fingerprints, and
+  checksum;
+- verify manifest integrity and rollback capability offline;
+- compare a manifest with live read-only inventory to detect baseline drift;
+- expose reusable execution precondition validation for future Phase 7B.1;
+- show expected write scope and known partial-failure risks;
+- do not run `/docs_activate`, activation, crawl, sync, indexing, reindex,
+  rollback writes, migrations, Supabase writes, or source reprocessing.
+
+Phase 7B.1 future OpenRouter reprocessing:
+
+- run only after Phase 7B.0 is merged, post-merge smoke passes, a real
+  source-scoped backup is created and verified, and the owner explicitly
+  approves exact OpenRouter execution commands;
+- process OpenRouter as the first controlled pilot;
+- verify docs health and retrieval/evidence quality after reprocessing;
+- do not automatically proceed to Telegram Bot API.
+
+Phase 7B.2 future Telegram Bot API reprocessing:
+
+- run only after successful Phase 7B.1 and separate owner approval;
+- process Telegram Bot API as a separate higher-volume operation;
+- verify docs health and retrieval/evidence quality after reprocessing.
 
 Later maintenance features:
 
