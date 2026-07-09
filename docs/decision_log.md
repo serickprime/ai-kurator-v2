@@ -162,6 +162,26 @@ Boundaries:
   writes, Supabase writes, migrations, AnswerGenerator, retrieval/router, or
   RAG pipeline changes are part of Phase 5B.
 
+## Docs source health report is read-only
+
+Decision: Phase 6A adds a service-layer and CLI report for docs source health
+and staleness, but it must not repair or refresh sources automatically.
+
+Reason: source health visibility should explain current WARN/FAIL/STALE states
+without turning a status check into activation, crawl, sync, indexing, or
+configuration work.
+
+Boundaries:
+
+- staleness is reported separately from operational quality failures;
+- missing timestamps are `unknown/not available`, not automatic failures;
+- runtime unavailable is reported as not verified, not as source failure;
+- safe next actions are owner/admin recommendations only;
+- no Telegram UI is part of Phase 6A;
+- no Supabase writes, migrations, activation, crawl, sync, indexing, reindex,
+  AnswerGenerator, retrieval/router, RAG pipeline, schema, or normal user flow
+  changes are part of Phase 6A.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops
