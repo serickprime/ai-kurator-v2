@@ -250,6 +250,31 @@ Expected:
   reindex;
 - ordinary user messages do not receive this technical preview.
 
+## Docs Source Health smoke
+
+Run after Phase 6A docs health/stale report changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\report_docs_health.py --help
+.\.venv\Scripts\python.exe scripts\report_docs_health.py
+.\.venv\Scripts\python.exe scripts\report_docs_health.py --service openrouter
+.\.venv\Scripts\python.exe scripts\report_docs_health.py --service telegram_bot_api
+```
+
+Expected:
+
+- report mode is `read-only`;
+- runtime unavailable is shown as not verified, not as source failure;
+- registered source, service, active state, docs status, quality status,
+  status reason, timestamps if available, stale state, document/chunk counts,
+  owner-review need, and safe next action are visible;
+- staleness is separate from operational `WARN` or `FAIL`;
+- automatic refresh is disabled;
+- no Telegram UI is required for Phase 6A;
+- Supabase is not written to;
+- activation, crawl, sync, indexing, reindex, migrations, and direct docs status
+  edits are not run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:

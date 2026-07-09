@@ -2,15 +2,16 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 5A -
-Service-aware Suggestions read-only MVP. Until Phase 5A is merged, do not
-start Supabase setup docs, MCP, docs health/stale refresh, or other
+Use one active roadmap focus at a time. The current focus is Phase 6A -
+Docs Source Health/Stale Report read-only MVP. Until Phase 6A is merged, do
+not start Phase 6B Telegram integration, Supabase setup docs, MCP, or other
 unrelated tasks unless the owner explicitly changes focus.
 
 Backlog items should be recorded without being started in the active branch:
 
 - Supabase setup docs for a new developer;
-- docs health/stale refresh;
+- Phase 6B owner/admin Telegram integration for docs health;
+- explicit owner-approved docs refresh flow;
 - long-running activation UX progress;
 - future MCP setup.
 
@@ -174,16 +175,33 @@ Phase 5B owner/admin preview integration:
 - no Supabase writes, crawl, sync, indexing, reindex, migrations, config writes,
   RAG pipeline changes, retrieval/router changes, or AnswerGenerator changes.
 
+Status: Phase 5B is complete and merged in PR #31.
+
 ## Phase 6 — Maintenance
 
 Goal: keep connected official docs useful over time.
 
-Planned features:
+Phase 6A read-only Docs Source Health/Stale Report:
+
+- report registered docs sources, service mapping, active state, last-known
+  docs/quality status, status reasons, timestamps when available, stale state,
+  document/chunk counts, owner-review need, and safe next action;
+- separate staleness from operational WARN/FAIL;
+- handle runtime unavailable as `unknown/not verified` instead of a source
+  failure;
+- expose a CLI report only;
+- do not refresh, activate, crawl, sync, index, reindex, write Supabase, change
+  schema, or change normal RAG flow.
+
+Phase 6B possible follow-up:
+
+- owner/admin Telegram preview for the same docs health report, if needed.
+
+Later maintenance features:
 
 - refresh connected docs;
 - disable docs source;
-- docs source health report;
-- stale docs detection;
+- explicit owner-approved stale docs refresh flow;
 - last refresh status in `/docs`.
 
 ## Not planned now
