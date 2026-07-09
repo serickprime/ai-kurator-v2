@@ -270,10 +270,35 @@ Expected:
   owner-review need, and safe next action are visible;
 - staleness is separate from operational `WARN` or `FAIL`;
 - automatic refresh is disabled;
-- no Telegram UI is required for Phase 6A;
 - Supabase is not written to;
 - activation, crawl, sync, indexing, reindex, migrations, and direct docs status
   edits are not run.
+
+## Docs Health Telegram Preview smoke
+
+Run after Phase 6B docs health Telegram preview changes:
+
+```text
+/docs_health
+/docs_health openrouter
+/docs_health telegram_bot_api
+```
+
+Expected:
+
+- command is owner/admin-only;
+- summary shows total, healthy, warning, failed, stale, inactive, unknown, and
+  runtime status;
+- OpenRouter filter shows `warning`, `fresh`, and generator boilerplate reason;
+- Telegram Bot API filter shows `failed`, `fresh`, and raw HTML/navigation
+  quality reasons;
+- inactive sources are not shown as healthy;
+- runtime unavailable is shown without traceback;
+- automatic refresh is disabled;
+- unauthorized users do not receive the technical report;
+- ordinary user messages still go to the normal RAG flow;
+- command does not refresh, repair, activate, crawl, sync, index, reindex,
+  edit docs status, run migrations, or write Supabase.
 
 ## Forbidden smoke
 

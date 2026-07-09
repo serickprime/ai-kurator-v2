@@ -2,15 +2,15 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 6A -
-Docs Source Health/Stale Report read-only MVP. Until Phase 6A is merged, do
-not start Phase 6B Telegram integration, Supabase setup docs, MCP, or other
-unrelated tasks unless the owner explicitly changes focus.
+Use one active roadmap focus at a time. The current focus is Phase 6B -
+owner/admin Telegram preview for Docs Source Health Report. Until Phase 6B is
+merged, do not start docs refresh/remediation, Supabase setup docs, MCP, or
+other unrelated tasks unless the owner explicitly changes focus.
 
 Backlog items should be recorded without being started in the active branch:
 
 - Supabase setup docs for a new developer;
-- Phase 6B owner/admin Telegram integration for docs health;
+- owner-approved OpenRouter WARN and Telegram Bot API FAIL remediation;
 - explicit owner-approved docs refresh flow;
 - long-running activation UX progress;
 - future MCP setup.
@@ -193,9 +193,18 @@ Phase 6A read-only Docs Source Health/Stale Report:
 - do not refresh, activate, crawl, sync, index, reindex, write Supabase, change
   schema, or change normal RAG flow.
 
-Phase 6B possible follow-up:
+Status: Phase 6A is complete and merged in PR #32.
 
-- owner/admin Telegram preview for the same docs health report, if needed.
+Phase 6B owner/admin Telegram preview:
+
+- explicit owner/admin-only `/docs_health` command for the same read-only docs
+  health report;
+- optional service filter, for example `/docs_health openrouter`;
+- compact Telegram-friendly summary and source rows without wide tables;
+- no technical report for unauthorized users;
+- no automatic refresh, repair, activation, crawl, sync, indexing, reindex,
+  status edit, Supabase write, migration, action callback, or normal RAG flow
+  change.
 
 Later maintenance features:
 

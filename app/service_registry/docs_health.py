@@ -9,6 +9,7 @@ from typing import Any, Iterable, Literal
 
 from app.external_docs.config import DEFAULT_EXTERNAL_DOCS_CONFIG, load_external_docs_config
 from app.service_registry.config import DEFAULT_SERVICE_REGISTRY_CONFIG, load_service_registry_config
+from app.service_registry.provider import ServiceDocsStatusProvider
 from app.service_registry.types import ServiceDocsStatus
 
 DEFAULT_DOCS_HEALTH_POLICY_CONFIG = Path("config/docs_health_policy.yaml")
@@ -125,6 +126,43 @@ class DocsHealthReport:
             "summary": self.summary(),
             "sources": [source.to_dict() for source in self.sources],
         }
+
+
+class DocsHealthReportProvider:
+    """Read-only runtime provider for docs source health reports."""
+
+    def __init__(
+        self,
+        client: Any,
+        *,
+        registry_config_path: Path | str = DEFAULT_SERVICE_REGISTRY_CONFIG,
+        external_config_path: Path | str = DEFAULT_EXTERNAL_DOCS_CONFIG,
+        policy_config_path: Path | str = DEFAULT_DOCS_HEALTH_POLICY_CONFIG,
+        limit: int = 10000,
+    ) -> None:
+        self._client = client
+        self._registry_config_path = registry_config_path
+        self._external_config_path = external_config_path
+        self._policy_config_path = policy_config_path
+        self._limit = limit
+
+    async def build_report(self) -> DocsHealthReport:
+        """Build a report from existing runtime data without writes or refreshes."""
+        status_provider = ServiceDocsStatusProvider(
+            self._client,
+            registry_config_path=self._registry_config_path,
+            external_config_path=self._external_config_path,
+            limit=self._limit,
+        )
+        statuses = await status_provider.list_statuses(scan_corpus=False)
+        documents = await load_external_documents_for_health(self._client, limit=self._limit)
+        return build_docs_health_report(
+            statuses=statuses,
+            documents=documents,
+            policy=load_docs_health_policy(self._policy_config_path),
+            external_refresh_days=external_refresh_days_by_source(self._external_config_path),
+            runtime_status="available",
+        )
 
 
 async def load_external_documents_for_health(client: Any, *, limit: int) -> list[dict[str, Any]]:
