@@ -52,7 +52,8 @@ Core state:
 - Phase 4A quality cleanup filters noisy candidate anchors and marks sensitive-looking candidates for separate review.
 - Phase 4B owner/admin CLI review/apply MVP is complete.
 - Phase 4B reviewed glossary additions batch 1 is in `config/query_glossary.yaml`.
-- Phase 5A read-only Service-aware Suggestions MVP is the current implementation focus.
+- Phase 5A read-only Service-aware Suggestions MVP is merged and verified.
+- Phase 5B owner/admin Telegram preview integration is the current implementation focus.
 
 ## Completed PRs
 
@@ -86,27 +87,27 @@ Core state:
 - PR #27 - Phase 4B glossary candidate review/apply flow.
 - PR #28 - Phase 4B minimal-diff glossary output writer.
 - PR #29 - Reviewed glossary additions batch 1.
+- PR #30 - Phase 5A read-only Service-aware Suggestions MVP.
 
 ## Latest completed project block
 
-Phase 4B was completed through PR #27, PR #28, and PR #29:
+Phase 5A was completed through PR #30:
 
-- owner/admin review files can be exported, validated, planned, and applied to
-  output files without writing config by default;
-- direct config writes remain gated by `--write-config` and
-  `--confirm-reviewed-apply`;
-- reviewed glossary additions for Telegram Bot API and OpenRouter were applied
-  with a minimal `config/query_glossary.yaml` diff;
-- Phase 4B smoke confirmed query enrichment and routing for the reviewed
-  Telegram Bot API and OpenRouter questions.
+- service mentions are detected from registry aliases, docs candidates, query
+  glossary aliases, and detection-only config;
+- active supported services return `supported-active` without an owner
+  suggestion;
+- missing or inactive known services return owner/admin review previews;
+- unknown services avoid false confident detection;
+- auto activation is disabled and no Supabase writes are performed.
 
 ## Current focus
 
 Current active roadmap focus:
 
-- Phase 5A - Service-aware Suggestions read-only MVP.
-- Current branch: `phase5a-service-aware-suggestions`.
-- Until Phase 5A is merged, do not start Supabase setup docs, MCP,
+- Phase 5B - owner/admin Telegram preview integration for service-aware suggestions.
+- Current branch: `phase5b-service-suggestion-admin-preview`.
+- Until Phase 5B is merged, do not start Supabase setup docs, MCP,
   docs health/stale refresh, or unrelated work unless the owner explicitly
   changes focus.
 
@@ -116,7 +117,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase5a-service-aware-suggestions` after the branch is
+- open a PR for `phase5b-service-suggestion-admin-preview` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;
@@ -179,12 +180,23 @@ Phase 5A scope:
   reindex, activation, migrations, RAG pipeline changes, retrieval/router
   changes, or AnswerGenerator changes.
 
+Phase 5B scope:
+
+- add an explicit owner/admin-only Telegram command for service suggestion
+  preview;
+- keep ordinary user questions on the normal RAG path;
+- keep handlers thin by delegating preview formatting and detection to a
+  feature/service module;
+- do not auto-register docs, call `/docs_preview`, activate, crawl, sync,
+  index, reindex, write config, or write Supabase.
+
 ## Later roadmap
 
-Service-aware suggestions after Phase 5A:
+Service-aware suggestions after Phase 5B:
 
-- optional Phase 5B owner/admin Telegram UI for the read-only preview;
-- keep ordinary user questions on the normal RAG path;
+- optional UX refinement for owner/admin preview if manual smoke shows it is
+  needed;
+- possible curated docs candidate workflow for owner-approved missing services;
 - do not auto-index from a normal user question.
 
 Maintenance:

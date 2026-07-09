@@ -227,6 +227,29 @@ Expected:
 - Supabase is not written to;
 - activation, crawl, sync, indexing, and reindex are not run.
 
+## Service-aware Telegram Preview smoke
+
+Run after Phase 5B service suggestion Telegram preview changes:
+
+```text
+/service_suggest РєР°Рє РѕС‚РїСЂР°РІРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ С‡РµСЂРµР· Telegram Bot API
+/service_suggest РєР°Рє РїРѕРґРєР»СЋС‡РёС‚СЊ Stripe РІ n8n
+/service_suggest РєР°Рє СЂР°Р±РѕС‚Р°С‚СЊ СЃ РєР°РєРёРј-С‚Рѕ РЅРѕРІС‹Рј СЃРµСЂРІРёСЃРѕРј
+```
+
+Expected:
+
+- command is owner/admin-only;
+- active supported services return `supported-active` and no owner action;
+- missing or inactive known services show owner/admin review required;
+- active context services, such as n8n, remain context and do not replace the
+  missing service target;
+- unknown services do not get a false high-confidence suggestion;
+- auto activation is disabled;
+- preview does not run `/docs_preview`, activation, crawl, sync, indexing, or
+  reindex;
+- ordinary user messages do not receive this technical preview.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:

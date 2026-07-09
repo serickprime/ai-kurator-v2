@@ -108,6 +108,7 @@ def test_missing_service_wins_over_active_context_service() -> None:
     assert suggestion.canonical_service_id == "stripe"
     assert suggestion.current_status == "known-docs-missing"
     assert suggestion.owner_review_required is True
+    assert suggestion.active_context_services == ("n8n",)
     assert "n8n" in suggestion.reason
 
 

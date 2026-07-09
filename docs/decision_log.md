@@ -143,6 +143,25 @@ Boundaries:
 - no Supabase writes, migrations, activation, crawl, sync, indexing, reindex,
   AnswerGenerator, retrieval/router, RAG pipeline, or schema changes.
 
+## Service suggestion Telegram preview is owner/admin-only
+
+Decision: Phase 5B adds an explicit owner/admin Telegram command for the
+Phase 5A service-aware suggestion preview instead of adding suggestions to
+ordinary RAG answers.
+
+Reason: normal user questions should stay on the existing RAG path. Technical
+docs-availability previews are an owner/admin review tool and must not become
+implicit activation or indexing requests.
+
+Boundaries:
+
+- ordinary users do not receive the technical preview;
+- handlers stay thin and delegate detection/formatting to a feature module;
+- the command is preview-only and does not call `/docs_preview` automatically;
+- no docs registration, activation, crawl, sync, indexing, reindex, config
+  writes, Supabase writes, migrations, AnswerGenerator, retrieval/router, or
+  RAG pipeline changes are part of Phase 5B.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops

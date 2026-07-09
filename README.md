@@ -141,6 +141,7 @@ Useful read-only Telegram status commands:
 - `/docs_ready` shows candidates ready for the next controlled activation plan.
 - `/docs_activate_ready` shows a no-write activation plan. `/docs_activate_ready confirm` is owner/admin-only and activates only ready candidates in the MVP allowlist (`openrouter`, `telegram_bot_api`); arbitrary URLs, needs_review, failed, and already connected sources are skipped.
 - `/docs_activate openrouter` shows a controlled activation plan for OpenRouter only. `/docs_activate openrouter confirm` is owner/admin-only and runs the controlled activation flow; arbitrary URLs and other candidates are rejected in this MVP. `/docs` never runs activation confirm.
+- `/service_suggest <question>` is owner/admin-only and shows a read-only service-aware docs preview for a user question. It does not call `/docs_preview`, activate, crawl, sync, index, write to Supabase, or change config.
 - `/services` shows detected services and whether their docs source is connected.
 - `/base_status` shows knowledge base counts, external docs status, service status, and recent documents.
 - `/materials` lists recent uploaded/local materials and excludes external docs.

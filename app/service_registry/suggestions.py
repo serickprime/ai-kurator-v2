@@ -41,6 +41,7 @@ class ServiceSuggestion:
     current_status: ServiceSuggestionStatus
     suggested_action: str
     owner_review_required: bool
+    active_context_services: tuple[str, ...] = ()
     auto_activation_allowed: bool = False
 
     def to_dict(self) -> dict[str, object]:
@@ -58,6 +59,7 @@ class ServiceSuggestion:
             "current_status": self.current_status,
             "suggested_action": self.suggested_action,
             "owner_review_required": self.owner_review_required,
+            "active_context_services": list(self.active_context_services),
             "auto_activation_allowed": self.auto_activation_allowed,
         }
 
@@ -107,10 +109,12 @@ class ServiceSuggestionEngine:
 
         non_active = tuple(state for state in states if state.current_status != "supported-active")
         if len(non_active) == 1:
+            active_context = _active_context_services(states, non_active[0])
             return self._suggestion_for_state(
                 non_active[0],
                 excerpt=excerpt,
-                reason_suffix=_active_context_reason(states, non_active[0]),
+                reason_suffix=_active_context_reason(active_context),
+                active_context_services=active_context,
             )
         if len(non_active) > 1:
             return _ambiguous_suggestion(states, excerpt)
@@ -145,6 +149,7 @@ class ServiceSuggestionEngine:
         *,
         excerpt: str,
         reason_suffix: str = "",
+        active_context_services: tuple[str, ...] = (),
     ) -> ServiceSuggestion:
         reason = _reason_for_state(state)
         if reason_suffix:
@@ -162,6 +167,7 @@ class ServiceSuggestionEngine:
             current_status=state.current_status,
             suggested_action=_suggested_action(state, self._catalog.docs_candidate_ids),
             owner_review_required=state.current_status in {"known-docs-inactive", "known-docs-missing"},
+            active_context_services=active_context_services,
             auto_activation_allowed=False,
         )
 
@@ -226,6 +232,7 @@ def format_service_suggestion_report(suggestion: ServiceSuggestion, *, runtime_s
         f"- detected service: {_display_service(suggestion)}",
         f"- confidence: {suggestion.confidence:.2f}",
         f"- matched aliases: {_join_or_none(suggestion.matched_aliases)}",
+        f"- active context: {_join_or_none(suggestion.active_context_services)}",
         f"- current status: {suggestion.current_status}",
         f"- service known: {_yes_no(suggestion.service_known)}",
         f"- docs registered: {_yes_no(suggestion.docs_registered)}",
@@ -303,12 +310,15 @@ def _suggested_action(state: _DetectedState, candidate_ids: frozenset[str]) -> s
     return "no_action"
 
 
-def _active_context_reason(states: tuple[_DetectedState, ...], target: _DetectedState) -> str:
-    active_context = [
+def _active_context_services(states: tuple[_DetectedState, ...], target: _DetectedState) -> tuple[str, ...]:
+    return tuple(
         state.service.display_name
         for state in states
         if state.service.service_id != target.service.service_id and state.current_status == "supported-active"
-    ]
+    )
+
+
+def _active_context_reason(active_context: tuple[str, ...]) -> str:
     if not active_context:
         return ""
     return f"Active service mention kept as context: {', '.join(active_context)}."
