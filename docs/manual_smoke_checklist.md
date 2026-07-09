@@ -203,6 +203,30 @@ Expected:
 - Supabase is not written to;
 - activation, crawl, sync, indexing, and reindex are not run.
 
+## Service-aware Suggestions smoke
+
+Run after Phase 5A service suggestion changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\suggest_service_docs.py --help
+.\.venv\Scripts\python.exe scripts\suggest_service_docs.py --question "как отправить сообщение через Telegram Bot API"
+.\.venv\Scripts\python.exe scripts\suggest_service_docs.py --question "как подключить Stripe в n8n"
+.\.venv\Scripts\python.exe scripts\suggest_service_docs.py --question "как работать с каким-то новым сервисом"
+```
+
+Expected:
+
+- report mode is `read-only`;
+- active supported services return `supported-active` and do not create an
+  owner suggestion;
+- missing or inactive known services show owner/admin review required;
+- unknown services do not get a false high-confidence suggestion;
+- auto activation is disabled;
+- no Telegram UI is required for Phase 5A;
+- `config/query_glossary.yaml` is not changed;
+- Supabase is not written to;
+- activation, crawl, sync, indexing, and reindex are not run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:
