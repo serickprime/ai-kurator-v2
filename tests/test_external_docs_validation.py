@@ -1,6 +1,9 @@
 import json
+from datetime import datetime, timezone
 
 from app.external_docs.chunk_quality import is_low_value_external_chunk
+from app.external_docs.extractor import ExternalDocsExtractor
+from app.external_docs.types import CrawledPage
 from app.external_docs.validation import validate_external_docs
 
 
@@ -43,6 +46,26 @@ def test_external_docs_validation_allows_html_inside_fenced_code() -> None:
     assert result.quality == "PASS"
     assert result.metrics["raw_html_count"] == 0
     assert result.metrics["code_blocks_count"] == 1
+
+
+def test_external_docs_validation_allows_useful_inline_html_examples() -> None:
+    result = validate_external_docs(
+        source_name="telegram_bot_api_docs",
+        documents=[_doc("doc-1", source_name="telegram_bot_api_docs")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Use parse_mode HTML with sendMessage. MessageEntity supports examples like "
+                    "<b>bold</b>, <a href=\"https://example.com\">link</a>, and "
+                    "<span class=\"tg-spoiler\">spoiler</span>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
 
 
 def test_external_docs_validation_does_not_warn_for_short_technical_chunks() -> None:
@@ -113,6 +136,73 @@ def test_external_docs_validation_clean_source_passes() -> None:
     assert result.quality == "PASS"
     assert result.failures == ()
     assert result.warnings == ()
+
+
+def test_cleaned_openrouter_fixture_passes_without_generator_warning() -> None:
+    page = CrawledPage(
+        source_name="openrouter_docs",
+        url="https://openrouter.ai/docs/api-reference/overview",
+        html="""
+        <html><body><main>
+          <h1>OpenRouter API</h1>
+          <p>For the complete documentation index, see llms.txt</p>
+          <p>This page is also available as Markdown.</p>
+          <p>Use /completions, /chat/completions, and /api/v1/models.</p>
+          <pre><code>curl https://openrouter.ai/api/v1/models</code></pre>
+        </main></body></html>
+        """,
+        status_code=200,
+        content_type="text/html",
+        fetched_at=datetime.now(timezone.utc),
+    )
+    extracted = ExternalDocsExtractor().extract(page)
+    result = validate_external_docs(
+        source_name="openrouter_docs",
+        documents=[_doc("doc-1", source_name="openrouter_docs")],
+        chunks=[_chunk("doc-1", extracted.structured_text)],
+    )
+
+    assert "llms.txt" not in extracted.structured_text
+    assert "/chat/completions" in extracted.structured_text
+    assert "/api/v1/models" in extracted.structured_text
+    assert result.metrics["generator_boilerplate_count"] == 0
+    assert "generator boilerplate found" not in result.warnings
+
+
+def test_cleaned_telegram_fixture_passes_without_raw_html_or_nav_noise() -> None:
+    page = CrawledPage(
+        source_name="telegram_bot_api_docs",
+        url="https://core.telegram.org/bots/api",
+        html="""
+        <html><body><main>
+          <p>Skip to content</p>
+          <p>Cookie settings Accept all cookies</p>
+          <p>&lt;div class="footer"&gt;Navigation menu&lt;/div&gt;</p>
+          <h1>sendMessage</h1>
+          <p>The sendMessage method sends text messages. Parameters include chat_id and parse_mode.</p>
+          <p>MessageEntity can describe &lt;b&gt;bold&lt;/b&gt; HTML parse mode examples.</p>
+        </main></body></html>
+        """,
+        status_code=200,
+        content_type="text/html",
+        fetched_at=datetime.now(timezone.utc),
+    )
+    extracted = ExternalDocsExtractor().extract(page)
+    result = validate_external_docs(
+        source_name="telegram_bot_api_docs",
+        documents=[_doc("doc-1", source_name="telegram_bot_api_docs")],
+        chunks=[_chunk("doc-1", extracted.structured_text)],
+    )
+
+    assert "Skip to content" not in extracted.structured_text
+    assert "Cookie settings" not in extracted.structured_text
+    assert "<div" not in extracted.structured_text
+    assert "sendMessage" in extracted.structured_text
+    assert "chat_id" in extracted.structured_text
+    assert "parse_mode" in extracted.structured_text
+    assert "MessageEntity" in extracted.structured_text
+    assert result.metrics["raw_html_count"] == 0
+    assert result.metrics["nav_footer_noise_count"] == 0
 
 
 def test_external_docs_validation_json_output_is_valid() -> None:

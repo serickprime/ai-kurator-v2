@@ -55,7 +55,8 @@ Core state:
 - Phase 5A read-only Service-aware Suggestions MVP is merged and verified.
 - Phase 5B owner/admin Telegram preview integration is merged and verified.
 - Phase 6A read-only Docs Source Health/Stale Report is merged and verified.
-- Phase 6B owner/admin Telegram preview for docs health is the current implementation focus.
+- Phase 6B owner/admin Telegram preview for docs health is merged and verified.
+- Phase 7A offline source-quality remediation for OpenRouter and Telegram Bot API is the current implementation focus.
 
 ## Completed PRs
 
@@ -92,17 +93,18 @@ Core state:
 - PR #30 - Phase 5A read-only Service-aware Suggestions MVP.
 - PR #31 - Phase 5B service suggestion admin preview.
 - PR #32 - Phase 6A read-only Docs Source Health/Stale Report.
+- PR #33 - Phase 6B docs health admin preview.
 
 ## Latest completed project block
 
-Phase 6A was completed through PR #32:
+Phase 6B was completed through PR #33:
 
-- read-only docs source health/stale report is available via CLI;
-- report shows registered source, service, active state, last-known status and
-  reason, timestamps when available, stale state, counts, owner-review need,
-  and safe next action;
-- operational `WARN`/`FAIL` are separated from staleness;
-- runtime unavailable is shown as not verified instead of a source failure;
+- owner/admin-only `/docs_health` Telegram preview is available;
+- `/docs_health`, `/docs_health openrouter`, and
+  `/docs_health telegram_bot_api` show read-only docs health/stale status;
+- handlers stay thin and delegate formatting to `app/bot/features`;
+- ordinary user RAG flow is unchanged;
+- automatic refresh remains disabled;
 - no refresh, activation, crawl, sync, indexing, reindex, Supabase writes,
   migrations, RAG pipeline, AnswerGenerator, retrieval/router, schema, or
   normal user flow changes were introduced.
@@ -111,11 +113,11 @@ Phase 6A was completed through PR #32:
 
 Current active roadmap focus:
 
-- Phase 6B - owner/admin Telegram preview for Docs Source Health Report.
-- Current branch: `phase6b-docs-health-admin-preview`.
-- Until Phase 6B is merged, do not start docs refresh/remediation, Supabase
-  setup docs, MCP, or unrelated work unless the owner explicitly changes
-  focus.
+- Phase 7A - offline source-quality remediation for OpenRouter and Telegram Bot API.
+- Current branch: `phase7a-source-quality-cleanup`.
+- Until Phase 7A is merged, do not start real source reprocessing, docs
+  refresh/indexing, Supabase setup docs, MCP, or unrelated work unless the
+  owner explicitly changes focus.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -123,7 +125,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase6b-docs-health-admin-preview` after the branch is
+- open a PR for `phase7a-source-quality-cleanup` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;
@@ -219,6 +221,24 @@ Phase 6B scope:
   Supabase, run migrations, change docs status, add action callbacks, or change
   RAG pipeline, AnswerGenerator, retrieval/router, or schema.
 
+Phase 7A scope:
+
+- improve external docs extraction/cleaning and quality validation offline for
+  current OpenRouter WARN and Telegram Bot API FAIL classes;
+- use small sanitized fixtures and unit/regression tests;
+- remove generator/page-template boilerplate, raw page HTML, navigation/footer,
+  and cookie chrome while preserving useful endpoints, method names,
+  parameters, code blocks, and safe inline HTML examples;
+- do not crawl, refresh, sync, index, reindex, activate, write Supabase, run
+  migrations, change existing runtime rows, or change RAG pipeline,
+  AnswerGenerator, retrieval/router, query enrichment, or normal user flow.
+
+Phase 7B future scope:
+
+- owner-approved reprocessing of affected sources after Phase 7A is merged;
+- confirm exact command and runtime environment before any refresh/indexing;
+- do not start automatically from Phase 7A.
+
 ## Later roadmap
 
 Service-aware suggestions after Phase 5B:
@@ -230,9 +250,9 @@ Service-aware suggestions after Phase 5B:
 
 Maintenance after Phase 6B:
 
-- refresh connected docs;
 - disable docs source;
-- owner-approved remediation for OpenRouter WARN and Telegram Bot API FAIL.
+- owner-approved reprocessing for OpenRouter WARN and Telegram Bot API FAIL
+  after Phase 7A code is merged.
 
 ## Needs review
 
