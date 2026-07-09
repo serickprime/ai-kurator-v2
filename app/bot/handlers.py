@@ -24,6 +24,7 @@ from app.bot.features.docs_registry import (
     send_docs_ready,
     send_docs_wizard_callback,
 )
+from app.bot.features.service_suggestions import send_service_suggestion_preview
 from app.bot.formatting import format_for_telegram, format_status
 from app.bot.intake_buffer import MessageIntakeBuffer, UserIntake
 from app.bot.keyboards import (
@@ -214,6 +215,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "Для владельца:",
                 "- /docs_preview <id>",
                 "- /docs_preview_all",
+                "- /service_suggest <question>",
                 "- /docs_ready",
                 "- /docs_activate_ready",
                 "- /docs_activate openrouter",
@@ -561,6 +563,20 @@ async def docs_preview_all_command(update: Update, context: ContextTypes.DEFAULT
     )
 
 
+async def service_suggest_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/service_suggest`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    await send_service_suggestion_preview(
+        update,
+        question=_command_remainder(update, context),
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        status_provider=services.service_docs_status_provider,
+        reply_markup=main_menu_keyboard(),
+        safe_error=_safe_error,
+    )
+
+
 async def docs_ready_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle `/docs_ready`."""
     services = _services(context)
@@ -674,6 +690,7 @@ _TEXT_COMMAND_HANDLERS: dict[str, CommandFallbackHandler] = {
     "docs_preview": docs_preview_command,
     "docs_activate": docs_activate_command,
     "docs_preview_all": docs_preview_all_command,
+    "service_suggest": service_suggest_command,
     "docs_ready": docs_ready_command,
     "docs_activate_ready": docs_activate_ready_command,
     "base_status": base_status_command,
@@ -867,6 +884,7 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("docs_preview", docs_preview_command))
     application.add_handler(CommandHandler("docs_activate", docs_activate_command))
     application.add_handler(CommandHandler("docs_preview_all", docs_preview_all_command))
+    application.add_handler(CommandHandler("service_suggest", service_suggest_command))
     application.add_handler(CommandHandler("docs_ready", docs_ready_command))
     application.add_handler(CommandHandler("docs_activate_ready", docs_activate_ready_command))
     application.add_handler(CommandHandler("base_status", base_status_command))
@@ -1305,6 +1323,16 @@ def _command_args(update: Update, context: ContextTypes.DEFAULT_TYPE) -> list[st
     if len(parts) < 2:
         return []
     return [part.strip() for part in parts[1].strip().split() if part.strip()]
+
+
+def _command_remainder(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    args = getattr(context, "args", None)
+    if args:
+        return " ".join(str(arg).strip() for arg in args if str(arg).strip()).strip()
+    if update.message is None or not update.message.text:
+        return ""
+    parts = update.message.text.strip().split(maxsplit=1)
+    return parts[1].strip() if len(parts) > 1 else ""
 
 
 def _services(context: ContextTypes.DEFAULT_TYPE) -> BotServices:

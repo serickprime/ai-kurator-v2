@@ -160,11 +160,19 @@ Phase 5A read-only MVP:
 - suggestions never activate, crawl, sync, index, reindex, write to Supabase,
   or change `config/query_glossary.yaml`.
 
-Phase 5B future scope:
+Status: Phase 5A is complete.
 
-- optional owner/admin Telegram UI around the same preview boundary;
+Phase 5B owner/admin preview integration:
+
+- explicit owner/admin-only Telegram command for the same read-only preview
+  boundary;
+- preview shows detected service, confidence, active context services, docs
+  registration/active status, owner-review need, safe next action, and auto
+  activation disabled;
 - keep ordinary user questions on the normal RAG path;
-- keep handlers thin and do not run activation from callbacks.
+- keep handlers thin and do not run activation from callbacks;
+- no Supabase writes, crawl, sync, indexing, reindex, migrations, config writes,
+  RAG pipeline changes, retrieval/router changes, or AnswerGenerator changes.
 
 ## Phase 6 — Maintenance
 
