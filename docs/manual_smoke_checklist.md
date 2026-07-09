@@ -324,10 +324,42 @@ Expected:
 - activation, crawl, sync, indexing, reindex, migrations, and direct docs status
   edits are not run.
 
+## Docs Reprocessing Preparation smoke
+
+Run after Phase 7B.0 safe reprocessing preparation tooling changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\plan_docs_reprocessing.py --help
+.\.venv\Scripts\python.exe scripts\plan_docs_reprocessing.py --service openrouter
+.\.venv\Scripts\python.exe scripts\plan_docs_reprocessing.py --service telegram_bot_api
+.\.venv\Scripts\python.exe scripts\plan_docs_reprocessing.py --service openrouter --format json
+```
+
+Expected:
+
+- plan mode is `read-only`;
+- exactly one service/source scope is resolved;
+- output shows active documents, cards, sections, chunks, versions,
+  fingerprints, duplicate active document keys, expected write scope, risks,
+  readiness, and blockers/warnings;
+- automatic execution, Supabase writes, and activation/reprocessing are
+  disabled;
+- manifest export uses an explicit local output path, atomic write, checksum,
+  and no overwrite without `--force`;
+- manifest verification catches checksum, required field, scope, relationship,
+  rollback-capability, and obvious secret-field problems;
+- `--compare-live` blocks execution when the live baseline drifts from the
+  manifest;
+- production backup files are not committed to Git;
+- `/docs_activate`, activation, crawl, sync, indexing, reindex, migrations,
+  rollback writes, direct status edits, and source reprocessing are not run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:
 
 - `/docs_activate openrouter confirm`
+- `/docs_activate telegram_bot_api confirm`
+- `/docs_activate_ready confirm`
 - any crawl/sync/indexing command
 - any activation confirm command

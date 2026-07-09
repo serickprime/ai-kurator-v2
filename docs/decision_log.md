@@ -225,6 +225,30 @@ Boundaries:
 - runtime health may continue to report existing OpenRouter WARN and Telegram
   Bot API FAIL until a future owner-approved reprocessing block.
 
+## Source reprocessing requires preflight and baseline validation
+
+Decision: Phase 7B.0 adds read-only source-scoped planning, baseline manifest
+export, manifest verification, live drift detection, and reusable execution
+precondition checks before any reprocessing is allowed.
+
+Reason: the existing activation path performs per-page versioned replacement
+and refreshes workspace-wide term statistics without one transaction for the
+whole source. A future reprocessing task needs a verified baseline and exact
+source scope before any owner-approved writes.
+
+Boundaries:
+
+- export and verification are preparation only, not approval to execute;
+- scope must resolve to one service and one canonical source;
+- manifest checksum, rollback capability, and live baseline drift must be
+  checked before future execution;
+- OpenRouter is the first controlled pilot; Telegram Bot API remains a
+  separate later approval;
+- no `/docs_activate`, activation, crawl, sync, indexing, reindex,
+  reprocessing, rollback writes, migrations, schema changes, Supabase writes,
+  AnswerGenerator, retrieval/router, query enrichment, or RAG pipeline changes
+  are part of Phase 7B.0.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops

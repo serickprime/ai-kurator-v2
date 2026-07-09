@@ -111,6 +111,7 @@ python scripts/smoke_telegram_upload_ingestion.py
 
 `runtime_healthcheck.py` is read-only: it checks required config, the default Supabase workspace, and service/docs status without starting Telegram polling or writing to Supabase.
 `smoke_supabase.py` is read-only and checks that `DEFAULT_WORKSPACE_ID` exists in `workspaces`.
+`scripts/plan_docs_reprocessing.py` is read-only preparation tooling for one source-scoped docs reprocessing plan, baseline manifest export, manifest verification, and live drift comparison. It does not run activation, crawl, sync, indexing, reindex, or Supabase writes.
 `smoke_openrouter.py` sends a tiny completion request to `OPENROUTER_DEFAULT_MODEL`.
 `smoke_rag_runtime.py` only builds runtime dependencies and prints missing `.env` settings when RAG v2 is disabled.
 `smoke_telegram_upload_ingestion.py` writes a tiny txt material through the same ingestion service used by Telegram upload mode.
