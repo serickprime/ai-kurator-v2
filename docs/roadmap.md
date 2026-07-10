@@ -2,13 +2,13 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 7B.1g-B -
-generic reviewed key-scoped external-doc reprocessing tooling. Until this block
-is merged and smoke-tested, do not reprocess production documents, run
-production exact URL fetch, repeat OpenRouter activation, start Telegram Bot API
-reprocessing, run a full source crawl, archive documents, run docs
-refresh/indexing, Supabase setup docs, MCP, or other unrelated tasks unless the
-owner explicitly changes focus.
+Use one active roadmap focus at a time. The current focus is Phase 7B.1g-C -
+generic reviewed external-doc canonical relocation tooling. Until this block is
+merged and smoke-tested, do not create a production relocation review artifact,
+run production fetch/relocation/indexing, repeat OpenRouter activation, start
+App Attribution reprocessing, start Telegram Bot API reprocessing, run a full
+source crawl, archive documents, run docs refresh/indexing, Supabase setup docs,
+MCP, or other unrelated tasks unless the owner explicitly changes focus.
 
 Backlog items should be recorded without being started in the active branch:
 
@@ -318,6 +318,30 @@ Phase 7B.1g-B reviewed key-scoped external-doc reprocessing tooling:
 - do not create a production backup, run production preview/fetch/reprocessing,
   write Supabase, refresh production term statistics, run rollback, or start
   Telegram Bot API in the implementation block.
+
+Status: Phase 7B.1g-B is complete and merged in PR #38, with a small repeated
+`--document-id` CLI parsing fix merged in PR #39. Phase 7B.1i-B then stopped
+safely before writes because Service Tiers resolved to a different canonical
+key; Phase 7B.1j-B confirmed that case as a canonical relocation.
+
+Phase 7B.1g-C reviewed canonical relocation tooling:
+
+- add generic preview/default tooling for exactly one owner-reviewed
+  external-doc canonical relocation where old and new canonical keys differ;
+- require a dedicated canonical relocation review artifact, exact old document
+  id/key/source/workspace/version/hash/signature, fresh rollback-capable backup,
+  live drift validation, collision checks for the new key, and explicit owner
+  confirmation before any future execution;
+- keep relocation separate from same-key version replacement: future execution
+  creates the new key-local document first, then archives the exact old
+  document only after the new active document is validated;
+- disable arbitrary URL input, batch mode, and full source crawl;
+- keep OpenRouter as a pilot fixture only, with no service-specific production
+  branching;
+- do not create a production relocation artifact or backup, run production
+  preview/fetch/relocation, write Supabase, refresh production term statistics,
+  run rollback, start App Attribution reprocessing, or start Telegram Bot API in
+  the implementation block.
 
 Phase 7B.2 future Telegram Bot API reprocessing:
 

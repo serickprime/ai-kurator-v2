@@ -438,6 +438,37 @@ Expected:
   reprocessing, rollback, crawl, activation, indexing, reindex, migration,
   direct status edit, and Supabase production writes are not run.
 
+## Reviewed External Docs Canonical Relocation Tooling smoke
+
+Run after Phase 7B.1g-C reviewed canonical relocation tooling changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\relocate_reviewed_external_doc.py --help
+.\.venv\Scripts\python.exe -m pytest tests\test_reviewed_canonical_relocation.py -q
+```
+
+Expected:
+
+- preview is the default mode;
+- one exact old document id is required;
+- a dedicated canonical relocation review artifact and fresh rollback-capable
+  backup are required before readiness can pass;
+- new key and fetch URL come only from the reviewed artifact;
+- arbitrary URL input, batch mode, and full source crawl are absent/disabled;
+- collision checks block existing active, archived, failed, or foreign-scope
+  new keys;
+- fake preview performs no fetch and no writes;
+- fake execution fetches only the reviewed new URL, uses the generic extractor
+  and Phase 7A cleaner, preserves reviewed useful terms, creates the new
+  key-local document, records lineage, and archives the exact old document only
+  after the new active document exists;
+- term-statistics refresh is called once after full fake success and refresh
+  failure is reported as partial failure;
+- production relocation artifact creation, production backup, production
+  preview, production fetch, production relocation, rollback, crawl,
+  activation, indexing, reindex, migration, direct status edit, and Supabase
+  production writes are not run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:
