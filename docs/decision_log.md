@@ -273,6 +273,34 @@ Boundaries:
 - future archive execution requires merged tooling, a valid discovered
   snapshot, owner review of specific keys, and separate owner approval.
 
+## Reviewed external-doc archive must be exact and backup-gated
+
+Decision: Phase 7B.1g-A adds generic tooling to preview and, in a future
+owner-approved block, archive exactly one reviewed external-doc document by
+exact document id, key, source, workspace, status, version, and live inventory
+fingerprint.
+
+Reason: existing uploaded/local material archive commands intentionally reject
+external/official docs, while the low-level `archive_active_documents` helper is
+too broad for a reviewed production docs cleanup. External-doc archive needs a
+reviewed reconciliation artifact, fresh rollback-capable backup, successor
+validation when applicable, and optimistic drift checks before any write.
+
+Boundaries:
+
+- preview is the default and automatic archive remains disabled;
+- production archive requires a separate owner-approved execution block and an
+  exact confirmation phrase;
+- future execution updates only one `documents` row from `active` to
+  `archived` and does not delete cards, sections, chunks, embeddings, or the
+  successor document;
+- term-statistics refresh is a separate post-archive step and partial failure
+  must be reported without automatic retry or rollback;
+- OpenRouter is only a pilot fixture; production logic must remain
+  registry/config-driven and source-agnostic;
+- Plan B targeted reprocessing for keep-active documents is a separate future
+  block.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops

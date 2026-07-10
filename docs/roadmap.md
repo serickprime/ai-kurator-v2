@@ -2,11 +2,12 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 7B.1b -
-generic safe obsolete-page reconciliation planning. Until Phase 7B.1b is
-merged, do not archive production documents, repeat OpenRouter activation,
-start Telegram Bot API reprocessing, run docs refresh/indexing, Supabase setup
-docs, MCP, or other unrelated tasks unless the owner explicitly changes focus.
+Use one active roadmap focus at a time. The current focus is Phase 7B.1g-A -
+generic reviewed one-document external-doc archive tooling. Until this block is
+merged and smoke-tested, do not archive production documents, repeat OpenRouter
+activation, start Telegram Bot API reprocessing, run docs refresh/indexing,
+start targeted reprocessing, Supabase setup docs, MCP, or other unrelated tasks
+unless the owner explicitly changes focus.
 
 Backlog items should be recorded without being started in the active branch:
 
@@ -268,6 +269,29 @@ Phase 7B.1b generic safe obsolete-page reconciliation planning:
   branching;
 - do not crawl, activate, archive, delete, update, index, reindex, write
   Supabase, run migrations, or change the RAG pipeline.
+
+Status: Phase 7B.1b is complete and merged in PR #36. Phase 7B.1c recovered a
+validated OpenRouter discovered snapshot from activation logs, Phase 7B.1d
+prepared owner recommendations, Phase 7B.1e recorded the reviewed decisions in
+a local artifact outside Git, and Phase 7B.1f split follow-up remediation into
+two independent plans.
+
+Phase 7B.1g-A reviewed one-document external-doc archive tooling:
+
+- add generic preview/default tooling for archiving exactly one reviewed
+  external-doc document in a future owner-approved execution block;
+- require exact service/source/workspace scope, exact document id/key, reviewed
+  reconciliation artifact, fresh post-activation rollback-capable backup,
+  live drift validation, and explicit owner confirmation;
+- update exactly one `documents` row in future execution and never delete
+  cards, sections, chunks, embeddings, or successor documents;
+- keep archive and targeted reprocessing as separate owner approvals and
+  separate execution reports;
+- keep OpenRouter as a pilot fixture only, with no service-specific production
+  branching;
+- do not archive production documents, run crawl/fetch, activation, indexing,
+  reindex, targeted reprocessing, rollback, migrations, schema changes,
+  term-statistics refresh, or Supabase writes during the implementation block.
 
 Phase 7B.2 future Telegram Bot API reprocessing:
 

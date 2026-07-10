@@ -378,6 +378,35 @@ Expected:
 - no archive, delete, activation, crawl, sync, indexing, reindex, migration,
   direct status edit, term-statistics refresh, or Supabase write is run.
 
+## Reviewed External Docs Archive Tooling smoke
+
+Run after Phase 7B.1g-A reviewed external-doc archive tooling changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\archive_reviewed_external_doc.py --help
+.\.venv\Scripts\python.exe -m pytest tests\test_reviewed_external_doc_archive.py -q
+```
+
+Expected:
+
+- preview is the default mode;
+- one exact document id is required;
+- reviewed reconciliation artifact and fresh rollback-capable backup are
+  required before readiness can pass;
+- `keep_active` and `needs_more_review` decisions block archive;
+- successor validation blocks mismatched or inactive successors;
+- exact target drift in id, key, source, workspace, status, version, hash, or
+  ingestion signature blocks archive;
+- future execution requires `--confirm-archive-one` and an exact confirmation
+  phrase;
+- fake execution updates exactly one document row and leaves successor, cards,
+  sections, chunks, and embeddings untouched;
+- term-statistics refresh is called only after a successful fake archive and
+  refresh failure is reported as partial failure;
+- production archive is not run during smoke;
+- no crawl, activation, indexing, reindex, migration, direct status edit,
+  rollback, arbitrary URL handling, or Supabase production write is run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:
