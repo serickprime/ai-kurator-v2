@@ -249,6 +249,30 @@ Boundaries:
   AnswerGenerator, retrieval/router, query enrichment, or RAG pipeline changes
   are part of Phase 7B.0.
 
+## Obsolete-page reconciliation is review-first
+
+Decision: Phase 7B.1b adds generic read-only reconciliation planning before any
+archive decision for active external-docs pages that are absent from a newly
+discovered snapshot.
+
+Reason: versioned activation can leave old active pages when a later crawl no
+longer discovers them, and a missing page is not automatically obsolete. The
+system needs a source-scoped plan that separates common pages, newly discovered
+pages, missing active pages, possible superseded pages, ambiguous cases, and
+canonical collisions before an owner reviews specific keys.
+
+Boundaries:
+
+- reconciliation uses registry/config scope, canonical URL normalization,
+  generic document metadata, and declarative review decisions;
+- OpenRouter is only the pilot fixture for the current incident;
+- production logic must not branch on service ids such as `openrouter` or
+  `telegram_bot_api`;
+- no documents are archived, deleted, activated, crawled, indexed, reindexed,
+  or written to Supabase in Phase 7B.1b;
+- future archive execution requires merged tooling, a valid discovered
+  snapshot, owner review of specific keys, and separate owner approval.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops

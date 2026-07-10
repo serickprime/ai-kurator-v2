@@ -2,11 +2,11 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 7B.0 - safe
-source-scoped reprocessing preparation tooling. Until Phase 7B.0 is merged, do
-not start real source reprocessing, docs refresh/indexing, activation,
-Supabase setup docs, MCP, or other unrelated tasks unless the owner explicitly
-changes focus.
+Use one active roadmap focus at a time. The current focus is Phase 7B.1b -
+generic safe obsolete-page reconciliation planning. Until Phase 7B.1b is
+merged, do not archive production documents, repeat OpenRouter activation,
+start Telegram Bot API reprocessing, run docs refresh/indexing, Supabase setup
+docs, MCP, or other unrelated tasks unless the owner explicitly changes focus.
 
 Backlog items should be recorded without being started in the active branch:
 
@@ -240,14 +240,34 @@ Phase 7B.0 safe reprocessing preparation tooling:
 - do not run `/docs_activate`, activation, crawl, sync, indexing, reindex,
   rollback writes, migrations, Supabase writes, or source reprocessing.
 
-Phase 7B.1 future OpenRouter reprocessing:
+Status: Phase 7B.0 is complete and merged in PR #35.
 
-- run only after Phase 7B.0 is merged, post-merge smoke passes, a real
-  source-scoped backup is created and verified, and the owner explicitly
-  approves exact OpenRouter execution commands;
-- process OpenRouter as the first controlled pilot;
-- verify docs health and retrieval/evidence quality after reprocessing;
+Phase 7B.1 OpenRouter controlled reprocessing:
+
+- OpenRouter was reprocessed only after a source-scoped backup was created,
+  verified, and explicitly owner-approved;
+- activation reported quality PASS, failed pages 0, duplicate active keys 0,
+  and no foreign source rows;
+- useful endpoints and code were preserved;
+- acceptance remains open because three untouched active v1 pages were absent
+  from the latest fetched set and still carry old generator boilerplate;
+- rollback is not recommended because active data is not damaged;
 - do not automatically proceed to Telegram Bot API.
+
+Phase 7B.1b generic safe obsolete-page reconciliation planning:
+
+- compare current active document keys with a local discovered-key snapshot for
+  one registered source;
+- classify common, newly discovered, missing active, possible superseded,
+  ambiguous, and canonical-collision cases;
+- export owner-review plans for missing/superseded candidates without applying
+  decisions;
+- treat missing from snapshot as review input, not automatic obsolete;
+- require separate owner approval for any future archive;
+- keep OpenRouter as a pilot fixture only, with no service-specific production
+  branching;
+- do not crawl, activate, archive, delete, update, index, reindex, write
+  Supabase, run migrations, or change the RAG pipeline.
 
 Phase 7B.2 future Telegram Bot API reprocessing:
 
