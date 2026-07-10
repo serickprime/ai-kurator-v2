@@ -407,6 +407,37 @@ Expected:
 - no crawl, activation, indexing, reindex, migration, direct status edit,
   rollback, arbitrary URL handling, or Supabase production write is run.
 
+## Reviewed External Docs Key-Scoped Reprocessing Tooling smoke
+
+Run after Phase 7B.1g-B reviewed exact-key reprocessing tooling changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\reprocess_reviewed_external_docs.py --help
+.\.venv\Scripts\python.exe -m pytest tests\test_reviewed_key_reprocessing.py -q
+```
+
+Expected:
+
+- preview is the default mode;
+- exact reviewed document ids are required and the target set is bounded;
+- reviewed reconciliation artifact and fresh post-archive rollback-capable
+  backup are required before readiness can pass;
+- only `keep_active` reviewed decisions are accepted;
+- `superseded_by`, `archive_candidate`, and `needs_more_review` block
+  reprocessing;
+- arbitrary URL input and full source crawl are absent/disabled;
+- fake preview performs no fetch and no writes;
+- fake execution fetches only selected exact URLs, uses the generic extractor
+  and Phase 7A cleaner, preserves useful terms, creates new versions only for
+  selected keys, and archives only their previous active versions;
+- all-target validation blocks writes when any selected target fails before
+  indexing;
+- term-statistics refresh is called once after full fake success and refresh
+  failure is reported as partial failure;
+- production backup, production preview, production fetch, production
+  reprocessing, rollback, crawl, activation, indexing, reindex, migration,
+  direct status edit, and Supabase production writes are not run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:

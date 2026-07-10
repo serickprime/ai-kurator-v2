@@ -2,12 +2,13 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 7B.1g-A -
-generic reviewed one-document external-doc archive tooling. Until this block is
-merged and smoke-tested, do not archive production documents, repeat OpenRouter
-activation, start Telegram Bot API reprocessing, run docs refresh/indexing,
-start targeted reprocessing, Supabase setup docs, MCP, or other unrelated tasks
-unless the owner explicitly changes focus.
+Use one active roadmap focus at a time. The current focus is Phase 7B.1g-B -
+generic reviewed key-scoped external-doc reprocessing tooling. Until this block
+is merged and smoke-tested, do not reprocess production documents, run
+production exact URL fetch, repeat OpenRouter activation, start Telegram Bot API
+reprocessing, run a full source crawl, archive documents, run docs
+refresh/indexing, Supabase setup docs, MCP, or other unrelated tasks unless the
+owner explicitly changes focus.
 
 Backlog items should be recorded without being started in the active branch:
 
@@ -292,6 +293,31 @@ Phase 7B.1g-A reviewed one-document external-doc archive tooling:
 - do not archive production documents, run crawl/fetch, activation, indexing,
   reindex, targeted reprocessing, rollback, migrations, schema changes,
   term-statistics refresh, or Supabase writes during the implementation block.
+
+Status: Phase 7B.1g-A is complete and merged in PR #37. Phase 7B.1i-A then
+archived exactly one superseded OpenRouter `mcp-server` document by explicit
+owner approval; the new `guides/overview/mcp-server` successor stayed active,
+cards/sections/chunks were preserved, and term statistics refreshed
+successfully.
+
+Phase 7B.1g-B reviewed key-scoped external-doc reprocessing tooling:
+
+- add generic preview/default tooling for reprocessing exact reviewed
+  keep-active external-doc document ids in a future owner-approved execution
+  block;
+- use registered service/source configuration, exact live document metadata,
+  reviewed decisions, fresh post-archive rollback-capable backup, URL scope
+  validation, live drift gates, and explicit owner confirmation;
+- disable full source crawl and arbitrary URL input;
+- use the shared external-doc fetch/extract/Phase 7A cleaner/indexing path for
+  future execution;
+- require all selected targets to fetch, clean, and validate before any future
+  writes begin;
+- keep OpenRouter as a pilot fixture only, with no service-specific production
+  branching;
+- do not create a production backup, run production preview/fetch/reprocessing,
+  write Supabase, refresh production term statistics, run rollback, or start
+  Telegram Bot API in the implementation block.
 
 Phase 7B.2 future Telegram Bot API reprocessing:
 
