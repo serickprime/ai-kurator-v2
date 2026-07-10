@@ -57,7 +57,9 @@ Core state:
 - Phase 6A read-only Docs Source Health/Stale Report is merged and verified.
 - Phase 6B owner/admin Telegram preview for docs health is merged and verified.
 - Phase 7A offline source-quality remediation for OpenRouter and Telegram Bot API is merged.
-- Phase 7B.0 safe source-scoped reprocessing preparation tooling is the current implementation focus.
+- Phase 7B.0 safe source-scoped reprocessing preparation tooling is merged.
+- Phase 7B.1 OpenRouter controlled activation was owner-approved and technically completed, but acceptance remains open because three untouched active v1 pages still carry old generator boilerplate.
+- Phase 7B.1b generic safe obsolete-page reconciliation planning is the current implementation focus.
 
 ## Completed PRs
 
@@ -96,31 +98,35 @@ Core state:
 - PR #32 - Phase 6A read-only Docs Source Health/Stale Report.
 - PR #33 - Phase 6B docs health admin preview.
 - PR #34 - Phase 7A offline source-quality remediation.
+- PR #35 - Phase 7B.0 safe docs reprocessing preparation.
 
 ## Latest completed project block
 
-Phase 7A was completed through PR #34:
+Phase 7B.0 was completed through PR #35:
 
-- external docs extraction/cleaning removes OpenRouter generator/page-template
-  boilerplate in local fixtures;
-- Telegram Bot API raw page HTML, navigation/footer, and cookie chrome are
-  cleaned in local fixtures;
-- useful endpoints, methods, parameters, fenced code, and safe inline HTML
-  examples are preserved;
-- quality validation still fails truly dirty raw page HTML;
-- existing Supabase documents/chunks were not reprocessed, so runtime
-  OpenRouter WARN and Telegram Bot API FAIL may remain until a separate
-  owner-approved reprocessing block.
+- source-scoped reprocessing plans are read-only and fail closed;
+- baseline manifests include checksum, fingerprints, source-scoped rows, and
+  rollback-capability validation;
+- compare-live detects baseline drift before any execution;
+- reusable preconditions require owner approval before future writes;
+- no source was reprocessed by Phase 7B.0 itself.
+
+After Phase 7B.0, the owner approved OpenRouter-only activation. The activation
+passed and preserved useful endpoints/code, but health still reports WARN from
+three old active v1 pages absent from the fetched set. Rollback is not
+recommended; Phase 7B.1b adds generic read-only reconciliation planning before
+any archive decision.
 
 ## Current focus
 
 Current active roadmap focus:
 
-- Phase 7B.0 - safe source-scoped reprocessing preparation tooling.
-- Current branch: `phase7b-safe-reprocessing-tooling`.
-- Until Phase 7B.0 is merged, do not start real source reprocessing, docs
-  refresh/indexing, activation, Supabase setup docs, MCP, or unrelated work
-  unless the owner explicitly changes focus.
+- Phase 7B.1b - generic safe obsolete-page reconciliation planning.
+- Current branch: `phase7b-obsolete-page-reconciliation`.
+- Until Phase 7B.1b is merged and smoke-tested, do not archive production
+  documents, repeat OpenRouter activation, start Telegram Bot API reprocessing,
+  run docs refresh/indexing, Supabase setup docs, MCP, or unrelated work unless
+  the owner explicitly changes focus.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -128,7 +134,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase7b-safe-reprocessing-tooling` after the branch is
+- open a PR for `phase7b-obsolete-page-reconciliation` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;

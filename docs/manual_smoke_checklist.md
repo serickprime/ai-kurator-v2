@@ -354,6 +354,30 @@ Expected:
 - `/docs_activate`, activation, crawl, sync, indexing, reindex, migrations,
   rollback writes, direct status edits, and source reprocessing are not run.
 
+## Docs Reconciliation Planning smoke
+
+Run after Phase 7B.1b safe reconciliation planning changes:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\plan_docs_reconciliation.py --help
+.\.venv\Scripts\python.exe -m pytest tests\test_docs_reconciliation_plan.py -q
+```
+
+Expected:
+
+- plan mode is `read-only`;
+- input is one service/source scope plus a local discovered-key snapshot;
+- common, newly discovered, active-missing, possible-superseded, ambiguous, and
+  canonical-collision cases are classified without writes;
+- missing from snapshot is not treated as automatic obsolete;
+- possible superseded pages require owner review;
+- review export is a local owner-review file, not an apply file;
+- review export uses atomic write, checksum, no overwrite without `--force`,
+  and no embeddings, chunks, secrets, or page content;
+- production snapshots/review files are not committed to Git;
+- no archive, delete, activation, crawl, sync, indexing, reindex, migration,
+  direct status edit, term-statistics refresh, or Supabase write is run.
+
 ## Forbidden smoke
 
 Do not run these unless explicitly requested:
