@@ -59,7 +59,12 @@ Core state:
 - Phase 7A offline source-quality remediation for OpenRouter and Telegram Bot API is merged.
 - Phase 7B.0 safe source-scoped reprocessing preparation tooling is merged.
 - Phase 7B.1 OpenRouter controlled activation was owner-approved and technically completed, but acceptance remains open because three untouched active v1 pages still carry old generator boilerplate.
-- Phase 7B.1b generic safe obsolete-page reconciliation planning is the current implementation focus.
+- Phase 7B.1b generic safe obsolete-page reconciliation planning is merged and smoke-tested.
+- Phase 7B.1c recovered the OpenRouter production discovered snapshot from activation logs without a new crawl.
+- Phase 7B.1d reviewed the three remaining OpenRouter old active v1 pages.
+- Phase 7B.1e recorded owner decisions in a local reviewed artifact outside Git.
+- Phase 7B.1f split remediation into an archive plan for one superseded page and a separate targeted reprocessing plan for two keep-active pages.
+- Phase 7B.1g-A generic reviewed one-document external-doc archive tooling is the current implementation focus.
 
 ## Completed PRs
 
@@ -99,6 +104,7 @@ Core state:
 - PR #33 - Phase 6B docs health admin preview.
 - PR #34 - Phase 7A offline source-quality remediation.
 - PR #35 - Phase 7B.0 safe docs reprocessing preparation.
+- PR #36 - Phase 7B.1b safe docs reconciliation planning.
 
 ## Latest completed project block
 
@@ -121,12 +127,13 @@ any archive decision.
 
 Current active roadmap focus:
 
-- Phase 7B.1b - generic safe obsolete-page reconciliation planning.
-- Current branch: `phase7b-obsolete-page-reconciliation`.
-- Until Phase 7B.1b is merged and smoke-tested, do not archive production
-  documents, repeat OpenRouter activation, start Telegram Bot API reprocessing,
-  run docs refresh/indexing, Supabase setup docs, MCP, or unrelated work unless
-  the owner explicitly changes focus.
+- Phase 7B.1g-A - generic reviewed one-document external-doc archive tooling.
+- Current branch: `phase7b-reviewed-external-doc-archive`.
+- This block adds preview/default tooling and future exact one-row archive
+  execution gates only. It must not archive production documents, repeat
+  OpenRouter activation, start Telegram Bot API reprocessing, run docs
+  refresh/indexing, or start Plan B targeted reprocessing unless the owner
+  explicitly changes focus.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -134,7 +141,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase7b-obsolete-page-reconciliation` after the branch is
+- open a PR for `phase7b-reviewed-external-doc-archive` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;

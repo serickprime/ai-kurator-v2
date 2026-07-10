@@ -158,6 +158,31 @@ class DocumentRepository:
             },
         )
 
+    async def archive_external_document_exact(
+        self,
+        *,
+        document_id: str,
+        workspace_id: str,
+        document_key: str,
+        source_id: str,
+        expected_version: int,
+    ) -> int:
+        """Archive exactly one active external-doc document row."""
+        updated = await self._client.update(
+            "documents",
+            {"status": "archived"},
+            params={
+                "id": f"eq.{document_id}",
+                "workspace_id": f"eq.{workspace_id}",
+                "document_key": f"eq.{document_key}",
+                "source_type": "eq.external_docs",
+                "metadata->>source_name": f"eq.{source_id}",
+                "status": "eq.active",
+                "version": f"eq.{expected_version}",
+            },
+        )
+        return len(updated)
+
     async def activate_document(self, document_id: str) -> None:
         """Mark a draft document active."""
         await self._client.update("documents", {"status": "active"}, params={"id": f"eq.{document_id}"})
