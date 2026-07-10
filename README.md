@@ -115,6 +115,7 @@ python scripts/smoke_telegram_upload_ingestion.py
 `scripts/plan_docs_reconciliation.py` is read-only reconciliation planning for one source-scoped discovered-key snapshot. It compares active document keys with a local snapshot, exports an owner-review plan when requested, and never archives, activates, crawls, indexes, reindexes, or writes Supabase.
 `scripts/archive_reviewed_external_doc.py` previews one reviewed external-doc archive target. It requires an exact document id, reviewed reconciliation artifact, and fresh rollback-capable backup before any future archive; preview is the default and production execution also requires `--confirm-archive-one` plus an exact confirmation phrase.
 `scripts/reprocess_reviewed_external_docs.py` previews reviewed exact-key external-doc reprocessing. It accepts exact reviewed document ids only, disables full source crawl and arbitrary URLs, requires a fresh post-archive rollback-capable backup, and needs `--confirm-reprocess-reviewed` plus an exact confirmation phrase before any future execution.
+`scripts/relocate_reviewed_external_doc.py` previews one owner-reviewed canonical relocation where an external-doc key moved to a different canonical key. It requires a dedicated canonical relocation artifact, exact old document id, fresh rollback-capable backup, collision-free new key, and future execution requires `--confirm-relocate-reviewed` plus an exact confirmation phrase.
 `smoke_openrouter.py` sends a tiny completion request to `OPENROUTER_DEFAULT_MODEL`.
 `smoke_rag_runtime.py` only builds runtime dependencies and prints missing `.env` settings when RAG v2 is disabled.
 `smoke_telegram_upload_ingestion.py` writes a tiny txt material through the same ingestion service used by Telegram upload mode.
@@ -162,6 +163,7 @@ Archiving does not physically delete chunks and cannot be used for external/offi
 
 Reviewed external-doc archive tooling is separate from uploaded/local material archiving. It is generic, exact-id scoped, review/backup gated, and must not be used for production archive without a separate owner-approved execution block.
 Reviewed exact-key reprocessing tooling is also separate: it keeps archive and keep-active cleanup as different approval boundaries, uses the shared external-doc extractor/cleaner/indexer, and must not run production reprocessing without a fresh backup, preview, and explicit owner approval.
+Reviewed canonical relocation tooling is a third separate path for confirmed old-key to new-key moves. It does not treat relocation as same-key replacement, creates the new canonical key first in future execution, then archives the exact old document only after the new active document is verified.
 
 When an answer used a bad uploaded/local source, check `/source_last`, archive the source with `/archive_source <id>`, then ask the question again.
 

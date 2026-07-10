@@ -66,7 +66,10 @@ Core state:
 - Phase 7B.1f split remediation into an archive plan for one superseded page and a separate targeted reprocessing plan for two keep-active pages.
 - Phase 7B.1g-A generic reviewed one-document external-doc archive tooling is merged and smoke-tested.
 - Phase 7B.1i-A archived the superseded old OpenRouter `mcp-server` document by exact owner approval; successor remained active and child rows were preserved.
-- Phase 7B.1g-B generic reviewed key-scoped external-doc reprocessing tooling is the current implementation focus.
+- Phase 7B.1g-B generic reviewed key-scoped external-doc reprocessing tooling is merged and smoke-tested.
+- Phase 7B.1i-B stopped safely before writes because Service Tiers resolved to a different canonical key.
+- Phase 7B.1j-B confirmed Service Tiers as a canonical relocation from `features/service-tiers` to `guides/features/service-tiers`; App Attribution remains active v1 and unchanged.
+- Phase 7B.1g-C generic reviewed canonical relocation tooling is the current implementation focus.
 
 ## Completed PRs
 
@@ -108,6 +111,8 @@ Core state:
 - PR #35 - Phase 7B.0 safe docs reprocessing preparation.
 - PR #36 - Phase 7B.1b safe docs reconciliation planning.
 - PR #37 - Phase 7B.1g-A reviewed external docs archive tooling.
+- PR #38 - Phase 7B.1g-B reviewed external docs reprocessing tooling.
+- PR #39 - reviewed reprocessing CLI document id parsing fix.
 
 ## Latest completed project block
 
@@ -130,13 +135,14 @@ any archive decision.
 
 Current active roadmap focus:
 
-- Phase 7B.1g-B - generic reviewed key-scoped external-doc reprocessing tooling.
-- Current branch: `phase7b-reviewed-key-reprocessing`.
-- This block adds preview/default tooling and future exact-key keep-active
-  cleanup gates only. It must not reprocess production documents, run a
-  production exact URL fetch, repeat OpenRouter activation, start Telegram Bot
-  API reprocessing, run a full source crawl, archive documents, or change
-  production term statistics unless the owner explicitly changes focus.
+- Phase 7B.1g-C - generic reviewed external-doc canonical relocation tooling.
+- Current branch: `phase7b-reviewed-canonical-relocation`.
+- This block adds preview/default tooling and future exact one-document
+  canonical relocation gates only. It must not create a production relocation
+  review artifact, run production fetch/relocation/indexing, repeat OpenRouter
+  activation, start App Attribution reprocessing, start Telegram Bot API
+  reprocessing, run a full source crawl, archive production documents, or
+  change production term statistics unless the owner explicitly changes focus.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -144,7 +150,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase7b-reviewed-key-reprocessing` after the branch is
+- open a PR for `phase7b-reviewed-canonical-relocation` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;

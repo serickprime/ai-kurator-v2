@@ -328,6 +328,30 @@ Boundaries:
 - OpenRouter remains only the pilot fixture; production logic must stay generic
   for registered external docs sources.
 
+## Canonical relocation requires a dedicated reviewed path
+
+Decision: Phase 7B.1g-C adds generic tooling for a reviewed external-doc
+canonical relocation where the old and new canonical keys differ.
+
+Reason: a confirmed canonical relocation is not a same-key version replacement.
+The old key and new key are distinct document keys, and a keep-active decision
+for the old key is not sufficient owner approval to create a new canonical key
+and archive the old document.
+
+Boundaries:
+
+- relocation needs a dedicated owner-reviewed canonical relocation artifact;
+- preview is the default and performs no fetch or writes;
+- arbitrary URL input, batch mode, and full source crawl are disabled;
+- future execution may fetch only the reviewed new canonical URL, create the
+  new key-local document first, then archive the exact old document after the
+  new active document is validated;
+- new-key collisions, live drift, missing rollback-capable backup, and invalid
+  useful-content preservation block execution readiness;
+- partial failure is reported without automatic retry or rollback;
+- OpenRouter remains only the pilot fixture; production logic must stay generic
+  for registered external docs sources.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops
