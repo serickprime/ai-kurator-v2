@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from scripts import reprocess_reviewed_external_docs as cli
 from app.docs_registry.reconciliation_plan import REVIEW_SCHEMA_VERSION, _payload_checksum
 from app.docs_registry.reprocessing_plan import (
     SourceInventory,
@@ -34,6 +35,95 @@ def test_valid_preview_with_two_reviewed_keep_active_targets() -> None:
     assert plan.full_source_crawl == "disabled"
     assert plan.arbitrary_urls == "disabled"
     assert plan.automatic_execution_allowed is False
+
+
+def test_cli_parse_single_document_id_normalizes_to_tuple_contract() -> None:
+    args = cli.parse_args(
+        [
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--document-id",
+            "doc-id-one",
+        ]
+    )
+
+    assert args.document_id == ["doc-id-one"]
+    assert tuple(args.document_id or ()) == ("doc-id-one",)
+
+
+def test_cli_parse_two_document_ids_preserves_order() -> None:
+    args = cli.parse_args(
+        [
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--document-id",
+            "doc-id-one",
+            "--document-id",
+            "doc-id-two",
+        ]
+    )
+
+    assert args.document_id == ["doc-id-one", "doc-id-two"]
+    assert tuple(args.document_id or ()) == ("doc-id-one", "doc-id-two")
+
+
+def test_cli_parse_empty_target_set_stays_valid_for_service_validation() -> None:
+    args = cli.parse_args(["--service", "example", "--review", "review.json"])
+
+    assert args.document_id is None
+    assert tuple(args.document_id or ()) == ()
+
+
+def test_cli_preview_path_passes_repeated_document_ids_without_execution(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+    plan = _plan(_fixture())
+
+    async def fake_build_live_plan(args):
+        captured["document_id"] = args.document_id
+        return plan, FakeClosableClient(), _source()
+
+    def fail_execution(**_kwargs):
+        raise AssertionError("execution must not run without --confirm-reprocess-reviewed")
+
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "reprocess_reviewed_external_docs.py",
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--document-id",
+            "doc-id-one",
+            "--document-id",
+            "doc-id-two",
+        ],
+    )
+    monkeypatch.setattr(cli, "_build_live_plan", fake_build_live_plan)
+    monkeypatch.setattr(cli, "execute_reviewed_external_docs_reprocessing", fail_execution)
+
+    code = asyncio.run(cli.main_async())
+
+    assert code == 0
+    assert captured["document_id"] == ["doc-id-one", "doc-id-two"]
+    assert "mode: read-only" in capsys.readouterr().out
+
+
+def test_cli_help_keeps_repeated_document_id_and_no_arbitrary_url(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        cli.parse_args(["--help"])
+
+    output = capsys.readouterr().out
+    assert exc_info.value.code == 0
+    assert "--document-id DOCUMENT_ID" in output
+    assert "--confirm-reprocess-reviewed" in output
+    assert "--confirmation-phrase CONFIRMATION_PHRASE" in output
+    assert "--url" not in output
 
 
 def test_preview_performs_no_fetch_and_no_writes() -> None:
@@ -569,6 +659,11 @@ class FakeIndexer:
         if self.refresh_error:
             raise self.refresh_error
         return 77
+
+
+class FakeClosableClient:
+    async def close(self) -> None:
+        return None
 
 
 def _fixture(

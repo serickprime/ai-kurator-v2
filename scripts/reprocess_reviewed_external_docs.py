@@ -40,7 +40,7 @@ from app.llm.embeddings import OllamaEmbeddingClient  # noqa: E402
 from app.service_registry.config import DEFAULT_SERVICE_REGISTRY_CONFIG  # noqa: E402
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse CLI arguments."""
     parser = argparse.ArgumentParser(
         description="Preview or execute reviewed exact-key external-doc reprocessing.",
@@ -53,7 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--document-id",
         action="append",
-        default=(),
+        default=None,
         help="Exact active document UUID to reprocess. Repeat for each reviewed target.",
     )
     parser.add_argument("--max-targets", type=int, default=2, help="Maximum exact reviewed targets allowed.")
@@ -67,7 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--confirmation-phrase", default="", help="Exact phrase required with execution flag.")
     parser.add_argument("--registry-config", type=Path, default=DEFAULT_SERVICE_REGISTRY_CONFIG)
     parser.add_argument("--external-config", type=Path, default=DEFAULT_EXTERNAL_DOCS_CONFIG)
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 async def main_async() -> int:
