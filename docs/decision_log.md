@@ -301,6 +301,33 @@ Boundaries:
 - Plan B targeted reprocessing for keep-active documents is a separate future
   block.
 
+## Reviewed keep-active external-doc reprocessing is exact-key only
+
+Decision: Phase 7B.1g-B adds generic tooling to preview and, in a future
+owner-approved block, reprocess only exact reviewed keep-active external-doc
+document ids.
+
+Reason: after the superseded OpenRouter MCP page was archived, two reviewed
+keep-active pages still need cleanup without a full source crawl and without
+touching unrelated documents. The operation needs exact target selection,
+registered source scope, reviewed owner decisions, fresh post-archive rollback
+backup, live drift checks, and all-target validation before any indexing writes.
+
+Boundaries:
+
+- preview is the default and performs no network fetch or Supabase writes;
+- arbitrary URL input and full source crawl are disabled;
+- future execution requires `keep_active` reviewed decisions, a fresh
+  rollback-capable backup, URL allow-policy validation, exact confirmation, and
+  all selected targets passing fetch/extract/clean/content-preservation gates
+  before writes begin;
+- future writes may only create new versions for the exact reviewed keys,
+  archive their previous active versions, and refresh workspace term statistics
+  once after full success;
+- partial failure must be reported without automatic retry or rollback;
+- OpenRouter remains only the pilot fixture; production logic must stay generic
+  for registered external docs sources.
+
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops

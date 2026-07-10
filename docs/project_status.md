@@ -64,7 +64,9 @@ Core state:
 - Phase 7B.1d reviewed the three remaining OpenRouter old active v1 pages.
 - Phase 7B.1e recorded owner decisions in a local reviewed artifact outside Git.
 - Phase 7B.1f split remediation into an archive plan for one superseded page and a separate targeted reprocessing plan for two keep-active pages.
-- Phase 7B.1g-A generic reviewed one-document external-doc archive tooling is the current implementation focus.
+- Phase 7B.1g-A generic reviewed one-document external-doc archive tooling is merged and smoke-tested.
+- Phase 7B.1i-A archived the superseded old OpenRouter `mcp-server` document by exact owner approval; successor remained active and child rows were preserved.
+- Phase 7B.1g-B generic reviewed key-scoped external-doc reprocessing tooling is the current implementation focus.
 
 ## Completed PRs
 
@@ -105,6 +107,7 @@ Core state:
 - PR #34 - Phase 7A offline source-quality remediation.
 - PR #35 - Phase 7B.0 safe docs reprocessing preparation.
 - PR #36 - Phase 7B.1b safe docs reconciliation planning.
+- PR #37 - Phase 7B.1g-A reviewed external docs archive tooling.
 
 ## Latest completed project block
 
@@ -127,13 +130,13 @@ any archive decision.
 
 Current active roadmap focus:
 
-- Phase 7B.1g-A - generic reviewed one-document external-doc archive tooling.
-- Current branch: `phase7b-reviewed-external-doc-archive`.
-- This block adds preview/default tooling and future exact one-row archive
-  execution gates only. It must not archive production documents, repeat
-  OpenRouter activation, start Telegram Bot API reprocessing, run docs
-  refresh/indexing, or start Plan B targeted reprocessing unless the owner
-  explicitly changes focus.
+- Phase 7B.1g-B - generic reviewed key-scoped external-doc reprocessing tooling.
+- Current branch: `phase7b-reviewed-key-reprocessing`.
+- This block adds preview/default tooling and future exact-key keep-active
+  cleanup gates only. It must not reprocess production documents, run a
+  production exact URL fetch, repeat OpenRouter activation, start Telegram Bot
+  API reprocessing, run a full source crawl, archive documents, or change
+  production term statistics unless the owner explicitly changes focus.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -141,7 +144,7 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase7b-reviewed-external-doc-archive` after the branch is
+- open a PR for `phase7b-reviewed-key-reprocessing` after the branch is
   ready and pushed;
 - check CI and mergeability after the PR is open;
 - merge only after explicit owner command;
