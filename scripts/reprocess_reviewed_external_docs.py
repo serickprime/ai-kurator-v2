@@ -64,7 +64,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Execute exact reviewed reprocessing after all gates pass.",
     )
-    parser.add_argument("--confirmation-phrase", default="", help="Exact phrase required with execution flag.")
+    confirmation_group = parser.add_mutually_exclusive_group()
+    confirmation_group.add_argument(
+        "--confirmation-phrase",
+        default="",
+        help=(
+            "Exact phrase required with execution flag. Legacy option: the value may be visible "
+            "in the process command line; use --confirmation-phrase-stdin for monitored execution."
+        ),
+    )
+    confirmation_group.add_argument(
+        "--confirmation-phrase-stdin",
+        action="store_true",
+        help="Read the exact execution confirmation phrase from one stdin line.",
+    )
     parser.add_argument("--registry-config", type=Path, default=DEFAULT_SERVICE_REGISTRY_CONFIG)
     parser.add_argument("--external-config", type=Path, default=DEFAULT_EXTERNAL_DOCS_CONFIG)
     return parser.parse_args(argv)
@@ -79,7 +92,10 @@ async def main_async() -> int:
     try:
         plan, client, source = await _build_live_plan(args)
         result = None
+        confirmation_source = "none"
+        confirmation_accepted = False
         if args.confirm_reprocess_reviewed:
+            confirmation_phrase, confirmation_source = _read_execution_confirmation(args)
             repository = DocumentRepository(client)
             embedding_client = OllamaEmbeddingClient(get_settings())
             crawler = ExternalDocsCrawler()
@@ -93,19 +109,28 @@ async def main_async() -> int:
                 extractor=ExternalDocsExtractor(),
                 indexer=indexer,
                 term_repository=repository,
-                confirmation_phrase=args.confirmation_phrase,
+                confirmation_phrase=confirmation_phrase,
                 source=source,
             )
+            confirmation_accepted = "confirmation_phrase_mismatch" not in result.blockers
         if args.format == "json":
-            payload: dict[str, object] = {"plan": plan.to_dict()}
+            include_phrase = not args.confirm_reprocess_reviewed
+            payload: dict[str, object] = {"plan": plan.to_dict(include_confirmation_phrase=include_phrase)}
             if result is not None:
                 payload["execution_result"] = result.to_dict()
+                payload["confirmation"] = {
+                    "source": confirmation_source,
+                    "accepted": confirmation_accepted,
+                }
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
-            print(format_reprocessing_plan_text(plan))
+            include_phrase = not args.confirm_reprocess_reviewed
+            print(format_reprocessing_plan_text(plan, include_confirmation_phrase=include_phrase))
             if result is not None:
                 print("")
                 print("Reviewed reprocessing execution result")
+                print(f"- confirmation source: {confirmation_source}")
+                print(f"- confirmation accepted: {'yes' if confirmation_accepted else 'no'}")
                 print(f"- status: {result.status}")
                 print(f"- changed keys: {len(result.changed_keys)}")
                 print(f"- failed keys: {len(result.failed_keys)}")
@@ -157,6 +182,21 @@ async def _build_live_plan(args: argparse.Namespace):
     )
     source = _source_from_scope(scope)
     return plan, client, source
+
+
+def _read_execution_confirmation(args: argparse.Namespace) -> tuple[str, str]:
+    """Return an execution confirmation phrase and its source without echoing it."""
+    if args.confirmation_phrase_stdin:
+        raw = sys.stdin.readline()
+        if raw == "":
+            raise ReviewedExternalDocsReprocessingError("confirmation_phrase_stdin_empty")
+        phrase = raw.rstrip("\r\n")
+        if not phrase:
+            raise ReviewedExternalDocsReprocessingError("confirmation_phrase_stdin_empty")
+        return phrase, "stdin"
+    if args.confirmation_phrase:
+        return str(args.confirmation_phrase), "argument"
+    raise ReviewedExternalDocsReprocessingError("confirmation_phrase_required")
 
 
 def _source_from_scope(scope) -> ExternalDocSource:

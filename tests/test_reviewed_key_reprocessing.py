@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import json
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
@@ -16,6 +18,8 @@ from app.docs_registry.reprocessing_plan import (
 )
 from app.docs_registry.reviewed_key_reprocessing import (
     NoTermStatisticsRefreshRepository,
+    ReprocessingExecutionResult,
+    ReviewedExternalDocsReprocessingError,
     build_reviewed_external_docs_reprocessing_plan,
     execute_reviewed_external_docs_reprocessing,
     format_reprocessing_plan_text,
@@ -123,7 +127,44 @@ def test_cli_help_keeps_repeated_document_id_and_no_arbitrary_url(capsys) -> Non
     assert "--document-id DOCUMENT_ID" in output
     assert "--confirm-reprocess-reviewed" in output
     assert "--confirmation-phrase CONFIRMATION_PHRASE" in output
+    assert "--confirmation-phrase-stdin" in output
+    assert "process" in output
+    assert "command line" in output
     assert "--url" not in output
+
+
+def test_preview_json_keeps_exact_confirmation_phrase_available() -> None:
+    plan = _plan(_fixture())
+
+    payload = plan.to_dict()
+
+    assert payload["expected_confirmation_phrase"] == plan.expected_confirmation_phrase
+
+
+def test_execution_json_plan_redacts_confirmation_phrase() -> None:
+    plan = _plan(_fixture())
+
+    payload = plan.to_dict(include_confirmation_phrase=False)
+
+    assert payload["expected_confirmation_phrase"] == "<REDACTED>"
+    assert plan.expected_confirmation_phrase not in json.dumps(payload)
+
+
+def test_preview_text_keeps_exact_confirmation_phrase_available() -> None:
+    plan = _plan(_fixture())
+
+    text = format_reprocessing_plan_text(plan)
+
+    assert plan.expected_confirmation_phrase in text
+
+
+def test_execution_text_redacts_confirmation_phrase() -> None:
+    plan = _plan(_fixture())
+
+    text = format_reprocessing_plan_text(plan, include_confirmation_phrase=False)
+
+    assert "expected confirmation phrase: <REDACTED>" in text
+    assert plan.expected_confirmation_phrase not in text
 
 
 def test_preview_performs_no_fetch_and_no_writes() -> None:
@@ -136,6 +177,218 @@ def test_preview_performs_no_fetch_and_no_writes() -> None:
     assert plan.readiness is True
     assert fetcher.calls == []
     assert indexer.calls == []
+
+
+def test_cli_execution_json_reads_confirmation_from_stdin_and_redacts_output(monkeypatch, capsys) -> None:
+    plan = _plan(_fixture(), document_ids=("target-a",), max_target_count=1)
+    captured: dict[str, object] = {}
+
+    async def fake_build_live_plan(_args):
+        return plan, FakeClosableClient(), _source()
+
+    async def fake_execute(**kwargs):
+        captured["confirmation_phrase"] = kwargs["confirmation_phrase"]
+        return _execution_result(plan, status="reprocessed")
+
+    _patch_cli_execution_services(monkeypatch, fake_build_live_plan=fake_build_live_plan, fake_execute=fake_execute)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "reprocess_reviewed_external_docs.py",
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--document-id",
+            "target-a",
+            "--max-targets",
+            "1",
+            "--format",
+            "json",
+            "--confirm-reprocess-reviewed",
+            "--confirmation-phrase-stdin",
+        ],
+    )
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO(plan.expected_confirmation_phrase + "\n"))
+
+    code = asyncio.run(cli.main_async())
+
+    captured_output = capsys.readouterr()
+    payload = json.loads(captured_output.out)
+    assert code == 0
+    assert captured["confirmation_phrase"] == plan.expected_confirmation_phrase
+    assert payload["plan"]["expected_confirmation_phrase"] == "<REDACTED>"
+    assert payload["confirmation"] == {"source": "stdin", "accepted": True}
+    assert plan.expected_confirmation_phrase not in captured_output.out
+    assert plan.expected_confirmation_phrase not in captured_output.err
+
+
+def test_cli_execution_text_partial_failure_redacts_confirmation_phrase(monkeypatch, capsys) -> None:
+    plan = _plan(_fixture(), document_ids=("target-a",), max_target_count=1)
+
+    async def fake_build_live_plan(_args):
+        return plan, FakeClosableClient(), _source()
+
+    async def fake_execute(**_kwargs):
+        return _execution_result(plan, status="partial_failure", partial_failure=True, rollback_required=True)
+
+    _patch_cli_execution_services(monkeypatch, fake_build_live_plan=fake_build_live_plan, fake_execute=fake_execute)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "reprocess_reviewed_external_docs.py",
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--document-id",
+            "target-a",
+            "--max-targets",
+            "1",
+            "--confirm-reprocess-reviewed",
+            "--confirmation-phrase-stdin",
+        ],
+    )
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO(plan.expected_confirmation_phrase + "\n"))
+
+    code = asyncio.run(cli.main_async())
+
+    captured_output = capsys.readouterr()
+    assert code == 2
+    assert "expected confirmation phrase: <REDACTED>" in captured_output.out
+    assert "confirmation source: stdin" in captured_output.out
+    assert plan.expected_confirmation_phrase not in captured_output.out
+    assert plan.expected_confirmation_phrase not in captured_output.err
+
+
+def test_cli_preview_with_stdin_flag_does_not_read_stdin(monkeypatch, capsys) -> None:
+    plan = _plan(_fixture())
+
+    class FailingStdin:
+        def readline(self) -> str:
+            raise AssertionError("preview must not read stdin")
+
+    async def fake_build_live_plan(_args):
+        return plan, FakeClosableClient(), _source()
+
+    def fail_execution(**_kwargs):
+        raise AssertionError("preview must not execute")
+
+    monkeypatch.setattr(cli, "_build_live_plan", fake_build_live_plan)
+    monkeypatch.setattr(cli, "execute_reviewed_external_docs_reprocessing", fail_execution)
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        [
+            "reprocess_reviewed_external_docs.py",
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--document-id",
+            "target-a",
+            "--confirmation-phrase-stdin",
+        ],
+    )
+    monkeypatch.setattr(cli.sys, "stdin", FailingStdin())
+
+    code = asyncio.run(cli.main_async())
+
+    assert code == 0
+    assert plan.expected_confirmation_phrase in capsys.readouterr().out
+
+
+def test_cli_rejects_confirmation_argument_and_stdin_together(capsys) -> None:
+    sentinel = "SENTINEL-CONFIRMATION-PHRASE"
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.parse_args(
+            [
+                "--service",
+                "example",
+                "--review",
+                "review.json",
+                "--confirm-reprocess-reviewed",
+                "--confirmation-phrase",
+                sentinel,
+                "--confirmation-phrase-stdin",
+            ]
+        )
+
+    captured_output = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert sentinel not in captured_output.out
+    assert sentinel not in captured_output.err
+
+
+def test_cli_execution_without_phrase_source_is_blocked() -> None:
+    args = cli.parse_args(
+        [
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--confirm-reprocess-reviewed",
+        ]
+    )
+
+    with pytest.raises(ReviewedExternalDocsReprocessingError, match="confirmation_phrase_required"):
+        cli._read_execution_confirmation(args)
+
+
+def test_cli_execution_empty_stdin_is_blocked(monkeypatch) -> None:
+    args = cli.parse_args(
+        [
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--confirm-reprocess-reviewed",
+            "--confirmation-phrase-stdin",
+        ]
+    )
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("\n"))
+
+    with pytest.raises(ReviewedExternalDocsReprocessingError, match="confirmation_phrase_stdin_empty"):
+        cli._read_execution_confirmation(args)
+
+
+def test_cli_execution_eof_stdin_is_blocked(monkeypatch) -> None:
+    args = cli.parse_args(
+        [
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--confirm-reprocess-reviewed",
+            "--confirmation-phrase-stdin",
+        ]
+    )
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO(""))
+
+    with pytest.raises(ReviewedExternalDocsReprocessingError, match="confirmation_phrase_stdin_empty"):
+        cli._read_execution_confirmation(args)
+
+
+def test_legacy_command_line_confirmation_path_still_resolves() -> None:
+    args = cli.parse_args(
+        [
+            "--service",
+            "example",
+            "--review",
+            "review.json",
+            "--confirm-reprocess-reviewed",
+            "--confirmation-phrase",
+            "legacy-phrase",
+        ]
+    )
+
+    phrase, source = cli._read_execution_confirmation(args)
+
+    assert phrase == "legacy-phrase"
+    assert source == "argument"
 
 
 def test_missing_fresh_post_archive_backup_blocks() -> None:
@@ -521,12 +774,13 @@ def test_cli_preview_default_text() -> None:
 
 def test_missing_explicit_confirmation_prevents_execution() -> None:
     plan = _plan(_fixture())
+    fetcher = _success_fetcher(plan)
     indexer = FakeIndexer()
 
     result = asyncio.run(
         execute_reviewed_external_docs_reprocessing(
             plan=plan,
-            fetcher=_success_fetcher(plan),
+            fetcher=fetcher,
             extractor=FakeExtractor(_success_extracts(plan)),
             indexer=indexer,
             term_repository=indexer,
@@ -536,7 +790,50 @@ def test_missing_explicit_confirmation_prevents_execution() -> None:
     )
 
     assert result.status == "blocked"
+    assert "confirmation_phrase_mismatch" in result.blockers
+    assert fetcher.calls == []
     assert indexer.calls == []
+    assert indexer.refresh_calls == []
+
+
+def test_wrong_confirmation_phrase_does_not_leak_or_fetch() -> None:
+    plan = _plan(_fixture())
+    sentinel = "SENTINEL-WRONG-CONFIRMATION-PHRASE"
+    fetcher = _success_fetcher(plan)
+    indexer = FakeIndexer()
+
+    result = asyncio.run(
+        execute_reviewed_external_docs_reprocessing(
+            plan=plan,
+            fetcher=fetcher,
+            extractor=FakeExtractor(_success_extracts(plan)),
+            indexer=indexer,
+            term_repository=indexer,
+            confirmation_phrase=sentinel,
+            source=_source(),
+        )
+    )
+
+    serialized = json.dumps(result.to_dict())
+    assert result.status == "blocked"
+    assert result.blockers == ("confirmation_phrase_mismatch",)
+    assert sentinel not in serialized
+    assert plan.expected_confirmation_phrase not in serialized
+    assert fetcher.calls == []
+    assert indexer.calls == []
+    assert indexer.refresh_calls == []
+
+
+def test_pre_write_validation_failure_result_does_not_include_confirmation_phrase() -> None:
+    fixture = _fixture()
+    plan = _plan(fixture)
+    result, _fetcher, _indexer = _execute_with_texts(
+        plan,
+        {plan.targets[0].document.document_key: "missing required terms"},
+    )
+
+    assert result.status == "blocked"
+    assert plan.expected_confirmation_phrase not in json.dumps(result.to_dict())
 
 
 def test_cli_json_output_is_structured() -> None:
@@ -664,6 +961,44 @@ class FakeIndexer:
 class FakeClosableClient:
     async def close(self) -> None:
         return None
+
+
+class FakeAsyncClosable:
+    async def close(self) -> None:
+        return None
+
+
+def _patch_cli_execution_services(monkeypatch, *, fake_build_live_plan, fake_execute) -> None:
+    monkeypatch.setattr(cli, "_build_live_plan", fake_build_live_plan)
+    monkeypatch.setattr(cli, "DocumentRepository", lambda _client: object())
+    monkeypatch.setattr(cli, "OllamaEmbeddingClient", lambda _settings: FakeAsyncClosable())
+    monkeypatch.setattr(cli, "ExternalDocsCrawler", lambda: FakeAsyncClosable())
+    monkeypatch.setattr(cli, "ExternalDocsIndexer", lambda **_kwargs: object())
+    monkeypatch.setattr(cli, "execute_reviewed_external_docs_reprocessing", fake_execute)
+
+
+def _execution_result(
+    plan,
+    *,
+    status: str,
+    partial_failure: bool = False,
+    rollback_required: bool = False,
+) -> ReprocessingExecutionResult:
+    changed = tuple(target.document.document_key for target in plan.targets) if status == "reprocessed" else ()
+    return ReprocessingExecutionResult(
+        status=status,
+        target_count=plan.target_count,
+        targets=(),
+        changed_keys=changed,
+        unchanged_keys=() if changed else tuple(target.document.document_key for target in plan.targets),
+        failed_keys=(),
+        term_statistics_status="updated: 77" if status == "reprocessed" else "not run",
+        partial_failure=partial_failure,
+        rollback_required=rollback_required,
+        automatic_retry=False,
+        automatic_rollback=False,
+        timestamp="2026-07-10T00:00:00Z",
+    )
 
 
 def _fixture(
