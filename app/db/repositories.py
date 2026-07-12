@@ -183,6 +183,33 @@ class DocumentRepository:
         )
         return len(updated)
 
+    async def delete_incomplete_external_document_draft_exact(
+        self,
+        *,
+        document_id: str,
+        workspace_id: str,
+        document_key: str,
+        source_id: str,
+        expected_version: int,
+        expected_content_hash: str,
+        expected_ingestion_signature: str,
+    ) -> int:
+        """Delete exactly one verified draft external-doc document row."""
+        params = {
+            "id": f"eq.{document_id}",
+            "workspace_id": f"eq.{workspace_id}",
+            "document_key": f"eq.{document_key}",
+            "source_type": "eq.external_docs",
+            "metadata->>source_name": f"eq.{source_id}",
+            "status": "eq.draft",
+            "version": f"eq.{expected_version}",
+            "content_hash": f"eq.{expected_content_hash}",
+        }
+        if expected_ingestion_signature:
+            params["metadata->ingestion->>signature"] = f"eq.{expected_ingestion_signature}"
+        deleted = await self._client.delete("documents", params=params)
+        return len(deleted)
+
     async def activate_document(self, document_id: str) -> None:
         """Mark a draft document active."""
         await self._client.update("documents", {"status": "active"}, params={"id": f"eq.{document_id}"})

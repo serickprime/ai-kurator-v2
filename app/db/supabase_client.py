@@ -66,6 +66,19 @@ class SupabaseClient:
         )
         return _json_response(response)
 
+    async def delete(
+        self,
+        table: str,
+        params: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Delete rows and return their representation."""
+        response = await self._client.delete(
+            f"/rest/v1/{table}",
+            params=params,
+            headers={"Prefer": "return=representation"},
+        )
+        return _json_response(response)
+
     async def rpc(
         self,
         function_name: str,
