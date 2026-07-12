@@ -210,7 +210,7 @@ class ReviewedExternalDocsReprocessingPlan:
         ids = ",".join(target.document.document_id for target in self.targets) or "missing-targets"
         return f"reprocess-reviewed-external-docs:{ids}"
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, *, include_confirmation_phrase: bool = True) -> dict[str, object]:
         """Return JSON-safe representation."""
         return {
             "mode": self.mode,
@@ -240,7 +240,9 @@ class ReviewedExternalDocsReprocessingPlan:
             "supabase_writes": "disabled" if self.mode == "read-only" else "owner-confirmed only",
             "fetch": "not performed" if self.mode == "read-only" else "exact selected URLs only",
             "full_source_crawl_disabled": True,
-            "expected_confirmation_phrase": self.expected_confirmation_phrase,
+            "expected_confirmation_phrase": (
+                self.expected_confirmation_phrase if include_confirmation_phrase else "<REDACTED>"
+            ),
         }
 
 
@@ -477,7 +479,7 @@ async def execute_reviewed_external_docs_reprocessing(
     if not plan.readiness:
         return _blocked_result(plan, "plan is not ready for reprocessing", timestamp=now)
     if confirmation_phrase != plan.expected_confirmation_phrase:
-        return _blocked_result(plan, "explicit confirmation phrase mismatch", timestamp=now)
+        return _blocked_result(plan, "confirmation_phrase_mismatch", timestamp=now)
 
     source = source or _source_from_plan(plan)
     prepared: list[tuple[TargetPreview, ExtractedPage, TargetReprocessingResult]] = []
@@ -639,7 +641,11 @@ def expected_reprocessing_write_scope() -> dict[str, tuple[str, ...]]:
     }
 
 
-def format_reprocessing_plan_text(plan: ReviewedExternalDocsReprocessingPlan) -> str:
+def format_reprocessing_plan_text(
+    plan: ReviewedExternalDocsReprocessingPlan,
+    *,
+    include_confirmation_phrase: bool = True,
+) -> str:
     """Return compact human-readable reprocessing plan text."""
     target_lines: list[str] = []
     for index, target in enumerate(plan.targets, start=1):
@@ -674,7 +680,8 @@ def format_reprocessing_plan_text(plan: ReviewedExternalDocsReprocessingPlan) ->
             f"- ready for reprocessing: {_yes_no(plan.readiness)}",
             f"- blockers: {_join_preview(plan.blockers)}",
             f"- warnings: {_join_preview(plan.warnings)}",
-            f"- expected confirmation phrase: {plan.expected_confirmation_phrase}",
+            "- expected confirmation phrase: "
+            + (plan.expected_confirmation_phrase if include_confirmation_phrase else "<REDACTED>"),
             "- automatic execution: disabled",
             "- Supabase writes: disabled",
             "- fetch/reprocessing: not performed",
