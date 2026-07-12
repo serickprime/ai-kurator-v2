@@ -205,6 +205,29 @@ def test_cleaned_telegram_fixture_passes_without_raw_html_or_nav_noise() -> None
     assert result.metrics["nav_footer_noise_count"] == 0
 
 
+def test_external_docs_validation_flags_synthetic_telegram_template_and_navigation_noise() -> None:
+    result = validate_external_docs(
+        source_name="telegram_bot_api_docs",
+        documents=[_doc("doc-1", source_name="telegram_bot_api_docs")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    '<div id="dev_page_image" data-template="telegram">Back to the Bot API Manual</div>\n'
+                    "Navigation menu\n"
+                    "sendMessage accepts chat_id and text."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+    assert result.metrics["nav_footer_noise_count"] == 1
+    assert any("raw HTML" in failure for failure in result.failures)
+    assert any("navigation/footer/cookie" in warning for warning in result.warnings)
+
+
 def test_external_docs_validation_json_output_is_valid() -> None:
     result = validate_external_docs(
         source_name="future_docs",

@@ -197,6 +197,97 @@ def test_external_docs_extractor_removes_telegram_page_chrome_and_preserves_meth
     assert "<a href=\"https://example.com\">links</a>" in extracted.structured_text
 
 
+def test_external_docs_extractor_removes_telegram_template_markers_and_preserves_api_examples() -> None:
+    """Keep synthetic Telegram evidence while removing page-template residue."""
+    html = """
+    <html>
+      <head><title>Telegram Bot API methods</title></head>
+      <body>
+        <main>
+          <p>&lt;div id="dev_page_image" data-template="telegram"&gt;&lt;/div&gt;</p>
+          <p>Back to the Bot API Manual</p>
+          <ul>
+            <li>Bot API Manual</li>
+            <li>Navigation menu</li>
+          </ul>
+          <p>&lt;script src="/assets/template.js" data-page="chrome"&gt;&lt;/script&gt;</p>
+          <p>&lt;style data-page="chrome"&gt;&lt;/style&gt;</p>
+          <h1>sendMessage</h1>
+          <p>sendMessage sends text to chat_id. The parse_mode parameter is optional.</p>
+          <p>MessageEntity describes formatting. Use setWebhook or getUpdates for incoming updates.</p>
+          <p>InputFile uploads files through the Bot API endpoint.</p>
+          <p>HTML formatting supports &lt;b&gt;bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;, &lt;a href="https://example.com"&gt;links&lt;/a&gt;, and &lt;span class="tg-spoiler"&gt;spoilers&lt;/span&gt;.</p>
+          <pre><code>curl -X POST https://api.telegram.org/botTOKEN/sendMessage \\
+  -d chat_id=123 \\
+  -d text=hello</code></pre>
+        </main>
+      </body>
+    </html>
+    """
+    page = CrawledPage(
+        source_name="telegram_bot_api_docs",
+        url="https://core.telegram.org/bots/api",
+        html=html,
+        status_code=200,
+        content_type="text/html",
+        fetched_at=datetime.now(timezone.utc),
+    )
+
+    extracted = ExternalDocsExtractor().extract(page)
+
+    assert "dev_page_image" not in extracted.structured_text
+    assert "Back to the Bot API Manual" not in extracted.structured_text
+    assert "Bot API Manual" not in extracted.structured_text
+    assert "Navigation menu" not in extracted.structured_text
+    assert "template.js" not in extracted.structured_text
+    assert "data-page" not in extracted.structured_text
+    assert "sendMessage" in extracted.structured_text
+    assert "chat_id" in extracted.structured_text
+    assert "parse_mode" in extracted.structured_text
+    assert "MessageEntity" in extracted.structured_text
+    assert "setWebhook" in extracted.structured_text
+    assert "getUpdates" in extracted.structured_text
+    assert "InputFile" in extracted.structured_text
+    assert "optional" in extracted.structured_text
+    assert "<b>bold</b>" in extracted.structured_text
+    assert "<i>italic</i>" in extracted.structured_text
+    assert "<a href=\"https://example.com\">links</a>" in extracted.structured_text
+    assert "<span class=\"tg-spoiler\">spoilers</span>" in extracted.structured_text
+    assert "```" in extracted.structured_text
+    assert "https://api.telegram.org/botTOKEN/sendMessage" in extracted.structured_text
+
+
+def test_generated_navigation_cleaning_preserves_prose_urls_and_code_fences() -> None:
+    raw = "\n".join(
+        [
+            "# API guide",
+            "",
+            "Read the manual before configuring setWebhook.",
+            "",
+            "Back to the API Manual",
+            "",
+            "- API Manual",
+            "",
+            "Use https://docs.example.com/manual for the API reference.",
+            "",
+            "```text",
+            "Back to the API Manual",
+            "- API Manual",
+            "```",
+        ]
+    )
+
+    once = _strip_generated_markup_noise(raw)
+    twice = _strip_generated_markup_noise(once)
+
+    assert once == twice
+    assert "Back to the API Manual" not in once.split("```text", 1)[0]
+    assert "- API Manual" not in once.split("```text", 1)[0]
+    assert "Read the manual before configuring setWebhook." in once
+    assert "https://docs.example.com/manual" in once
+    assert "```text\nBack to the API Manual\n- API Manual\n```" in once
+
+
 def test_generated_markup_cleaning_is_idempotent_and_preserves_code_fences() -> None:
     raw = "\n".join(
         [
