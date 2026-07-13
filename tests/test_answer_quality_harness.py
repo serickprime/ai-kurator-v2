@@ -296,6 +296,7 @@ def test_atomic_output_and_resume_behavior(tmp_path: Path) -> None:
 
 
 def test_secret_like_values_are_removed_from_report_dict() -> None:
+    fake_bearer = "Bearer " + "abcdefghijklmnopqrstuvwxyz"
     baseline = AnswerQualityBaseline(
         schema_version="test",
         generated_at="now",
@@ -311,7 +312,7 @@ def test_secret_like_values_are_removed_from_report_dict() -> None:
                 case_id="case",
                 question="q",
                 outcome="PASS",
-                final_answer="Bearer abcdefghijklmnopqrstuvwxyz",
+                final_answer=fake_bearer,
             )
         ],
         overall_classification="baseline_pass",
@@ -321,7 +322,7 @@ def test_secret_like_values_are_removed_from_report_dict() -> None:
 
     payload = json.dumps(dataclass_to_sanitized_dict(baseline), ensure_ascii=False)
 
-    assert "Bearer abcdefghijklmnopqrstuvwxyz" not in payload
+    assert fake_bearer not in payload
     assert "<secret-redacted>" in payload
 
 
