@@ -2,6 +2,35 @@
 
 Use this checklist after meaningful Telegram, RAG, docs registry, or runtime changes.
 
+## Phase boundaries
+
+Available now:
+
+- project control doc checks;
+- normal Telegram command smoke;
+- knowledge-base/status commands;
+- docs registry preview/status smoke;
+- targeted official-doc RAG smoke through the real Telegram bot when the owner
+  explicitly chooses manual runtime testing.
+
+Planned after Phase 7C-A:
+
+- safe local no-write answer-quality harness;
+- deterministic functional answer matrix without real Telegram messages;
+- diagnostics for routing, selected documents, accepted evidence, citations,
+  archived evidence exclusion, unsupported claims, and dirty documentation
+  fragments.
+
+Planned after Phase 8B:
+
+- genuine follow-up memory checks;
+- list/switch/continue conversation flows;
+- bounded message-history loading;
+- user isolation checks.
+
+Do not run activation confirm, crawl, sync, indexing, reindex, production
+writes, or Telegram sends unless the owner explicitly asks for that operation.
+
 ## Project control docs
 
 - Read `docs/project_handoff_context.md` before nontrivial work.
@@ -159,6 +188,77 @@ Expected:
 - if exact evidence is not indexed, bot should return insufficient evidence rather than answer from a broad overview page.
 
 Do not treat glossary anchors as answer content. The answer still needs accepted evidence.
+
+## Phase 7C-A Functional Answer Matrix
+
+Status: planned after the Phase 7C-A harness exists; not available as an
+automated no-write check yet.
+
+The harness should use the real QuestionAnalyzer, document router, evidence
+retriever, reranker, evidence pack builder, AnswerGenerator, ClaimVerifier, and
+source formatter. EvidenceLogRepository must be disabled or replaced with a
+no-op. The harness must send no Telegram messages and perform no production
+writes. Production reads require explicit owner approval.
+
+Baseline cases:
+
+1. Course-material-only question.
+2. Explicit Telegram Bot API question.
+3. Explicit n8n question.
+4. Explicit OpenRouter question.
+5. Explicit Supabase question.
+6. Mixed course task plus named service documentation.
+7. Ambiguous service question.
+8. Unsupported/out-of-base question.
+9. Archived version exclusion.
+10. Citation/source-label quality.
+11. No internal IDs or debug data in final answer.
+12. Follow-up-style question, recorded as unsupported or partial until Phase
+    8B is implemented.
+13. Optional text-plus-image case when vision runtime is available.
+
+For every case evaluate:
+
+- service/topic detection;
+- course routing;
+- documentation routing;
+- selected documents;
+- accepted evidence;
+- archived evidence exclusion;
+- answer completeness;
+- unsupported claims;
+- citations/source-label readability;
+- insufficient-evidence behavior;
+- whether dirty documentation fragments enter the answer.
+
+Acceptance principles:
+
+- answers must use accepted evidence only;
+- source labels must come from accepted evidence;
+- mixed course/docs questions should be able to use both course-material
+  evidence and official documentation when both are relevant;
+- the bot must state uncertainty or ask for clarification when evidence is
+  insufficient;
+- ordinary users must not see UUIDs, raw chunks, debug metadata, or internal
+  implementation details.
+
+## Phase 8B Conversation Memory smoke
+
+Status: planned after Phase 8B; not available yet.
+
+Future checks:
+
+- "Новая тема" creates a new topic without leaking previous context.
+- Previous conversations can be listed.
+- A selected previous conversation can be reopened.
+- A conversation can be continued with bounded recent context.
+- Missing or deleted conversations are handled safely.
+- User A cannot see or use User B history.
+- Previous assistant answers are not treated as trusted evidence.
+- Every follow-up still performs evidence-first retrieval from active uploaded
+  materials and approved official documentation.
+- Persistent user settings wiring is evaluated without turning settings into
+  evidence.
 
 ## Glossary Candidate Discovery smoke
 

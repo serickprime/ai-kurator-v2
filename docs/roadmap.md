@@ -2,24 +2,28 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 7B.1g-C -
-generic reviewed external-doc canonical relocation tooling. Until this block is
-merged and smoke-tested, do not create a production relocation review artifact,
-run production fetch/relocation/indexing, repeat OpenRouter activation, start
-App Attribution reprocessing, start Telegram Bot API reprocessing, run a full
-source crawl, archive documents, run docs refresh/indexing, Supabase setup docs,
-MCP, or other unrelated tasks unless the owner explicitly changes focus.
+Use one active roadmap focus at a time. The current focus is Phase 7C-A - safe
+end-to-end answer harness and functional baseline. Phase 7C-A has not started
+yet.
+
+Until the owner explicitly starts Phase 7C-A, do not implement the harness, fix
+course aliases, change routing, change evidence allocation, edit prompts, run
+production audits, send Telegram messages, crawl, sync, index, reindex,
+activate docs, archive documents, change schema, or write to Supabase.
 
 Backlog items should be recorded without being started in the active branch:
 
-- Supabase setup docs for a new developer;
-- Phase 7B owner-approved reprocessing of affected docs sources;
 - explicit owner-approved docs refresh flow;
-- long-running activation UX progress;
+- replace demonstrably broken/stale documentation sources when functional
+  evidence justifies it;
+- owner-approved docs refresh/disable flows;
+- optional web interface;
+- additional supported services;
+- deployment/monitoring improvements;
 - future MCP setup.
 
 If a new idea appears during an active branch, keep it as backlog or a
-recommended next prompt. Do not mix unrelated changes into the current PR.
+recommended next prompt. Do not mix unrelated changes into the current branch.
 
 ## Phase 1 — Stabilize current Docs Registry
 
@@ -343,18 +347,176 @@ Phase 7B.1g-C reviewed canonical relocation tooling:
   run rollback, start App Attribution reprocessing, or start Telegram Bot API in
   the implementation block.
 
-Phase 7B.2 future Telegram Bot API reprocessing:
+Phase 7B.2 Telegram Bot API controlled reprocessing:
 
-- run only after successful Phase 7B.1 and separate owner approval;
-- process Telegram Bot API as a separate higher-volume operation;
-- verify docs health and retrieval/evidence quality after reprocessing.
+- Telegram Bot API controlled reprocessing completed;
+- active v2 target is clean;
+- archived v1 is excluded from active retrieval;
+- required terms are present;
+- OpenRouter remains healthy;
+- Telegram Batch 1 is formally closed with classification
+  `batch1_closed_target_clean_remaining_webhooks_residue`;
+- two Webhooks screenshot/page-residue chunks and six navigation/footer markers
+  remain deferred as non-blocking residue.
 
-Later maintenance features:
+Status: complete.
 
-- refresh connected docs;
-- disable docs source;
-- explicit owner-approved stale docs refresh flow;
-- last refresh status in `/docs`.
+## Phase 7C - Functional bot answer quality
+
+Goal: verify and improve the real user experience from question to final
+answer. AI Kurator V2 is a Telegram evidence-first RAG assistant, not a
+documentation-maintenance bot.
+
+The bot must:
+
+- accept questions from a user;
+- understand topic, course context, and explicitly mentioned service;
+- retrieve relevant evidence from uploaded course materials;
+- retrieve relevant approved official documentation when a service is mentioned
+  or current technical details are needed;
+- combine course evidence and documentation evidence when both are relevant;
+- generate practical answers only from accepted evidence;
+- show understandable source references;
+- exclude archived document versions;
+- state uncertainty or request clarification when evidence is insufficient;
+- avoid exposing UUIDs, raw chunks, debug metadata, and internal implementation
+  details to ordinary users.
+
+### Phase 7C-A - Safe end-to-end answer harness and baseline
+
+Status: not started.
+
+Planned behavior:
+
+- create a reusable local answer-quality harness;
+- use the actual QuestionAnalyzer, router, retriever, reranker, evidence pack,
+  AnswerGenerator, ClaimVerifier, and source formatter;
+- disable or no-op evidence logging so no `evidence_logs` row is written;
+- send no real Telegram messages;
+- perform no production writes;
+- use production reads only when explicitly approved;
+- allow safe model calls without persistence;
+- produce a deterministic diagnostic report;
+- test realistic questions.
+
+Required baseline cases:
+
+1. Course-material-only question.
+2. Explicit Telegram Bot API question.
+3. Explicit n8n question.
+4. Explicit OpenRouter question.
+5. Explicit Supabase question.
+6. Mixed course task plus named service documentation.
+7. Ambiguous service question.
+8. Unsupported/out-of-base question.
+9. Archived version exclusion.
+10. Citation/source-label quality.
+11. No internal IDs or debug data in final answer.
+12. Follow-up-style question, recorded as unsupported or partial until Phase
+    8B is implemented.
+13. Optional text-plus-image case when vision runtime is available.
+
+For every case evaluate service/topic detection, course routing,
+documentation routing, selected documents, accepted evidence, archived evidence
+exclusion, answer completeness, unsupported claims, citations,
+insufficient-evidence behavior, and whether dirty documentation fragments enter
+the answer.
+
+### Phase 7C-B - One focused functional fix
+
+Status: planned after Phase 7C-A.
+
+Do not predetermine the fix. Choose exactly one primary blocker found by Phase
+7C-A, such as course alias wiring, explicit service routing, balanced
+course/documentation source allocation, evidence selection, answer generation,
+citation formatting, or insufficient-evidence handling.
+
+Requirements:
+
+- one focused branch;
+- generic behavior;
+- no production IDs;
+- no service-specific Python `if` branches;
+- regression tests for a class of questions;
+- preserve evidence-first behavior;
+- rerun the Phase 7C-A matrix after the fix.
+
+Mixed course-plus-documentation evidence is an acceptance requirement and audit
+question, not a claimed current defect until the harness proves it.
+
+## Phase 8A - Uploaded File Lifecycle and Storage Hygiene
+
+Status: planned, not started.
+
+Goal: prevent temporary Telegram uploads from growing indefinitely.
+
+Plan:
+
+- treat original Telegram-uploaded files as temporary;
+- remove originals after successful ingestion;
+- remove or quarantine them after failures according to a bounded retention
+  policy;
+- clean abandoned files after expiry;
+- retain indexed text, document cards, sections, chunks, embeddings, and safe
+  metadata;
+- do not depend on the original file after successful ingestion unless an
+  explicit retention policy requires it;
+- avoid storing unnecessary absolute local paths in user-facing metadata;
+- protect against deleting files outside the managed upload directory;
+- cover success, failure, retry, and expired-file cases with tests.
+
+## Phase 8B - Conversation Memory and Chat Management
+
+Status: planned, not started.
+
+Goal: support genuine follow-up questions and manageable conversation history.
+
+Plan:
+
+- persist user and assistant messages;
+- load a bounded recent dialog context for follow-up questions;
+- preserve evidence-first retrieval for every new question;
+- do not treat previous assistant answers as trusted evidence;
+- keep "Новая тема";
+- list previous conversations;
+- switch to a selected conversation;
+- continue an existing conversation;
+- create a new conversation;
+- safely handle missing/deleted conversations;
+- use summaries or bounded history to control context size;
+- avoid leaking one user's history to another;
+- evaluate persistent user settings wiring;
+- keep Telegram handlers thin.
+
+Follow-up history is context only. It must never become evidence or replace
+retrieval from active uploaded materials and approved official documentation.
+
+## Documentation source replacement policy
+
+External documentation is a replaceable knowledge source. Zero health warnings
+are not the product goal.
+
+- Do not repair individual stored chunks only to make counters green.
+- Dirty fragments require action only when they harm retrieval, answers, or
+  citations.
+- When a documentation source is broadly broken or stale, identify and fix a
+  generic ingestion/extraction problem when one exists, archive or remove the
+  broken imported version through an owner-approved safe operation, then fetch
+  and index a clean replacement.
+- Do not accumulate service-specific Python patches.
+- Do not manually edit production chunks.
+- Uploaded materials and official documentation remain conceptually separate.
+
+## Later roadmap
+
+- Replace demonstrably broken/stale documentation sources when functional
+  evidence justifies it.
+- Owner-approved docs refresh/disable flows.
+- Optional web interface.
+- Additional supported services.
+- Deployment/monitoring improvements.
+
+Do not schedule or start later roadmap items automatically.
 
 ## Not planned now
 

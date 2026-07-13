@@ -12,12 +12,21 @@ These rules protect the project from uncontrolled growth and accidental regressi
 
 ## Core RAG rules
 
+- AI Kurator V2 is a Telegram evidence-first RAG assistant, not a
+  documentation-maintenance bot.
+- The user-facing product flow is: accept a Telegram question, understand
+  topic/course/service context, retrieve relevant uploaded course evidence and
+  approved official documentation when relevant, answer only from accepted
+  evidence, show understandable sources, exclude archived versions, and state
+  uncertainty when evidence is insufficient.
 - Do not change RAG pipeline unless explicitly requested.
 - Do not change AnswerGenerator unless explicitly requested.
 - Do not change retrieval/router unless explicitly requested.
 - Answers must remain evidence-first.
 - Sources must come from accepted evidence.
 - Do not include raw candidate chunks directly in final answer generation.
+- Do not expose UUIDs, raw chunks, debug metadata, or internal implementation
+  details to ordinary users.
 - Do not fix one user question with one-off Python logic; improve a general retrieval/evidence mechanism.
 
 ## Query quality and glossary rules
@@ -41,6 +50,17 @@ These rules protect the project from uncontrolled growth and accidental regressi
 - Do not run crawl, sync, indexing, or activation unless explicitly requested.
 - External docs and uploaded materials must stay conceptually separate.
 - External docs must not be archived through ordinary material commands.
+- External documentation is a replaceable knowledge source; zero health
+  warnings are not the product goal.
+- Do not repair individual stored chunks only to make counters green.
+- Dirty documentation fragments require action only when they harm retrieval,
+  answers, or citations.
+- When a documentation source is broadly broken or stale, fix a generic
+  ingestion/extraction problem when one exists, archive or remove the broken
+  imported version through an owner-approved safe operation, then fetch and
+  index a clean replacement.
+- Do not accumulate service-specific Python patches.
+- Do not manually edit production chunks.
 
 ## Telegram architecture rules
 
@@ -49,6 +69,9 @@ These rules protect the project from uncontrolled growth and accidental regressi
 - UI callbacks must not run activation confirm.
 - UI callbacks must not crawl, sync, index, or write to Supabase.
 - Buttons should be universal where possible; avoid one top-level button per service.
+- Follow-up history is dialog context, not evidence. Future memory support must
+  still retrieve fresh accepted evidence for each answer and must not trust
+  previous assistant answers as source material.
 
 ## Database and secrets rules
 
@@ -65,12 +88,26 @@ These rules protect the project from uncontrolled growth and accidental regressi
 
 - One branch = one meaningful block.
 - One active roadmap focus at a time.
-- Keep PRs small.
+- Current focus: Phase 7C-A - safe end-to-end answer harness and functional
+  baseline. Phase 7C-A has not started yet.
+- Solo-owner mode is the default.
 - Start work from fresh `main` unless the user gives a different branch.
 - Push feature branches only after requested checks pass.
-- Open PRs only when requested.
-- Do not merge PRs unless explicitly requested.
-- Merge only when CI is green and the PR is clean/mergeable.
+- GitHub is the durable remote Git store for commits, branches, tags, and
+  `main`.
+- A Pull Request is not required by default.
+- Open a PR only when the owner asks, for schema/migrations, high-risk
+  production writes, large risky refactors, or multi-person collaboration.
+- For noticeable changes, create a focused feature branch, run checks, commit,
+  push the feature branch as backup, locally merge to `main` only after owner
+  approval, rerun needed checks, and push `main` normally.
+- For small low-risk changes, direct work on `main` is allowed after checking a
+  clean state.
+- Never force-push.
+- Do not delete backup feature branches until published `main` has been
+  verified.
+- Do not use GitHub UI, GitHub MCP, Playwright, or `gh` only for ordinary
+  personal-repository management.
 - Prefer squash merge when the user asks to merge.
 - Do not start the next roadmap item without explicit instruction.
 - Every completed project block must update docs/project_status.md.
@@ -79,18 +116,19 @@ These rules protect the project from uncontrolled growth and accidental regressi
 ## Streamlined workflow guardrails
 
 - Keep the GitHub loop short: implement, test, commit/push, open PR when
-  requested, check CI, merge only after explicit owner command, then continue
-  only when the owner asks.
+  requested or required by risk, merge only after explicit owner command, then
+  continue only when the owner asks.
 - Do not run a separate sanity-check loop after every merge when CI is green,
   the tree is clean, docs use stable baseline policy, and there is no conflict.
 - Use manual smoke after runtime or user-visible changes, not after every
   docs-only merge.
-- Create docs-only PRs only for blocking context, outdated guardrails,
-  misleading roadmap/status docs, architecture decisions, or explicit owner
-  requests. Do not create them for latest-commit churn or cosmetic cleanup.
+- Create docs-only branches or PRs only for blocking context, outdated
+  guardrails, misleading roadmap/status docs, architecture decisions, or
+  explicit owner requests. Do not create them for latest-commit churn or
+  cosmetic cleanup.
 - Keep backlog ideas separate from the current branch. Record them as backlog
   or a recommended next prompt instead of mixing unrelated work into the active
   PR.
-- During Phase 5A, do not start Phase 5B Telegram UI, Supabase setup docs,
-  MCP, docs health refresh, or other unrelated work until Phase 5A is merged
-  or the owner explicitly changes focus.
+- During Phase 7C-A, do not start Phase 7C-B, Phase 8A, Phase 8B, production
+  audits, external docs operations, schema changes, or RAG fixes until the
+  owner explicitly changes focus.

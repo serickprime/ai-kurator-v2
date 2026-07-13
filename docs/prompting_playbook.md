@@ -17,7 +17,7 @@ Every substantial prompt should include:
 - files or modules to inspect;
 - explicit forbidden actions;
 - expected tests/checks;
-- commit, push, and PR instructions;
+- commit, push, local-merge, and PR-if-needed instructions;
 - final report fields.
 
 Every prompt that asks an agent to report results should also require a
@@ -26,9 +26,10 @@ recommendation only; it must not authorize the agent to start the next project
 block without an explicit owner command.
 
 Prompts should preserve one active roadmap focus. State the current focus and
-what must not be started in the same branch. For the current Phase 4B branch,
-do not start Supabase setup docs, MCP, Telegram UI for glossary review, or
-unrelated work until Phase 4B is merged or the owner explicitly changes focus.
+what must not be started in the same branch. The current focus is Phase 7C-A -
+safe end-to-end answer harness and functional baseline, and it has not started
+yet. Do not start Phase 7C-B, Phase 8A, Phase 8B, production audits, external
+docs operations, schema changes, or RAG fixes unless the owner explicitly asks.
 
 Do not treat `docs/project_status.md` as an automatic latest-main pointer.
 Project status should record durable project state and meaningful milestones.
@@ -38,30 +39,40 @@ docs-only merge.
 
 ## Streamlined Workflow Prompts
 
-Use the shortest workflow that preserves safety:
+Use the shortest solo-owner workflow that preserves safety:
 
 1. implement one focused block;
 2. run checks;
 3. commit and push;
-4. open a PR only when requested;
-5. check CI and mergeability;
-6. merge only after explicit owner command;
-7. run manual smoke only for runtime or user-visible changes;
-8. move to the next roadmap block only after explicit owner command.
+4. keep the feature branch pushed as a remote backup;
+5. open a PR only when requested or required by risk;
+6. locally merge to `main` only after explicit owner command;
+7. rerun necessary checks;
+8. push `main` normally;
+9. run manual smoke only for runtime or user-visible changes;
+10. move to the next roadmap block only after explicit owner command.
 
-Do not ask for a separate sanity check after every merge when the PR was
-docs-only, CI was green, the tree is clean, project docs already use stable
-baseline policy, and no conflict is visible.
+GitHub is the durable remote Git store for commits, branches, tags, and
+`main`. A Pull Request is not required by default. PR is required only when the
+owner asks, for schema/migrations, high-risk production writes, large risky
+refactors, or multi-person collaboration.
+
+Prompts must forbid force-push unless the owner is explicitly asking for a
+special recovery operation and understands the risk. Normal work must never
+force-push.
+
+Do not ask for a separate sanity check after every merge when the change was
+docs-only, required checks passed, the tree is clean, project docs already use
+stable baseline policy, and no conflict is visible.
 
 Docs-only prompts should be used only when documentation blocks the next agent,
 guardrails are outdated, roadmap/status docs are misleading, an architecture
 decision must be recorded, or the owner explicitly asks. Do not create docs-only
 work only to update latest commit values or for cosmetic cleanup.
 
-Keep backlog separate from current focus. Backlog examples include Supabase
-setup docs for a new developer, Phase 4B owner/admin review/apply flow,
-docs health/stale refresh, long-running activation UX progress, and future MCP
-setup.
+Keep backlog separate from current focus. Backlog examples include
+owner-approved docs refresh/disable flows, optional web interface, additional
+supported services, deployment/monitoring improvements, and future MCP setup.
 
 ## Required Guardrails
 
@@ -109,6 +120,27 @@ If it is not activation confirm, explicitly say:
 - do not write to Supabase;
 - do not change config;
 - do not activate candidates.
+
+## Functional Answer Audit Prompts
+
+When asking for Phase 7C-A or other answer-quality audits, explicitly
+distinguish production reads from writes.
+
+Required boundaries:
+
+- use the real QuestionAnalyzer, document router, evidence retriever, reranker,
+  evidence pack builder, AnswerGenerator, ClaimVerifier, and source formatter;
+- disable or replace EvidenceLogRepository with a no-op logger;
+- send no real Telegram messages;
+- perform no production writes;
+- use production reads only when explicitly approved;
+- allow safe model calls without persistence when the task approves them;
+- produce deterministic diagnostics for service/topic detection, course
+  routing, documentation routing, selected documents, accepted evidence,
+  archived evidence exclusion, answer completeness, unsupported claims,
+  citations, insufficient-evidence behavior, and dirty documentation fragments;
+- do not fix routing, aliases, prompts, evidence allocation, or citations
+  before the baseline identifies the real blocker.
 
 ## Verification Block Template
 
@@ -227,10 +259,12 @@ The recommended prompt should be useful without creating extra process loops:
 - do not recommend a sanity check by default after every merge;
 - do not recommend docs-only cleanup unless there is a real blocking reason;
 - if a feature branch is ready, recommend opening the PR;
-- if a PR is open, recommend checking CI and merging after explicit owner
-  approval;
-- if a PR is merged and manual smoke is not needed, recommend the next roadmap
-  block;
+- if a feature branch is pushed in solo-owner mode and the owner authorized
+  local merge, recommend the local merge/check/push sequence;
+- if a PR is open because it was requested or risk-required, recommend checking
+  CI and merging after explicit owner approval;
+- if a branch is merged and manual smoke is not needed, recommend the next
+  roadmap block;
 - if manual smoke is needed, recommend one short, concrete smoke check instead
   of a new docs loop.
 

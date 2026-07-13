@@ -37,6 +37,7 @@ Hard rules:
 - One branch = one meaningful block.
 - Do not start the next roadmap item without explicit instruction.
 - After a completed project block, update docs/project_status.md.
+- Current active focus: Phase 7C-A - safe end-to-end answer harness and functional baseline. Phase 7C-A has not started yet.
 
 Before starting work:
 
@@ -58,7 +59,12 @@ Supabase lookup rules:
 
 Git workflow rules:
 
-- Start from fresh `main`, create one feature branch per block, commit only intentional files, push the branch, and open a PR when requested.
-- Do not merge PRs unless explicitly requested.
-- Merge only when CI is green and the PR is clean/mergeable.
-- Prefer squash merge when the user asks to merge.
+- Solo-owner mode is the default. GitHub is the durable remote Git store for commits, branches, tags, and `main`; a Pull Request is not required by default.
+- For noticeable changes: start from fresh `main`, create one focused feature branch, run required checks, commit intentional files, push the feature branch as a backup, locally merge to `main` only after explicit owner approval, rerun needed checks, then push `main` normally.
+- For small low-risk changes, direct work on `main` is allowed after confirming a clean state.
+- Open a PR only when the owner asks, for schema/migrations, high-risk production writes, large risky refactors, or multi-person collaboration.
+- Never force-push.
+- Do not delete a backup feature branch until published `main` has been verified.
+- Do not use GitHub UI, GitHub MCP, Playwright, or `gh` only for ordinary personal-repository management.
+- Do not create extra GitHub/process loops after every small block.
+- Prefer squash merge when the owner asks to merge a PR.

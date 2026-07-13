@@ -58,7 +58,7 @@ Core state:
 - Phase 6B owner/admin Telegram preview for docs health is merged and verified.
 - Phase 7A offline source-quality remediation for OpenRouter and Telegram Bot API is merged.
 - Phase 7B.0 safe source-scoped reprocessing preparation tooling is merged.
-- Phase 7B.1 OpenRouter controlled activation was owner-approved and technically completed, but acceptance remains open because three untouched active v1 pages still carry old generator boilerplate.
+- Phase 7B.1 OpenRouter controlled activation and follow-up safe cleanup were owner-approved and technically completed.
 - Phase 7B.1b generic safe obsolete-page reconciliation planning is merged and smoke-tested.
 - Phase 7B.1c recovered the OpenRouter production discovered snapshot from activation logs without a new crawl.
 - Phase 7B.1d reviewed the three remaining OpenRouter old active v1 pages.
@@ -69,7 +69,9 @@ Core state:
 - Phase 7B.1g-B generic reviewed key-scoped external-doc reprocessing tooling is merged and smoke-tested.
 - Phase 7B.1i-B stopped safely before writes because Service Tiers resolved to a different canonical key.
 - Phase 7B.1j-B confirmed Service Tiers as a canonical relocation from `features/service-tiers` to `guides/features/service-tiers`; App Attribution remains active v1 and unchanged.
-- Phase 7B.1g-C generic reviewed canonical relocation tooling is the current implementation focus.
+- Phase 7B.1g-C generic reviewed canonical relocation tooling was completed as part of the Phase 7B remediation sequence.
+- Phase 7B.2 Telegram Bot API controlled reprocessing is complete: active v2 target is clean, archived v1 is excluded from active retrieval, required terms are present, OpenRouter remains healthy, and Telegram Batch 1 is formally closed.
+- Remaining Telegram Bot API residue is deferred: two Webhooks screenshot/page-residue chunks and six navigation/footer markers. They are not blockers unless a future end-to-end answer audit shows that they pollute retrieval, displace useful evidence, enter final answer context, appear in final answers, or create incorrect citations.
 
 ## Completed PRs
 
@@ -113,36 +115,39 @@ Core state:
 - PR #37 - Phase 7B.1g-A reviewed external docs archive tooling.
 - PR #38 - Phase 7B.1g-B reviewed external docs reprocessing tooling.
 - PR #39 - reviewed reprocessing CLI document id parsing fix.
+- PR #40 - reviewed external docs canonical relocation tooling.
+- PR #41 - generic external docs navigation cleanup fix.
+- PR #42 - safe incomplete draft cleanup tooling.
+- PR #43 - reviewed reprocessing confirmation hardening.
+- PR #44 - raw HTML validation refinement for documented markup.
+- PR #45 - placeholder and documented markup validation fix.
+- PR #46 - bounded documented syntax validation finalization.
 
 ## Latest completed project block
 
-Phase 7B.0 was completed through PR #35:
+Phase 7B.2 is complete:
 
-- source-scoped reprocessing plans are read-only and fail closed;
-- baseline manifests include checksum, fingerprints, source-scoped rows, and
-  rollback-capability validation;
-- compare-live detects baseline drift before any execution;
-- reusable preconditions require owner approval before future writes;
-- no source was reprocessed by Phase 7B.0 itself.
-
-After Phase 7B.0, the owner approved OpenRouter-only activation. The activation
-passed and preserved useful endpoints/code, but health still reports WARN from
-three old active v1 pages absent from the fetched set. Rollback is not
-recommended; Phase 7B.1b adds generic read-only reconciliation planning before
-any archive decision.
+- Telegram Bot API controlled reprocessing was completed through the
+  owner-approved safe path;
+- active v2 Telegram Bot API target is clean;
+- archived v1 Telegram Bot API documents are excluded from active retrieval;
+- required Telegram Bot API terms are present;
+- OpenRouter remains healthy;
+- Telegram Batch 1 is formally closed with classification
+  `batch1_closed_target_clean_remaining_webhooks_residue`;
+- known Webhooks/page-residue and navigation/footer fragments are deferred as
+  non-blocking until functional evidence shows user-facing harm.
 
 ## Current focus
 
 Current active roadmap focus:
 
-- Phase 7B.1g-C - generic reviewed external-doc canonical relocation tooling.
-- Current branch: `phase7b-reviewed-canonical-relocation`.
-- This block adds preview/default tooling and future exact one-document
-  canonical relocation gates only. It must not create a production relocation
-  review artifact, run production fetch/relocation/indexing, repeat OpenRouter
-  activation, start App Attribution reprocessing, start Telegram Bot API
-  reprocessing, run a full source crawl, archive production documents, or
-  change production term statistics unless the owner explicitly changes focus.
+- Phase 7C-A - safe end-to-end answer harness and functional baseline.
+- Phase 7C-A has not started yet.
+- This next block should create a reusable no-write local answer-quality
+  harness and run the baseline question matrix. It must not fix routing,
+  course aliases, evidence allocation, prompts, or citations before baseline
+  evidence identifies the real blocker.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -150,12 +155,14 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- open a PR for `phase7b-reviewed-canonical-relocation` after the branch is
-  ready and pushed;
-- check CI and mergeability after the PR is open;
-- merge only after explicit owner command;
-- do not run a separate sanity-check/docs loop by default after merge unless
-  there is a concrete conflict or user-visible runtime risk.
+- start Phase 7C-A only after explicit owner instruction;
+- implement a safe no-write end-to-end answer-quality harness using the actual
+  QuestionAnalyzer, router, retriever, reranker, evidence pack,
+  AnswerGenerator, ClaimVerifier, and source formatter;
+- disable or replace EvidenceLogRepository with a no-op logger in the harness;
+- send no Telegram messages and perform no production writes;
+- use the baseline matrix from `docs/roadmap.md` and
+  `docs/manual_smoke_checklist.md`.
 
 - optional retrieval-quality manual smoke when a future runtime/query enrichment
   change needs it:
@@ -267,6 +274,39 @@ Phase 7B.0 scope:
 - do not run `/docs_activate`, activation, crawl, sync, indexing, reindex,
   rollback writes, migrations, Supabase writes, or real production backup
   creation in the implementation block.
+
+## Documentation source policy
+
+Official external documentation is a replaceable knowledge source, not the
+product goal. Zero health warnings are not the goal by themselves.
+
+- Do not repair individual stored chunks only to make counters green.
+- Dirty fragments require action only when they harm retrieval, answers, or
+  citations.
+- When a documentation source is broadly broken or stale, first identify and
+  fix a generic ingestion/extraction problem when one exists, then archive or
+  remove the broken imported version through an owner-approved safe operation,
+  then fetch and index a clean replacement.
+- Do not accumulate service-specific Python patches.
+- Do not manually edit production chunks.
+- Uploaded materials and official documentation remain conceptually separate.
+
+## Functional gaps recorded for future phases
+
+- Phase 7C-A: build a safe no-write end-to-end answer harness. The normal RAG
+  runtime uses EvidenceLogRepository and can write an `evidence_logs` row.
+- Phase 7C-B: choose exactly one primary blocker from the Phase 7C-A baseline
+  and fix it generically.
+- Phase 8A: Telegram downloads uploads under `data/uploads/telegram`; the
+  current handler ingests the local path but does not remove the original
+  temporary file after success or failure.
+- Phase 8B: `conversations` and `messages` tables exist and repository support
+  is partial, but normal Telegram answer flow does not pass previous messages
+  to AnswerGenerator. The current active conversation id is primarily
+  process-local, and list/switch/continue/history flows are not complete.
+- User settings persistence: UserSettingsRepository exists, but normal
+  Telegram service wiring currently falls back to the in-memory settings
+  repository. Evaluate this during Phase 8B planning or a later focused block.
 
 ## Later roadmap
 

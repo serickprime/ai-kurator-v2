@@ -355,20 +355,115 @@ Boundaries:
 ## Development workflow should stay streamlined
 
 Decision: keep one active roadmap focus and avoid automatic GitHub/docs loops
-after every completed PR.
+after every completed block.
 
-Reason: branch, tests, PR review, CI, and explicit owner-controlled merge are
-enough for normal safety. Extra sanity loops and docs-only PRs are useful only
-when they unblock the next agent, fix misleading guardrails/status, record an
+Reason: the project is owned by a solo developer. Branches, commits, checks,
+feature-branch backups, and explicit owner-controlled local merges are enough
+for normal safety. Extra GitHub/process loops are useful only when they
+unblock the next agent, fix misleading guardrails/status, record an
 architecture decision, or the owner explicitly asks.
 
 Boundaries:
 
-- PR merge still requires explicit owner command;
-- CI must be green and the PR must be clean/mergeable before merge;
-- manual smoke is for runtime or user-visible changes, not every docs-only PR;
+- GitHub is the durable remote Git store for commits, branches, tags, and
+  `main`;
+- a Pull Request is not required by default;
+- PR is required only when the owner asks, for schema/migrations, high-risk
+  production writes, large risky refactors, or multi-person collaboration;
+- noticeable changes should use one focused feature branch, checks, a clear
+  commit, feature-branch push as backup, explicit owner-approved local merge,
+  necessary post-merge checks, and normal `main` push;
+- small low-risk changes may be done directly on `main` after checking a clean
+  state;
+- never force-push;
+- do not delete the backup feature branch until published `main` has been
+  verified;
+- do not use GitHub UI, GitHub MCP, Playwright, or `gh` only for ordinary
+  personal-repository management;
+- manual smoke is for runtime or user-visible changes, not every docs-only
+  block;
 - backlog ideas stay outside the active branch unless the owner explicitly
   allows a small directly related docs rule update.
+
+## External documentation is replaceable evidence, not the product goal
+
+Decision: treat official external documentation as a replaceable knowledge
+source inside the bot, not as the product's primary objective.
+
+Reason: AI Kurator V2 is a Telegram evidence-first RAG assistant. Perfect docs
+health counters do not matter unless documentation quality affects retrieval,
+answers, or citations.
+
+Boundaries:
+
+- zero health warnings are not the product goal;
+- do not repair individual stored chunks only to make counters green;
+- dirty fragments require action only when they harm retrieval, answers, or
+  citations;
+- when a documentation source is broadly broken or stale, first identify and
+  fix a generic ingestion/extraction problem when one exists, then archive or
+  remove the broken imported version through an owner-approved safe operation,
+  then fetch and index a clean replacement;
+- do not accumulate service-specific Python patches;
+- do not manually edit production chunks;
+- uploaded materials and official documentation remain conceptually separate.
+
+## Functional answer quality comes before new cleanup work
+
+Decision: after Telegram Batch 1 closure, the next active roadmap focus is
+Phase 7C-A: a safe no-write end-to-end answer harness and baseline.
+
+Reason: the product risk has moved from source-health counters to whether real
+Telegram questions produce useful evidence-backed answers with clean sources
+and insufficient-evidence behavior.
+
+Boundaries:
+
+- the harness must use the actual QuestionAnalyzer, document router, evidence
+  retriever, reranker, evidence pack builder, AnswerGenerator, ClaimVerifier,
+  and source formatter;
+- EvidenceLogRepository writes must be disabled or replaced with a no-op;
+- no real Telegram messages are sent;
+- no production writes are performed;
+- production reads require explicit approval;
+- do not fix routing, aliases, evidence allocation, prompts, or citations
+  before the baseline identifies the real blocker.
+
+## Conversation history is context, not evidence
+
+Decision: future follow-up support may use bounded conversation history as
+dialog context only.
+
+Reason: previous assistant answers can contain omissions or mistakes. Evidence
+for every answer must still come from active uploaded materials and approved
+official documentation.
+
+Boundaries:
+
+- do not treat previous assistant answers as trusted evidence;
+- preserve evidence-first retrieval for every new question;
+- prevent one user's history from leaking to another;
+- use bounded history or summaries to control context size;
+- keep Telegram handlers thin and put chat-management logic in feature/service
+  modules.
+
+## Phase 7B.2 closed Telegram Batch 1
+
+Decision: Phase 7B.2 is complete and Telegram Batch 1 is closed.
+
+Result:
+
+- Telegram Bot API controlled reprocessing completed;
+- active v2 target clean;
+- archived v1 excluded from active retrieval;
+- required terms present;
+- OpenRouter remains healthy;
+- remaining Webhooks screenshot/page residue and navigation/footer markers are
+  deferred.
+
+Boundary: deferred residue is not a blocker unless a future end-to-end answer
+audit proves that it pollutes retrieval, displaces useful evidence, enters
+final answer context, appears in final answers, or creates incorrect citations.
 
 ## Project handoff context is required before nontrivial work
 

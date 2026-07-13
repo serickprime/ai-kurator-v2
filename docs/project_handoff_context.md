@@ -19,8 +19,9 @@ task depends on the latest commit.
 
 ## What This Bot Is
 
-AI Kurator V2 is a local-first Telegram RAG assistant for uploaded course
-materials and curated official documentation.
+AI Kurator V2 is a Telegram evidence-first RAG assistant for uploaded course
+materials and curated official documentation. It is not a
+documentation-maintenance bot.
 
 Core flow:
 
@@ -34,6 +35,13 @@ Core flow:
 5. Telegram commands expose read-only status, source inspection, docs registry
    dashboards, and safe material management.
 
+The product objective is practical user answers from accepted evidence:
+understand topic, course context, and explicitly mentioned service; combine
+course material and official documentation evidence when both are relevant;
+exclude archived document versions; state uncertainty when evidence is
+insufficient; and avoid exposing UUIDs, raw chunks, debug metadata, or internal
+implementation details to ordinary users.
+
 ## Main Components
 
 - `app/main.py` starts the Telegram application.
@@ -42,7 +50,9 @@ Core flow:
 - `scripts/runtime_healthcheck.py` checks config and read-only Supabase/service
   status without polling or writing.
 - `app/bot/telegram_bot.py` wires runtime services into Telegram handlers.
-- `app/bot/handlers.py` registers commands and keeps Telegram routing thin.
+- `app/bot/handlers.py` registers commands, accepts questions/uploads, keeps
+  Telegram routing thin, downloads Telegram files under
+  `data/uploads/telegram`, and delegates ingestion/RAG work to services.
 - `app/bot/features/docs_registry.py` formats and handles docs registry UI
   flows.
 - `app/ingestion/` handles material loading, cleanup, document cards, sections,
@@ -124,6 +134,19 @@ Already merged into main:
 - OpenRouter controlled activation;
 - Docs Activation Queue;
 - Retrieval Query Quality Framework.
+- Phase 7B.2 Telegram Bot API controlled reprocessing is complete: active v2
+  target is clean, archived v1 is excluded from active retrieval, required
+  terms are present, OpenRouter remains healthy, and Telegram Batch 1 is
+  closed.
+
+Known deferred Telegram documentation residue:
+
+- two Webhooks screenshot/page-residue chunks;
+- six navigation/footer markers.
+
+This residue is not a current blocker unless a future end-to-end answer audit
+shows that it pollutes retrieval, displaces useful evidence, enters final
+answer context, appears in final answers, or creates incorrect citations.
 
 Connected official docs currently include:
 
@@ -188,7 +211,55 @@ Future phase: Glossary Candidate Discovery. It should analyze newly uploaded
 materials and official docs, suggest candidate glossary rules, and require
 owner/admin approval before applying anything.
 
+## Current Functional Architecture Snapshot
+
+Verified code paths to preserve:
+
+- Telegram question intake: `app/bot/handlers.py`.
+- Application wiring: `app/bot/telegram_bot.py`.
+- Question analysis and query enrichment: `app/rag/question_analysis.py`,
+  `app/rag/query_enrichment.py`, `app/rag/course_resolver.py`.
+- Document-first routing: `app/rag/document_router.py`.
+- Evidence retrieval and reranking: `app/rag/evidence_retriever.py`,
+  `app/rag/reranker.py`.
+- Evidence pack: `app/rag/evidence_pack.py`.
+- Generation and verification: `app/rag/answer_generator.py`,
+  `app/rag/claim_verifier.py`, `app/rag/pipeline.py`.
+- Source labels: `app/rag/source_labels.py`.
+- Uploads: `app/ingestion/` plus `app/bot/handlers.py`.
+- Conversations and settings: `app/db/schema.sql`,
+  `app/db/repositories.py`, `app/bot/user_state.py`.
+
+Verified gaps for future phases:
+
+- The normal RAG pipeline uses EvidenceLogRepository and can write an
+  `evidence_logs` row during an answer. Phase 7C-A needs a reusable local
+  harness with no-op/disabled evidence logging, no Telegram messages, no
+  production writes, and deterministic diagnostics.
+- CourseHintResolver supports data-driven aliases, including aliases built from
+  metadata, but normal QuestionAnalyzer currently constructs it without a
+  populated alias catalog. A future phase must decide how to load active
+  course metadata aliases generically.
+- Mixed course-task plus named-service documentation is an acceptance
+  requirement and audit question. Do not claim it is broken without an
+  end-to-end audit.
+- Telegram upload handling downloads files under `data/uploads/telegram` and
+  passes the local path to ingestion. The handler does not currently remove the
+  original temporary file after success or failure. This is Phase 8A.
+- `conversations` and `messages` tables exist and ConversationRepository
+  supports partial operations, but normal Telegram answer flow does not pass
+  previous messages to AnswerGenerator. The current active conversation id is
+  primarily process-local, and list/switch/continue/history flows are not
+  complete. This is Phase 8B.
+- UserSettingsRepository exists, but normal Telegram service wiring currently
+  falls back to the in-memory settings repository. Evaluate this during Phase
+  8B planning or a later focused block.
+
 ## Git Workflow
+
+Solo-owner mode is the default. GitHub is the durable remote Git store for
+commits, branches, tags, and `main`; a Pull Request is not required by
+default.
 
 Use one branch per meaningful block.
 
@@ -222,8 +293,17 @@ git push -u origin <feature-branch>
 
 ## Push, PR, And Merge Workflow
 
-- Do not merge directly into `main` unless the user explicitly asks.
-- Open PRs from feature branch to `main`.
+- Push the feature branch as a backup after checks pass.
+- Open a PR only when the owner asks, for schema/migrations, high-risk
+  production writes, large risky refactors, or multi-person collaboration.
+- For small low-risk changes, direct work on `main` is allowed after checking a
+  clean state.
+- Locally merge a feature branch into `main` only after explicit owner
+  approval.
+- Never force-push.
+- Do not delete a backup feature branch until published `main` is verified.
+- Do not use GitHub UI, GitHub MCP, Playwright, or `gh` only for ordinary
+  personal-repository management.
 - Do not merge a PR if CI is pending, queued, or failed.
 - Prefer squash merge for completed PRs.
 - After merge:
@@ -238,6 +318,36 @@ git log --oneline -5
 
 - Delete branches only when the user requested it or the merge command was
   explicitly asked to delete the remote branch.
+
+## Current Roadmap Focus
+
+- Completed block: Phase 7B.2.
+- Current focus: Phase 7C-A - safe end-to-end answer harness and functional
+  baseline.
+- Phase 7C-A has not started yet.
+- Phase 7C-B is planned after the baseline and must choose exactly one primary
+  blocker from measured evidence.
+- Phase 8A and Phase 8B are recorded but not started.
+
+Phase 7C-A must not fix routing or prompts before the baseline identifies the
+real blocker. It must disable EvidenceLogRepository writes and avoid production
+writes.
+
+## Documentation Source Policy
+
+External documentation is a replaceable knowledge source. Zero health warnings
+are not the product goal.
+
+- Do not repair individual stored chunks only to make counters green.
+- Dirty fragments require action only when they harm retrieval, answers, or
+  citations.
+- When a documentation source is broadly broken or stale, first identify and
+  fix a generic ingestion/extraction problem when one exists, then archive or
+  remove the broken imported version through an owner-approved safe operation,
+  then fetch and index a clean replacement.
+- Do not accumulate service-specific Python patches.
+- Do not manually edit production chunks.
+- Uploaded materials and official documentation remain conceptually separate.
 
 ## Final Reports And Next Prompts
 

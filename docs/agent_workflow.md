@@ -29,11 +29,12 @@ Repository identity:
 
 ## During work
 
-- Keep the PR small.
+- Keep the branch small.
 - Avoid unrelated refactors.
 - Do not start the next roadmap item.
 - Keep one active roadmap focus at a time. The current focus remains active
-  until its PR is merged or the owner explicitly changes direction.
+  until its branch is merged to `main` or the owner explicitly changes
+  direction.
 - Keep Telegram handlers thin.
 - Put business logic in feature/service modules.
 - For retrieval query quality, prefer reviewed glossary/config updates over hardcoded Python rules.
@@ -58,49 +59,63 @@ Git workflow:
 - Use one branch per meaningful block.
 - Commit only intentional files.
 - Push only after checks pass.
-- Open PRs only when requested.
-- Do not merge PRs unless explicitly requested.
-- Merge only when CI is green and the PR is clean/mergeable.
+- Solo-owner mode is the default. GitHub is the durable remote Git store for
+  commits, branches, tags, and `main`.
+- A Pull Request is not required by default.
+- Open a PR only when the owner asks, for schema/migrations, high-risk
+  production writes, large risky refactors, or multi-person collaboration.
+- Locally merge a feature branch into `main` only after explicit owner
+  approval.
+- Never force-push.
+- Do not delete a backup feature branch until published `main` has been
+  verified.
+- Do not use GitHub UI, GitHub MCP, Playwright, or `gh` only for ordinary
+  personal-repository management.
 - Prefer squash merge when the user asks to merge.
 
 ## Streamlined development workflow
 
-Use a short GitHub loop for normal feature blocks:
+Use a short Git loop for normal solo-owner feature blocks:
 
 1. Implement one focused block.
 2. Run the required checks.
 3. Commit and push the feature branch.
-4. Open a PR only when requested.
-5. Check CI and mergeability.
-6. Squash merge only after an explicit owner command.
-7. Run manual smoke only when the change affects runtime or user-visible behavior.
-8. Move to the next roadmap block only after the owner explicitly asks.
+4. Keep the pushed feature branch as a remote backup.
+5. Open a PR only when requested or required by risk.
+6. After explicit owner approval, merge locally to `main` if it can
+   fast-forward cleanly or by the owner-approved PR path when a PR exists.
+7. Rerun the checks needed for the change.
+8. Push `main` normally.
+9. Run manual smoke only when the change affects runtime or user-visible behavior.
+10. Move to the next roadmap block only after the owner explicitly asks.
 
-Do not create a separate post-merge sanity loop by default when the PR was
-docs-only, CI was green, the working tree is clean, project docs already use
-the stable baseline policy, and there is no sign of conflict.
+Do not create a separate post-merge sanity loop by default when the change was
+docs-only, required checks passed, the working tree is clean, project docs
+already use the stable baseline policy, and there is no sign of conflict.
 
-Docs-only PRs should happen only when documentation blocks the next agent,
-guardrails are outdated, roadmap/status docs are misleading, an architecture
-decision must be recorded, or the owner explicitly asks. Do not make docs-only
-PRs just to update a latest commit pointer or for cosmetic churn.
+Docs-only branches or PRs should happen only when documentation blocks the next
+agent, guardrails are outdated, roadmap/status docs are misleading, an
+architecture decision must be recorded, or the owner explicitly asks. Do not
+make docs-only work just to update a latest commit pointer or for cosmetic
+churn.
 
 Backlog items must stay separate from the current focus. Record new ideas as a
 recommended next prompt or backlog note, but do not mix unrelated changes into
-the active PR. Small docs rule updates are allowed inside the active branch only
-when the owner explicitly permits them and they directly protect the current
-workflow.
+the active branch. Small docs rule updates are allowed inside the active branch
+only when the owner explicitly permits them and they directly protect the
+current workflow.
 
-Current Phase 5A focus:
+Current focus:
 
-- Phase 5A - Service-aware Suggestions read-only MVP.
-- Do not start Phase 5B Telegram UI, Supabase setup docs, MCP, docs health
-  refresh, or other unrelated tasks until Phase 5A is merged or the owner
-  explicitly changes focus.
+- Phase 7C-A - safe end-to-end answer harness and functional baseline.
+- Phase 7C-A has not started yet.
+- Do not start Phase 7C-A implementation, Phase 7C-B, Phase 8A, Phase 8B,
+  production audits, external docs operations, schema changes, or RAG fixes
+  unless the owner explicitly asks.
 
 ## After work
 
-Run:
+Run for normal code/runtime changes:
 
 ```powershell
 .\.venv\Scripts\python.exe -m compileall app scripts tests
@@ -117,7 +132,11 @@ git diff --stat
 git diff -- . ":!*.env"
 ```
 
-Before push/PR, confirm no `.env`, local credentials, service role keys, GitHub
+For documentation-only changes where no Python, config, schema, or runtime
+files changed, `git diff --check` and `scripts/check_tracked_secrets.py` are
+usually sufficient unless the task asks for broader checks.
+
+Before push or PR, confirm no `.env`, local credentials, service role keys, GitHub
 PATs, Telegram bot tokens, or secret-bearing logs are staged or untracked for
 commit.
 
@@ -130,7 +149,7 @@ manual smoke notes, and confirmations about forbidden actions.
 Also include:
 
 - current roadmap focus;
-- current branch or PR;
+- current branch and PR, if any;
 - next roadmap step;
 - what is explicitly not being started.
 
