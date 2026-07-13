@@ -315,6 +315,36 @@ def test_external_docs_validation_allows_hash_template_placeholders() -> None:
     assert result.metrics["raw_html_count"] == 0
 
 
+def test_external_docs_validation_allows_placeholder_prose_substitution_context() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", "We will use simply <secret> in this document."),
+            _chunk("doc-1", "The identifier is shown as <resource_id> in this example."),
+            _chunk("doc-1", "Replace the value with <access-key> before running the documented request example."),
+            _chunk("doc-1", "Refer to this field as <item name> when describing the template configuration example."),
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_placeholder_prose_across_punctuation_and_line_breaks() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", "For short examples, use simply\n<secret>\nin this document."),
+            _chunk("doc-1", "The generated identifier is shown as:\n<resource-id>\nin this example."),
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
 def test_external_docs_validation_requires_placeholder_context_for_unknown_tags() -> None:
     result = validate_external_docs(
         source_name="future_docs",
@@ -324,6 +354,22 @@ def test_external_docs_validation_requires_placeholder_context_for_unknown_tags(
 
     assert result.quality == "FAIL"
     assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_keeps_context_free_placeholders_and_dangerous_tags_raw() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", "<secret>"),
+            _chunk("doc-1", "Unexpected markup: <unknown>."),
+            _chunk("doc-1", "Use simply <div> in this document."),
+            _chunk("doc-1", "Use simply <script> in this document."),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 4
 
 
 def test_external_docs_validation_allows_rich_table_and_divider_examples() -> None:
@@ -345,6 +391,44 @@ def test_external_docs_validation_allows_rich_table_and_divider_examples() -> No
 
     assert result.quality == "PASS"
     assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_table_alignment_attributes_for_cells() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Documented table example: <table><tr>"
+                    '<td colspan="2" rowspan="2" align="left">Cell</td>'
+                    '<th scope="col" align="center">Header</th>'
+                    "</tr></table>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_flags_unsafe_table_alignment_attributes() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", '<table><tr><td align="expression(run)">Cell</td></tr></table>'),
+            _chunk("doc-1", '<table><tr><td align="left; color:red">Cell</td></tr></table>'),
+            _chunk("doc-1", "<table><tr><td align=left>Cell</td></tr></table>"),
+            _chunk("doc-1", '<div align="left">Layout</div>'),
+            _chunk("doc-1", '<table class="layout"><tr><td align="left">Cell</td></tr></table>'),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 5
 
 
 def test_external_docs_validation_allows_code_language_classes_only_for_code_examples() -> None:
@@ -399,6 +483,75 @@ def test_external_docs_validation_allows_split_documented_tag_lists() -> None:
 
     assert result.quality == "PASS"
     assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_safe_trailing_semantic_closing_tag_in_documented_fragment() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                "Rich disclosure markup example: <x-spoiler>hidden text</x-spoiler> </details>.",
+            ),
+            _chunk(
+                "doc-1",
+                "Supported tags include <blockquote>, <figure>, and <figcaption> </blockquote>.",
+            ),
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_flags_stray_page_or_context_free_closing_tags() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", "Plain prose ends with </details>."),
+            _chunk("doc-1", "Documented example followed by </div>."),
+            _chunk("doc-1", "Documented example followed by </a></div>."),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 3
+
+
+def test_external_docs_validation_allows_small_footer_documented_example() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                "Documented HTML example: <footer>Footer text</footer> with enough contextual words.",
+            ),
+            _chunk("doc-1", "Markup example uses <footer>Generated by service</footer> as a small semantic element."),
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_flags_page_footer_residue() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", '<footer class="site-footer">Links</footer>'),
+            _chunk("doc-1", '<footer style="display:flex">Links</footer>'),
+            _chunk("doc-1", "<footer><nav>Menu</nav></footer>"),
+            _chunk("doc-1", "<main><section><div>Large page layout</div></section></main>"),
+            _chunk("doc-1", "Documented HTML example: <footer>Footer text</footer><script>run()</script>"),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 5
 
 
 def test_external_docs_validation_allows_safe_placeholder_plus_safe_documented_markup() -> None:
@@ -470,6 +623,39 @@ def test_external_docs_validation_flags_placeholder_mixed_with_navigation_residu
 
     assert result.quality == "FAIL"
     assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_safe_examples_mixed_with_real_residue() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Rich disclosure markup example: <x-spoiler>hidden</x-spoiler> </details> "
+                    '<div class="navigation">Docs</div>'
+                ),
+            ),
+            _chunk(
+                "doc-1",
+                (
+                    "Documented HTML example: <footer>Footer text</footer> "
+                    '<figure class="dev_page_image"><img srcset="small.png 1x" src="/file/page.png"></figure>'
+                ),
+            ),
+            _chunk(
+                "doc-1",
+                (
+                    'Table example: <table><tr><td align="left">Cell</td></tr></table> '
+                    '<a href="/file/page.png" target="_blank"><img class="dev_page_image" src="/file/page.png"/></a></div>'
+                ),
+            ),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 3
 
 
 def test_external_docs_validation_flags_placeholder_like_real_attributes() -> None:
