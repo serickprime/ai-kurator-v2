@@ -182,6 +182,9 @@ SAFE_HTML_ATTRS = {
     "width",
     "zoom",
 }
+SAFE_STRUCTURAL_EXAMPLE_TAGS = {"footer"}
+SAFE_TABLE_ALIGN_TAGS = {"td", "th"}
+SAFE_TABLE_ALIGN_VALUES = {"left", "center", "right", "justify", "char"}
 FORBIDDEN_HTML_ATTRS = {"contenteditable", "draggable", "hidden", "role", "srcset", "style", "tabindex"}
 SAFE_URL_ATTRS = {"cite", "href", "src"}
 SAFE_CLASS_TAGS = {"span"}
@@ -219,6 +222,25 @@ PLACEHOLDER_CONTEXT_RE = re.compile(
     r"\bvalue\b|\bquery\b|\brequest\b|\bresponse\b|\bcache\b|"
     r"\bcertificate\b|\bworkspace\b|\bsettings\b|\blabeled\b|"
     r"[A-Za-z0-9_.-]+\s*=",
+    re.IGNORECASE,
+)
+PLACEHOLDER_PROSE_BEFORE_RE = re.compile(
+    r"(?:"
+    r"\buse(?:\s+\w+){0,3}|"
+    r"\bshown\s+as|"
+    r"\brefer(?:red)?\s+to(?:\s+\w+){0,4}\s+as|"
+    r"\breplace(?:\s+\w+){0,6}\s+with|"
+    r"\bsubstitute(?:\s+\w+){0,6}\s+with|"
+    r"\blabel(?:ed)?(?:\s+\w+){0,4}\s+as"
+    r")\s*$",
+    re.IGNORECASE,
+)
+PLACEHOLDER_PROSE_AFTER_RE = re.compile(
+    r"^\s*(?:"
+    r"in\s+(?:this\s+)?(?:document|example|guide|reference)|"
+    r"for\s+(?:this\s+)?(?:example|placeholder|template)|"
+    r"as\s+(?:a\s+)?(?:placeholder|template|identifier|value)"
+    r")\b",
     re.IGNORECASE,
 )
 PLACEHOLDER_SEPARATOR_RE = re.compile(r"^\s*/\s*|\s*/\s*$")
@@ -470,23 +492,31 @@ def _looks_like_documented_html_example(text: str) -> bool:
     stack: list[_ParsedHtmlTag] = []
     isolated_mentions: list[_ParsedHtmlTag] = []
     documented_context = _has_documented_markup_context(text)
+    saw_safe_documented_fragment = False
     for tag in parsed_tags:
         if tag.name in DANGEROUS_HTML_TAGS:
             return False
         if tag.closing:
             if not stack or stack[-1].name != tag.name:
-                if documented_context and _is_safe_closing_tag_mention(tag):
+                if (documented_context or saw_safe_documented_fragment) and _is_safe_closing_tag_mention(tag):
                     isolated_mentions.append(tag)
                     continue
                 return False
             stack.pop()
             continue
         if tag.name in STRUCTURAL_PAGE_TAGS:
+            if _is_safe_structural_documented_example(text, tag, documented_context):
+                saw_safe_documented_fragment = True
+                if tag.self_closing:
+                    continue
+                stack.append(tag)
+                continue
             if tag.attrs or not _is_isolated_tag_mention(text, tag):
                 return False
             continue
         if not _is_safe_documented_tag(tag):
             return False
+        saw_safe_documented_fragment = True
         if tag.self_closing or tag.name in VOID_HTML_TAGS:
             continue
         if _is_isolated_tag_mention(text, tag) or (documented_context and _is_tag_list_mention(text, tag)):
@@ -600,7 +630,20 @@ def _has_placeholder_context(text: str, match: re.Match[str]) -> bool:
     context = f"{before} {after}"
     if PLACEHOLDER_CONTEXT_RE.search(context):
         return True
+    if _has_placeholder_prose_context(before, after):
+        return True
     return bool(PLACEHOLDER_SEPARATOR_RE.search(before) or PLACEHOLDER_SEPARATOR_RE.match(after))
+
+
+def _has_placeholder_prose_context(before: str, after: str) -> bool:
+    before_window = _normalize_context_window(before[-90:]).strip(" :;,-").casefold()
+    after_window = _normalize_context_window(after[:90]).casefold()
+    if not PLACEHOLDER_PROSE_BEFORE_RE.search(before_window):
+        return False
+    return bool(
+        PLACEHOLDER_PROSE_AFTER_RE.match(after_window)
+        or re.search(r"\b(?:replace|substitute|shown\s+as|refer(?:red)?\s+to|label(?:ed)?)\b", before_window)
+    )
 
 
 def _strip_safe_escaped_comparison_fragments(text: str) -> str:
@@ -635,6 +678,10 @@ def _attrs_are_safe_for_documented_example(tag: _ParsedHtmlTag) -> bool:
             if tag.name in SAFE_LANGUAGE_CLASS_TAGS and _is_safe_language_class(value):
                 continue
             if tag.name not in SAFE_CLASS_TAGS or not _is_safe_example_class(value):
+                return False
+            continue
+        if name == "align":
+            if value is None or tag.name not in SAFE_TABLE_ALIGN_TAGS or not _is_safe_table_align_value(value):
                 return False
             continue
         if value is None and _is_safe_boolean_attr_name(name):
@@ -688,6 +735,10 @@ def _is_safe_attr_value(name: str, value: str) -> bool:
     return True
 
 
+def _is_safe_table_align_value(value: str) -> bool:
+    return value.strip().casefold() in SAFE_TABLE_ALIGN_VALUES
+
+
 def _is_isolated_tag_mention(text: str, tag: _ParsedHtmlTag) -> bool:
     if tag.closing or tag.attrs or tag.self_closing:
         return False
@@ -705,7 +756,7 @@ def _has_documented_markup_context(text: str) -> bool:
         re.search(
             r"\b(?:html|markup|tag|tags|element|elements|syntax|formatting|"
             r"example|examples|supports|supported|corresponding to|rich block|"
-            r"rich text|preformatted|table|blockquote)\b",
+            r"rich text|preformatted|table|blockquote|disclosure)\b",
             lowered,
         )
     )
@@ -734,6 +785,25 @@ def _is_safe_closing_tag_mention(tag: _ParsedHtmlTag) -> bool:
     return _is_safe_documented_tag(pseudo_tag)
 
 
+def _is_safe_structural_documented_example(
+    text: str,
+    tag: _ParsedHtmlTag,
+    documented_context: bool,
+) -> bool:
+    if tag.name not in SAFE_STRUCTURAL_EXAMPLE_TAGS or not documented_context or tag.attrs:
+        return False
+    close_match = re.search(rf"</\s*{re.escape(tag.name)}\s*>", text[tag.end :], flags=re.IGNORECASE)
+    if not close_match:
+        return False
+    fragment_end = tag.end + close_match.end()
+    if fragment_end - tag.start > 240:
+        return False
+    inner = text[tag.end : tag.end + close_match.start()]
+    if HTML_TAG_RE.search(inner):
+        return False
+    return bool(inner.strip())
+
+
 def _is_unclosed_safe_documented_mention(text: str, tag: _ParsedHtmlTag, documented_context: bool) -> bool:
     if _is_isolated_tag_mention(text, tag):
         return True
@@ -742,6 +812,10 @@ def _is_unclosed_safe_documented_mention(text: str, tag: _ParsedHtmlTag, documen
 
 def _strip_html_tags(text: str) -> str:
     return HTML_TAG_RE.sub(" ", text)
+
+
+def _normalize_context_window(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _is_very_short(text: str) -> bool:
