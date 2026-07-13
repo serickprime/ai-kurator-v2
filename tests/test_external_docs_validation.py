@@ -251,6 +251,257 @@ def test_external_docs_validation_reproduces_documented_markup_pattern_classes()
     assert result.metrics["raw_html_count"] == 0
 
 
+def test_external_docs_validation_allows_placeholder_pseudo_tags_in_template_contexts() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Call https://api.example.test/bot<token>/METHOD and then download "
+                    "https://cdn.example.test/file/bot<token>/<file_path>. "
+                    "Use curl https://api.example.test/bot<YOURTOKEN>/setWebhook with "
+                    "url=https://<YOURDOMAIN.EXAMPLE>/<WEBHOOKLOCATION> and "
+                    "certificate=@<YOURCAROOTCERTIFICATE>.pem."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_openrouter_like_placeholders_without_source_specific_rules() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "The command accepts the <provider>/<service> reference. "
+                    "A generated API key may be labeled Service MCP: <app name>. "
+                    "Open the dashboard at https://docs.example.test/workspaces/<slug>/settings. "
+                    "The cache header X-Example-Cache-TTL accepts <seconds>. "
+                    "Analytics are available at docs.example.test/apps?url=<your-app-url> "
+                    "and referer=<your-referer-url>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_hash_template_placeholders() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Build the check string in key=<value> format, for example "
+                    "auth_date=<auth_date>, query_id=<query_id>, and user=<user>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_requires_placeholder_context_for_unknown_tags() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", "Ordinary prose mentions <widget> in a normal sentence.")],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_allows_rich_table_and_divider_examples() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Documented rich text examples include <hr/>, "
+                    "<table bordered striped><caption>Metrics</caption><thead><tr>"
+                    "<th scope=\"col\">Name</th><th scope=\"col\">Value</th></tr></thead>"
+                    "<tbody><tr><td colspan=\"2\" valign=\"bottom\">Total</td></tr></tbody></table>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_code_language_classes_only_for_code_examples() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Documented examples include <pre><code class=\"language-python\">print(1)</code></pre> "
+                    "and <code class=\"language-c++\">std::cout</code>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_flags_unsafe_code_classes() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", '<code class="navigation">bad</code>'),
+            _chunk("doc-1", '<code class="language-python navigation">bad</code>'),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 2
+
+
+def test_external_docs_validation_allows_split_documented_tag_lists() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Supported HTML tags include <u>/<ins> for inserted text and "
+                    "<s>/<strike>/<del> for deleted text. "
+                    "A preformatted block corresponds to the nested HTML tags <pre> and <code>. "
+                    "A divider corresponds to the HTML tag <hr/>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_safe_placeholder_plus_safe_documented_markup() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Request https://api.example.test/bot<token>/send and format output with "
+                    "<b>bold</b>, <blockquote expandable>quote</blockquote>, and "
+                    "<x-rich-block item-id=\"123\"></x-rich-block>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_escaped_comparison_prose() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                "Literal < and > characters are documented as < with &lt; , > with &gt; and & with &amp;.",
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_flags_placeholder_mixed_with_screenshot_residue() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Use https://api.example.test/bot<token>/send. "
+                    '<figure class="dev_page_image"><img srcset="small.png 1x" src="/file/example.png"></figure>'
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_placeholder_mixed_with_navigation_residue() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                'Use /api/<token>/send plus <div class="navigation"><a href="/docs">Docs</a></div>.',
+            )
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_placeholder_like_real_attributes() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", '<token value="secret"></token>'),
+            _chunk("doc-1", '<token onclick="run()">'),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 2
+
+
+def test_external_docs_validation_local_fixture_health_smoke_for_safe_and_residue_chunks() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", "Template URL: https://api.example.test/bot<token>/send", heading="Template"),
+            _chunk("doc-1", "Documented rich table: <table><tr><td>Value</td></tr></table>", heading="Markup"),
+            _chunk("doc-1", '<div class="navigation"><a href="/docs">Docs</a></div>', heading="Residue"),
+            _chunk("doc-1", '<figure class="dev_page_image"><img srcset="a.png 1x"></figure>', heading="Image"),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 2
+
+
 def test_external_docs_validation_does_not_warn_for_short_technical_chunks() -> None:
     result = validate_external_docs(
         source_name="future_docs",
