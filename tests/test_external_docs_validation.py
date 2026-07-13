@@ -68,6 +68,189 @@ def test_external_docs_validation_allows_useful_inline_html_examples() -> None:
     assert result.metrics["raw_html_count"] == 0
 
 
+def test_external_docs_validation_allows_html_inside_inline_code() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                "Use the inline code `<div class=\"example\">demo</div>` when explaining HTML examples.",
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_multibacktick_inline_code() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                "Use ``<button onclick=\"run()\">unsafe if rendered</button>`` only as literal code text.",
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_isolated_structural_tag_mention() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", "Place the script before the <body> tag when documenting page structure.")],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_balanced_semantic_formatting_examples() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Documented formatting examples include <b>bold</b>, <strong>strong</strong>, "
+                    "<i>italic</i>, <em>emphasis</em>, <u>underline</u>, "
+                    "<ins>inserted</ins>, <s>strike</s>, <del>deleted</del>, "
+                    "<code>value</code>, and <pre>block</pre>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_anchor_and_media_examples_with_safe_attributes() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Examples can include <a href=\"https://docs.example.com/guide\">guide</a>, "
+                    "<figure><img src=\"https://cdn.example.com/image.png\" alt=\"Diagram\"/>"
+                    "<figcaption><cite>Docs team</cite></figcaption></figure>, "
+                    "and <time datetime=\"2026-07-13\">today</time>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_details_and_blockquote_boolean_attributes() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Disclosure examples include <details open><summary>More</summary>Text</details> "
+                    "and <blockquote expandable>Long quote</blockquote>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_generic_custom_elements_with_safe_attributes() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Custom documented elements include <x-emoji item-id=\"123\"></x-emoji>, "
+                    "<x-time unix=\"1234567890\"></x-time>, and "
+                    "<rich-spoiler>hidden text</rich-spoiler>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_multiple_small_documented_markup_examples() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "The documented snippet supports <mark>marked</mark>, <small>small</small>, "
+                    "<sub>subscript</sub>, <sup>superscript</sup>, "
+                    "<q cite=\"https://docs.example.com/source\">short quote</q>, and "
+                    "<span class=\"rich-spoiler\">spoiler</span>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_allows_escaped_html_entities_and_comparisons() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                "Escaped examples like &lt;b&gt;text&lt;/b&gt; and comparisons such as 2 < 3 > 1 remain prose.",
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_reproduces_documented_markup_pattern_classes() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Formatting tags: <span class=\"rich-spoiler\">spoiler</span>, "
+                    "<x-emoji emoji-id=\"123\"></x-emoji>, and <x-time unix=\"123\" format=\"short\"></x-time>. "
+                    "Rich blocks: <aside>Pull quote<cite>The Author</cite></aside>. "
+                    "Headings: <h1>Main</h1><p>Paragraph</p><pre>code</pre>. "
+                    "Media: <figure><figcaption><cite>Credit</cite></figcaption></figure>."
+                ),
+            )
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
 def test_external_docs_validation_does_not_warn_for_short_technical_chunks() -> None:
     result = validate_external_docs(
         source_name="future_docs",
@@ -226,6 +409,143 @@ def test_external_docs_validation_flags_synthetic_telegram_template_and_navigati
     assert result.metrics["nav_footer_noise_count"] == 1
     assert any("raw HTML" in failure for failure in result.failures)
     assert any("navigation/footer/cookie" in warning for warning in result.warnings)
+
+
+def test_external_docs_validation_flags_navigation_wrapper_residue() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", '<div class="navigation"><a href="/docs">Docs</a></div>')],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_styled_layout_residue() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", '<section style="display:flex">Layout residue</section>')],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_data_and_framework_attributes() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", '<div data-controller="menu" aria-label="Navigation">Menu</div>')],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_event_handlers() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", '<img src="https://cdn.example.com/x.png" onerror="run()">')],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_unbalanced_markup() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", "<div><span>broken")],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_script_and_style_fragments() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", "<script>run()</script>"),
+            _chunk("doc-1", "<style>.page { display: flex; }</style>"),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 2
+
+
+def test_external_docs_validation_flags_scraped_image_page_block() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                '<figure class="screenshot"><img srcset="small.png 1x, large.png 2x" src="large.png"/></figure>',
+            )
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_mixed_useful_markup_and_residue() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                '<b>documented example</b> plus <div class="navigation"><a href="/docs">Docs</a></div>',
+            )
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_large_arbitrary_dom_subtree() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", "<div><header>Top</header><main><section>Body</section></main></div>")],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_malformed_custom_element() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[_chunk("doc-1", "<x-emoji item-id=123></x-emoji>")],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 1
+
+
+def test_external_docs_validation_flags_custom_element_with_event_or_style_attrs() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", '<x-emoji item-id="123" onclick="run()"></x-emoji>'),
+            _chunk("doc-1", '<rich-spoiler style="display:none">hidden</rich-spoiler>'),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 2
 
 
 def test_external_docs_validation_json_output_is_valid() -> None:
