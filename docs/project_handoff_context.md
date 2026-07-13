@@ -138,6 +138,13 @@ Already merged into main:
   target is clean, archived v1 is excluded from active retrieval, required
   terms are present, OpenRouter remains healthy, and Telegram Batch 1 is
   closed.
+- Phase 7C-A safe answer-quality harness is complete. It uses a separate
+  no-write runtime, disables `EvidenceLogRepository`, sends no Telegram
+  messages, wraps Supabase in a read-only adapter, and writes a sanitized
+  baseline artifact outside Git.
+- Phase 7C-A baseline classification is `functional_blocker_found` with primary
+  blocker `evidence_selection_gap`. The next focus is one generic Phase 7C-B
+  fix for that blocker.
 
 Known deferred Telegram documentation residue:
 
@@ -233,16 +240,17 @@ Verified code paths to preserve:
 Verified gaps for future phases:
 
 - The normal RAG pipeline uses EvidenceLogRepository and can write an
-  `evidence_logs` row during an answer. Phase 7C-A needs a reusable local
-  harness with no-op/disabled evidence logging, no Telegram messages, no
-  production writes, and deterministic diagnostics.
+  `evidence_logs` row during an answer. The Phase 7C-A harness avoids this by
+  constructing `EvidenceFirstRagPipeline` with `logger=None`; keep future
+  answer-quality audits on this no-write path.
 - CourseHintResolver supports data-driven aliases, including aliases built from
   metadata, but normal QuestionAnalyzer currently constructs it without a
   populated alias catalog. A future phase must decide how to load active
   course metadata aliases generically.
-- Mixed course-task plus named-service documentation is an acceptance
-  requirement and audit question. Do not claim it is broken without an
-  end-to-end audit.
+- Mixed course-task plus named-service documentation remains an acceptance
+  requirement. The Phase 7C-A dynamic mixed fixture was blocked because no
+  suitable uploaded material/service pair was found, so mixed routing is not yet
+  proven broken.
 - Telegram upload handling downloads files under `data/uploads/telegram` and
   passes the local path to ingestion. The handler does not currently remove the
   original temporary file after success or failure. This is Phase 8A.
@@ -321,17 +329,19 @@ git log --oneline -5
 
 ## Current Roadmap Focus
 
-- Completed block: Phase 7B.2.
-- Current focus: Phase 7C-A - safe end-to-end answer harness and functional
-  baseline.
-- Phase 7C-A has not started yet.
-- Phase 7C-B is planned after the baseline and must choose exactly one primary
-  blocker from measured evidence.
+- Completed block: Phase 7C-A.
+- Previous durable block: Phase 7B.2.
+- Current focus: Phase 7C-B - one focused functional fix for
+  `evidence_selection_gap`.
+- Phase 7C-B is not started.
+- The Phase 7C-A baseline selected exactly one primary blocker from measured
+  evidence: `evidence_selection_gap`.
 - Phase 8A and Phase 8B are recorded but not started.
 
-Phase 7C-A must not fix routing or prompts before the baseline identifies the
-real blocker. It must disable EvidenceLogRepository writes and avoid production
-writes.
+Phase 7C-B must not combine multiple fixes. Do not start course alias wiring,
+explicit service routing, mixed-source allocation, prompt changes, citation
+changes, documentation repair, Phase 8A upload cleanup, or Phase 8B conversation
+memory unless the owner explicitly changes the scope.
 
 ## Documentation Source Policy
 

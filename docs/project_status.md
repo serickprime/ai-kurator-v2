@@ -72,6 +72,9 @@ Core state:
 - Phase 7B.1g-C generic reviewed canonical relocation tooling was completed as part of the Phase 7B remediation sequence.
 - Phase 7B.2 Telegram Bot API controlled reprocessing is complete: active v2 target is clean, archived v1 is excluded from active retrieval, required terms are present, OpenRouter remains healthy, and Telegram Batch 1 is formally closed.
 - Remaining Telegram Bot API residue is deferred: two Webhooks screenshot/page-residue chunks and six navigation/footer markers. They are not blockers unless a future end-to-end answer audit shows that they pollute retrieval, displace useful evidence, enter final answer context, appear in final answers, or create incorrect citations.
+- Phase 7C-A safe answer-quality harness is complete. The harness uses the real RAG components through a separate no-write runtime with `EvidenceLogRepository` disabled, Telegram sending disabled, read-only Supabase guarded by an allowlisted adapter, and a resumable sanitized JSON artifact outside Git.
+- Phase 7C-A baseline result: `functional_blocker_found`, primary blocker `evidence_selection_gap`. Product WARN cases were `n8n_docs` and `openrouter_docs` because selected documents existed but no accepted evidence contained the expected high-signal terms. `mixed_course_service_auto` was blocked by lack of a suitable uploaded-material/service fixture, not classified as a proven product failure.
+- Phase 7C-A did not show dirty Telegram documentation residue entering final answers or citations. Remaining Webhooks/navigation residue stays deferred.
 
 ## Completed PRs
 
@@ -125,7 +128,24 @@ Core state:
 
 ## Latest completed project block
 
-Phase 7B.2 is complete:
+Phase 7C-A is complete:
+
+- reusable harness: `scripts/run_answer_quality_baseline.py`;
+- main implementation: `app/rag/quality_harness.py`;
+- focused tests: `tests/test_answer_quality_harness.py`;
+- future baseline command pattern:
+  `.\.venv\Scripts\python.exe scripts\run_answer_quality_baseline.py --output <external-json-path> --resume --answer-mode cheap --confirm-read-only-production`;
+- artifact stays outside Git, for example under
+  `D:\AI_Kurator_Backups\ai-kurator-v2\phase7c`;
+- no-write boundary from the completed baseline: evidence logging disabled,
+  Telegram sending disabled, Supabase write attempts 0, blocked write calls 0,
+  non-allowlisted RPC attempts 0;
+- overall classification: `functional_blocker_found`;
+- primary blocker: `evidence_selection_gap`;
+- next focused phase: Phase 7C-B - one generic fix for
+  `evidence_selection_gap`.
+
+Previous durable milestone, Phase 7B.2:
 
 - Telegram Bot API controlled reprocessing was completed through the
   owner-approved safe path;
@@ -142,12 +162,13 @@ Phase 7B.2 is complete:
 
 Current active roadmap focus:
 
-- Phase 7C-A - safe end-to-end answer harness and functional baseline.
-- Phase 7C-A has not started yet.
-- This next block should create a reusable no-write local answer-quality
-  harness and run the baseline question matrix. It must not fix routing,
-  course aliases, evidence allocation, prompts, or citations before baseline
-  evidence identifies the real blocker.
+- Phase 7C-B - one focused functional fix for `evidence_selection_gap`.
+- Phase 7C-A is complete; do not rerun or repair cases merely to get greener
+  counters.
+- Phase 7C-B must choose one generic evidence-selection fix from the baseline
+  evidence. Do not combine routing, course aliases, prompts, source labels,
+  documentation repair, upload lifecycle, or conversation memory in the same
+  branch.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -155,14 +176,13 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- start Phase 7C-A only after explicit owner instruction;
-- implement a safe no-write end-to-end answer-quality harness using the actual
-  QuestionAnalyzer, router, retriever, reranker, evidence pack,
-  AnswerGenerator, ClaimVerifier, and source formatter;
-- disable or replace EvidenceLogRepository with a no-op logger in the harness;
-- send no Telegram messages and perform no production writes;
-- use the baseline matrix from `docs/roadmap.md` and
-  `docs/manual_smoke_checklist.md`.
+- start Phase 7C-B only after explicit owner instruction;
+- inspect the Phase 7C-A sanitized artifact outside Git and current code before
+  selecting the exact `evidence_selection_gap` fix;
+- implement exactly one generic fix, with regression tests for the class of
+  questions that failed or warned;
+- rerun the Phase 7C-A baseline matrix after the fix;
+- keep Phase 8A and Phase 8B recorded but not started.
 
 - optional retrieval-quality manual smoke when a future runtime/query enrichment
   change needs it:

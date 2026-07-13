@@ -37,7 +37,8 @@ Hard rules:
 - One branch = one meaningful block.
 - Do not start the next roadmap item without explicit instruction.
 - After a completed project block, update docs/project_status.md.
-- Current active focus: Phase 7C-A - safe end-to-end answer harness and functional baseline. Phase 7C-A has not started yet.
+- Current active focus: Phase 7C-B - one focused fix for `evidence_selection_gap`, based on the completed Phase 7C-A baseline.
+- Do not start Phase 7C-B without explicit instruction. The next fix must be generic, evidence-first, and limited to one primary blocker.
 
 Before starting work:
 

@@ -2,14 +2,14 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 7C-A - safe
-end-to-end answer harness and functional baseline. Phase 7C-A has not started
-yet.
+Use one active roadmap focus at a time. The current focus is Phase 7C-B - one
+focused functional fix for `evidence_selection_gap`, based on the completed
+Phase 7C-A baseline.
 
-Until the owner explicitly starts Phase 7C-A, do not implement the harness, fix
-course aliases, change routing, change evidence allocation, edit prompts, run
-production audits, send Telegram messages, crawl, sync, index, reindex,
-activate docs, archive documents, change schema, or write to Supabase.
+Until the owner explicitly starts Phase 7C-B, do not fix course aliases, change
+routing, change evidence allocation, edit prompts, run production audits, send
+Telegram messages, crawl, sync, index, reindex, activate docs, archive
+documents, change schema, or write to Supabase.
 
 Backlog items should be recorded without being started in the active branch:
 
@@ -384,20 +384,46 @@ The bot must:
 
 ### Phase 7C-A - Safe end-to-end answer harness and baseline
 
-Status: not started.
+Status: complete.
 
-Planned behavior:
+Durable outcome:
 
-- create a reusable local answer-quality harness;
-- use the actual QuestionAnalyzer, router, retriever, reranker, evidence pack,
+- reusable no-write harness added in `app/rag/quality_harness.py`;
+- CLI added in `scripts/run_answer_quality_baseline.py`;
+- focused regression tests added in `tests/test_answer_quality_harness.py`;
+- harness uses the actual QuestionAnalyzer, router, retriever, reranker, evidence pack,
   AnswerGenerator, ClaimVerifier, and source formatter;
-- disable or no-op evidence logging so no `evidence_logs` row is written;
-- send no real Telegram messages;
-- perform no production writes;
-- use production reads only when explicitly approved;
-- allow safe model calls without persistence;
-- produce a deterministic diagnostic report;
-- test realistic questions.
+- `EvidenceLogRepository` is not created and pipeline logger is `None`;
+- Telegram sending is not used;
+- Supabase is wrapped by a read-only adapter allowing only `select`,
+  `match_document_cards`, `hybrid_match_chunks_in_documents`, and
+  `match_chunks_in_documents`;
+- confirmed baseline wrote a sanitized local artifact outside Git and reported
+  Supabase write attempts 0, blocked write calls 0, and non-allowlisted RPC
+  attempts 0.
+
+Baseline result:
+
+- overall classification: `functional_blocker_found`;
+- primary blocker: `evidence_selection_gap`;
+- `n8n_docs` and `openrouter_docs` warned because routing selected relevant
+  service documents but accepted evidence did not contain the expected
+  high-signal terms;
+- `mixed_course_service_auto` was `BLOCKED` because no suitable uploaded
+  material/service fixture was found, so mixed course/docs routing is not yet
+  proven broken;
+- follow-up limitation was handled as a Phase 8B concern and was not selected
+  as the Phase 7C-B blocker;
+- dirty Telegram documentation residue did not enter final answers or
+  citations in this baseline.
+
+Future baseline command pattern:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_answer_quality_baseline.py --output <external-json-path> --resume --answer-mode cheap --confirm-read-only-production
+```
+
+The artifact must stay outside Git.
 
 Required baseline cases:
 
@@ -424,12 +450,17 @@ the answer.
 
 ### Phase 7C-B - One focused functional fix
 
-Status: planned after Phase 7C-A.
+Status: current focus, not started.
 
-Do not predetermine the fix. Choose exactly one primary blocker found by Phase
-7C-A, such as course alias wiring, explicit service routing, balanced
-course/documentation source allocation, evidence selection, answer generation,
-citation formatting, or insufficient-evidence handling.
+Primary blocker selected by Phase 7C-A:
+
+- `evidence_selection_gap`.
+
+Phase 7C-B must implement exactly one generic fix for that blocker. It must not
+combine course alias wiring, explicit service routing, mixed-source allocation,
+answer generation, citation formatting, documentation repair, Phase 8A upload
+cleanup, or Phase 8B conversation memory unless new evidence proves the chosen
+one-block scope is wrong before edits begin.
 
 Requirements:
 

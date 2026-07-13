@@ -10,16 +10,17 @@ Available now:
 - normal Telegram command smoke;
 - knowledge-base/status commands;
 - docs registry preview/status smoke;
+- safe local no-write answer-quality harness from Phase 7C-A;
 - targeted official-doc RAG smoke through the real Telegram bot when the owner
   explicitly chooses manual runtime testing.
 
-Planned after Phase 7C-A:
+Available through the Phase 7C-A harness:
 
-- safe local no-write answer-quality harness;
 - deterministic functional answer matrix without real Telegram messages;
 - diagnostics for routing, selected documents, accepted evidence, citations,
   archived evidence exclusion, unsupported claims, and dirty documentation
-  fragments.
+  fragments;
+- sanitized JSON artifact outside Git.
 
 Planned after Phase 8B:
 
@@ -191,14 +192,35 @@ Do not treat glossary anchors as answer content. The answer still needs accepted
 
 ## Phase 7C-A Functional Answer Matrix
 
-Status: planned after the Phase 7C-A harness exists; not available as an
-automated no-write check yet.
+Status: available. Phase 7C-A baseline is complete.
 
-The harness should use the real QuestionAnalyzer, document router, evidence
+The harness uses the real QuestionAnalyzer, document router, evidence
 retriever, reranker, evidence pack builder, AnswerGenerator, ClaimVerifier, and
-source formatter. EvidenceLogRepository must be disabled or replaced with a
-no-op. The harness must send no Telegram messages and perform no production
-writes. Production reads require explicit owner approval.
+source formatter. EvidenceLogRepository is disabled by constructing the
+pipeline with `logger=None`. The harness sends no Telegram messages and wraps
+Supabase in a read-only adapter. Production reads require explicit owner
+approval.
+
+Run pattern:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_answer_quality_baseline.py --output <external-json-path> --resume --answer-mode cheap --confirm-read-only-production
+```
+
+The output path must be outside Git. Do not commit baseline JSON artifacts.
+
+Completed baseline result:
+
+- overall classification: `functional_blocker_found`;
+- primary blocker: `evidence_selection_gap`;
+- no Supabase write attempts, blocked write calls, or non-allowlisted RPC
+  attempts were reported by the harness;
+- `n8n_docs` and `openrouter_docs` were WARN because expected high-signal
+  evidence terms were not accepted;
+- `mixed_course_service_auto` was BLOCKED because no suitable uploaded
+  material/service fixture was found;
+- `vision_optional` was SKIPPED because no safe local test image was available;
+- dirty documentation residue did not affect final answers or citations.
 
 Baseline cases:
 
