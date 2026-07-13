@@ -13,13 +13,9 @@ from app.rag.types import SourceRef
 
 QualityStatus = Literal["PASS", "WARN", "FAIL"]
 
-RAW_HTML_RE = re.compile(
-    r"</?(?:html|body|div|span|script|style|nav|footer|header|aside|main|section|article|button|ul|ol|li|a)\b"
-    r"|class=|data-[\w-]+=",
-    re.IGNORECASE,
-)
-HTML_TAG_RE = re.compile(r"</?([A-Za-z][A-Za-z0-9:-]*)\b[^>]*>", re.IGNORECASE)
-HTML_ATTR_RE = re.compile(r"\s([A-Za-z_:][A-Za-z0-9_.:-]*)\s*=", re.IGNORECASE)
+HTML_TAG_RE = re.compile(r"<\s*(/)?\s*([A-Za-z][A-Za-z0-9:-]*)([^<>]*?)(/)?\s*>", re.IGNORECASE)
+HTML_SIGNAL_RE = re.compile(r"<\s*/?\s*[A-Za-z][A-Za-z0-9:-]*(?:\s[^<>]*)?/?>|class\s*=|data-[\w-]+\s*=", re.IGNORECASE)
+INLINE_CODE_BACKTICK_RE = re.compile(r"`+")
 PREVIOUS_NEXT_RE = re.compile(r"\bprevious\b.+\bnext\b", re.IGNORECASE)
 TOKEN_RE = re.compile(r"[A-Za-z0-9_#+./:-]{2,}", re.IGNORECASE)
 
@@ -62,21 +58,133 @@ MIN_USEFUL_WORDS = 5
 HUGE_CHUNK_CHARS = 12000
 SAFE_INLINE_HTML_TAGS = {
     "a",
+    "aside",
+    "audio",
+    "br",
     "b",
     "blockquote",
+    "cite",
     "code",
     "del",
+    "details",
+    "dd",
+    "dl",
+    "dt",
     "em",
+    "figcaption",
+    "figure",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
     "i",
+    "img",
     "ins",
+    "li",
+    "mark",
+    "ol",
+    "p",
+    "picture",
     "pre",
+    "q",
     "s",
+    "small",
+    "source",
     "span",
     "strike",
     "strong",
+    "sub",
+    "summary",
+    "sup",
+    "time",
+    "track",
     "tg-spoiler",
     "u",
+    "ul",
+    "video",
 }
+STRUCTURAL_PAGE_TAGS = {
+    "article",
+    "body",
+    "div",
+    "footer",
+    "head",
+    "header",
+    "html",
+    "main",
+    "nav",
+    "section",
+}
+DANGEROUS_HTML_TAGS = {
+    "button",
+    "canvas",
+    "embed",
+    "fieldset",
+    "form",
+    "iframe",
+    "input",
+    "label",
+    "link",
+    "meta",
+    "noscript",
+    "object",
+    "script",
+    "select",
+    "style",
+    "svg",
+    "template",
+    "textarea",
+}
+VOID_HTML_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"}
+SAFE_HTML_ATTRS = {
+    "alt",
+    "cite",
+    "datetime",
+    "dir",
+    "emoji-id",
+    "expandable",
+    "format",
+    "height",
+    "href",
+    "item-id",
+    "lang",
+    "long",
+    "lat",
+    "name",
+    "open",
+    "reversed",
+    "src",
+    "start",
+    "title",
+    "type",
+    "unix",
+    "value",
+    "width",
+    "zoom",
+}
+FORBIDDEN_HTML_ATTRS = {"contenteditable", "draggable", "hidden", "role", "srcset", "style", "tabindex"}
+SAFE_URL_ATTRS = {"cite", "href", "src"}
+SAFE_CLASS_TAGS = {"span"}
+UNSAFE_CLASS_TOKENS = {
+    "button",
+    "container",
+    "content",
+    "cookie",
+    "drawer",
+    "footer",
+    "grid",
+    "header",
+    "layout",
+    "menu",
+    "nav",
+    "navigation",
+    "page",
+    "sidebar",
+    "screenshot",
+}
+MAX_DOCUMENTED_HTML_TAGS = 80
 
 
 @dataclass(frozen=True)
@@ -284,10 +392,15 @@ def _matching_chunks(
 
 
 def _has_raw_html(text: str) -> bool:
-    prose = without_fenced_code(text)
-    if not RAW_HTML_RE.search(prose):
+    prose = remove_markdown_code_for_validation(text)
+    if not HTML_SIGNAL_RE.search(prose):
         return False
-    return not _looks_like_safe_inline_html_example(prose)
+    return not _looks_like_documented_html_example(prose)
+
+
+def remove_markdown_code_for_validation(text: str) -> str:
+    """Remove fenced and inline Markdown code spans before prose validation."""
+    return _without_inline_code_spans(without_fenced_code(text))
 
 
 def _has_nav_footer_noise(text: str) -> bool:
@@ -303,23 +416,183 @@ def _has_generator_boilerplate(text: str) -> bool:
     return any(marker in lowered for marker in GENERATOR_MARKERS)
 
 
-def _looks_like_safe_inline_html_example(text: str) -> bool:
-    tags = [tag.casefold() for tag in HTML_TAG_RE.findall(text)]
-    if not tags:
+def _looks_like_documented_html_example(text: str) -> bool:
+    parsed_tags = _parse_html_tags(text)
+    if not parsed_tags:
         return False
-    if any(tag not in SAFE_INLINE_HTML_TAGS for tag in tags):
+    if len(parsed_tags) > MAX_DOCUMENTED_HTML_TAGS:
         return False
-    if re.search(r"\bdata-[\w-]+\s*=", text, flags=re.IGNORECASE):
+    if re.search(r"\b(?:class|data-[\w-]+)\s*=", _strip_html_tags(text), flags=re.IGNORECASE):
         return False
-    attrs = {attr.casefold() for attr in HTML_ATTR_RE.findall(text)}
-    if not attrs:
-        return True
-    allowed_attrs = {"href", "class"}
-    if attrs - allowed_attrs:
+    stack: list[_ParsedHtmlTag] = []
+    isolated_mentions: list[_ParsedHtmlTag] = []
+    for tag in parsed_tags:
+        if tag.name in DANGEROUS_HTML_TAGS:
+            return False
+        if tag.closing:
+            if not stack or stack[-1].name != tag.name:
+                return False
+            stack.pop()
+            continue
+        if tag.name in STRUCTURAL_PAGE_TAGS:
+            if tag.attrs or not _is_isolated_tag_mention(text, tag):
+                return False
+            continue
+        if not _is_safe_documented_tag(tag):
+            return False
+        if tag.self_closing or tag.name in VOID_HTML_TAGS:
+            continue
+        if _is_isolated_tag_mention(text, tag):
+            isolated_mentions.append(tag)
+            continue
+        stack.append(tag)
+    return all(_is_isolated_tag_mention(text, tag) for tag in stack) and all(
+        _is_safe_documented_tag(tag) for tag in isolated_mentions
+    )
+
+
+@dataclass(frozen=True)
+class _ParsedHtmlTag:
+    name: str
+    attrs_text: str
+    attrs: dict[str, str | None]
+    closing: bool
+    self_closing: bool
+    start: int
+    end: int
+
+
+def _without_inline_code_spans(text: str) -> str:
+    """Remove Markdown inline code spans, including multi-backtick spans."""
+    value = str(text or "")
+    result: list[str] = []
+    index = 0
+    while index < len(value):
+        match = INLINE_CODE_BACKTICK_RE.search(value, index)
+        if not match:
+            result.append(value[index:])
+            break
+        result.append(value[index : match.start()])
+        ticks = match.group(0)
+        end = value.find(ticks, match.end())
+        if end < 0:
+            result.append(value[match.start() :])
+            break
+        result.append(" ")
+        index = end + len(ticks)
+    return "".join(result)
+
+
+def _parse_html_tags(text: str) -> list[_ParsedHtmlTag]:
+    tags: list[_ParsedHtmlTag] = []
+    for match in HTML_TAG_RE.finditer(text):
+        attrs_text = match.group(3) or ""
+        attrs = _parse_html_attrs(attrs_text)
+        if attrs is None:
+            return []
+        tags.append(
+            _ParsedHtmlTag(
+                name=match.group(2).casefold(),
+                attrs_text=attrs_text,
+                attrs=attrs,
+                closing=bool(match.group(1)),
+                self_closing=bool(match.group(4)) or attrs_text.rstrip().endswith("/"),
+                start=match.start(),
+                end=match.end(),
+            )
+        )
+    return tags
+
+
+def _parse_html_attrs(attrs_text: str) -> dict[str, str | None] | None:
+    attrs: dict[str, str | None] = {}
+    rest = attrs_text.strip().removesuffix("/").strip()
+    while rest:
+        match = re.match(r"([A-Za-z_:][A-Za-z0-9_.:-]*)(?:\s*=\s*(\"[^\"]*\"|'[^']*'))?", rest)
+        if not match:
+            return None
+        name = match.group(1).casefold()
+        raw_value = match.group(2)
+        attrs[name] = raw_value[1:-1] if raw_value is not None else None
+        rest = rest[match.end() :].strip()
+    return attrs
+
+
+def _is_safe_documented_tag(tag: _ParsedHtmlTag) -> bool:
+    if tag.name not in SAFE_INLINE_HTML_TAGS and not _is_safe_custom_element_name(tag.name):
         return False
-    if "class" in attrs and not re.search(r"class\s*=\s*([\"'])[^\"']*\btg-spoiler\b", text, flags=re.IGNORECASE):
-        return False
+    return _attrs_are_safe_for_documented_example(tag)
+
+
+def _is_safe_custom_element_name(name: str) -> bool:
+    return bool(
+        "-" in name
+        and len(name) <= 40
+        and re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)+", name)
+    )
+
+
+def _attrs_are_safe_for_documented_example(tag: _ParsedHtmlTag) -> bool:
+    for name, value in tag.attrs.items():
+        if name.startswith("on") or name.startswith("data-") or name.startswith("aria-"):
+            return False
+        if name in FORBIDDEN_HTML_ATTRS:
+            return False
+        if name == "class":
+            if tag.name not in SAFE_CLASS_TAGS or value is None or not _is_safe_example_class(value):
+                return False
+            continue
+        if name not in SAFE_HTML_ATTRS:
+            return False
+        if value is None:
+            if name not in {"expandable", "open", "reversed"}:
+                return False
+            continue
+        if not _is_safe_attr_value(name, value):
+            return False
     return True
+
+
+def _is_safe_example_class(value: str) -> bool:
+    classes = [item for item in re.split(r"\s+", value.casefold().strip()) if item]
+    if not classes or len(classes) > 2:
+        return False
+    for class_name in classes:
+        if not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)+", class_name):
+            return False
+        if any(token in class_name for token in UNSAFE_CLASS_TOKENS):
+            return False
+    return True
+
+
+def _is_safe_attr_value(name: str, value: str) -> bool:
+    clean = value.strip()
+    if len(clean) > 240 or any(char in clean for char in "<>`"):
+        return False
+    if name in SAFE_URL_ATTRS and re.match(r"\s*(?:javascript|data|vbscript):", clean, flags=re.IGNORECASE):
+        return False
+    if name in {"height", "lat", "long", "start", "unix", "width", "zoom"}:
+        return bool(re.fullmatch(r"-?[0-9]+(?:\.[0-9]+)?", clean))
+    if name in {"dir"}:
+        return clean in {"auto", "ltr", "rtl"}
+    if name == "type":
+        return bool(re.fullmatch(r"[A-Za-z0-9_./+-]{1,80}", clean))
+    return True
+
+
+def _is_isolated_tag_mention(text: str, tag: _ParsedHtmlTag) -> bool:
+    if tag.closing or tag.attrs or tag.self_closing:
+        return False
+    before = text[max(0, tag.start - 40) : tag.start].casefold()
+    after = text[tag.end : tag.end + 40].casefold()
+    return bool(
+        re.search(r"\b(?:element|tag|tags|markup|html)\s+(?:called|named)?\s*$", before)
+        or re.match(r"\s*(?:element|tag|tags|markup|html)\b", after)
+    )
+
+
+def _strip_html_tags(text: str) -> str:
+    return HTML_TAG_RE.sub(" ", text)
 
 
 def _is_very_short(text: str) -> bool:
