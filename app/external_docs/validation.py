@@ -15,6 +15,9 @@ QualityStatus = Literal["PASS", "WARN", "FAIL"]
 
 HTML_TAG_RE = re.compile(r"<\s*(/)?\s*([A-Za-z][A-Za-z0-9:-]*)([^<>]*?)(/)?\s*>", re.IGNORECASE)
 HTML_SIGNAL_RE = re.compile(r"<\s*/?\s*[A-Za-z][A-Za-z0-9:-]*(?:\s[^<>]*)?/?>|class\s*=|data-[\w-]+\s*=", re.IGNORECASE)
+PLACEHOLDER_TOKEN_RE = re.compile(
+    r"<\s*([A-Za-z][A-Za-z0-9_-]*(?:\s+[A-Za-z][A-Za-z0-9_-]*){0,2})\s*>"
+)
 INLINE_CODE_BACKTICK_RE = re.compile(r"`+")
 PREVIOUS_NEXT_RE = re.compile(r"\bprevious\b.+\bnext\b", re.IGNORECASE)
 TOKEN_RE = re.compile(r"[A-Za-z0-9_#+./:-]{2,}", re.IGNORECASE)
@@ -73,14 +76,19 @@ SAFE_INLINE_HTML_TAGS = {
     "em",
     "figcaption",
     "figure",
+    "caption",
+    "col",
+    "colgroup",
     "h1",
     "h2",
     "h3",
     "h4",
     "h5",
     "h6",
+    "hr",
     "i",
     "img",
+    "input",
     "ins",
     "li",
     "mark",
@@ -98,8 +106,15 @@ SAFE_INLINE_HTML_TAGS = {
     "sub",
     "summary",
     "sup",
+    "table",
+    "tbody",
+    "td",
+    "tfoot",
+    "th",
+    "thead",
     "time",
     "track",
+    "tr",
     "tg-spoiler",
     "u",
     "ul",
@@ -124,7 +139,6 @@ DANGEROUS_HTML_TAGS = {
     "fieldset",
     "form",
     "iframe",
-    "input",
     "label",
     "link",
     "meta",
@@ -146,6 +160,7 @@ SAFE_HTML_ATTRS = {
     "emoji-id",
     "expandable",
     "format",
+    "colspan",
     "height",
     "href",
     "item-id",
@@ -155,18 +170,30 @@ SAFE_HTML_ATTRS = {
     "name",
     "open",
     "reversed",
+    "rowspan",
+    "scope",
     "src",
     "start",
     "title",
     "type",
     "unix",
     "value",
+    "valign",
     "width",
     "zoom",
 }
 FORBIDDEN_HTML_ATTRS = {"contenteditable", "draggable", "hidden", "role", "srcset", "style", "tabindex"}
 SAFE_URL_ATTRS = {"cite", "href", "src"}
 SAFE_CLASS_TAGS = {"span"}
+SAFE_LANGUAGE_CLASS_TAGS = {"code", "pre"}
+SAFE_BOOLEAN_HTML_ATTRS = {
+    "bordered",
+    "expandable",
+    "open",
+    "reversed",
+    "striped",
+}
+SAFE_CUSTOM_BOOLEAN_ATTR_RE = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)+")
 UNSAFE_CLASS_TOKENS = {
     "button",
     "container",
@@ -185,6 +212,20 @@ UNSAFE_CLASS_TOKENS = {
     "screenshot",
 }
 MAX_DOCUMENTED_HTML_TAGS = 80
+PLACEHOLDER_CONTEXT_RE = re.compile(
+    r"https?://|/[A-Za-z0-9_<]|curl\b|command\b|endpoint\b|header\b|"
+    r"\burl\b|\bpath\b|\bparameter\b|\btemplate\b|\bplaceholder\b|"
+    r"\bsubstitut\w*\b|\breplac\w*\b|\btoken\b|\bslug\b|\bttl\b|"
+    r"\bvalue\b|\bquery\b|\brequest\b|\bresponse\b|\bcache\b|"
+    r"\bcertificate\b|\bworkspace\b|\bsettings\b|\blabeled\b|"
+    r"[A-Za-z0-9_.-]+\s*=",
+    re.IGNORECASE,
+)
+PLACEHOLDER_SEPARATOR_RE = re.compile(r"^\s*/\s*|\s*/\s*$")
+ESCAPED_COMPARISON_RE = re.compile(
+    r"<\s+(?:and|or)\s+>|<\s+(?:with|as|than|to|from|before|after)\s+&(?:lt|gt|amp);[^<>]{0,80}>",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -393,6 +434,8 @@ def _matching_chunks(
 
 def _has_raw_html(text: str) -> bool:
     prose = remove_markdown_code_for_validation(text)
+    prose = _strip_safe_placeholder_tokens(prose)
+    prose = _strip_safe_escaped_comparison_fragments(prose)
     if not HTML_SIGNAL_RE.search(prose):
         return False
     return not _looks_like_documented_html_example(prose)
@@ -426,11 +469,15 @@ def _looks_like_documented_html_example(text: str) -> bool:
         return False
     stack: list[_ParsedHtmlTag] = []
     isolated_mentions: list[_ParsedHtmlTag] = []
+    documented_context = _has_documented_markup_context(text)
     for tag in parsed_tags:
         if tag.name in DANGEROUS_HTML_TAGS:
             return False
         if tag.closing:
             if not stack or stack[-1].name != tag.name:
+                if documented_context and _is_safe_closing_tag_mention(tag):
+                    isolated_mentions.append(tag)
+                    continue
                 return False
             stack.pop()
             continue
@@ -442,11 +489,11 @@ def _looks_like_documented_html_example(text: str) -> bool:
             return False
         if tag.self_closing or tag.name in VOID_HTML_TAGS:
             continue
-        if _is_isolated_tag_mention(text, tag):
+        if _is_isolated_tag_mention(text, tag) or (documented_context and _is_tag_list_mention(text, tag)):
             isolated_mentions.append(tag)
             continue
         stack.append(tag)
-    return all(_is_isolated_tag_mention(text, tag) for tag in stack) and all(
+    return all(_is_unclosed_safe_documented_mention(text, tag, documented_context) for tag in stack) and all(
         _is_safe_documented_tag(tag) for tag in isolated_mentions
     )
 
@@ -518,6 +565,48 @@ def _parse_html_attrs(attrs_text: str) -> dict[str, str | None] | None:
     return attrs
 
 
+def _strip_safe_placeholder_tokens(text: str) -> str:
+    return PLACEHOLDER_TOKEN_RE.sub(
+        lambda match: " " if _looks_like_placeholder_token(text, match) else match.group(0),
+        text,
+    )
+
+
+def _looks_like_placeholder_token(text: str, match: re.Match[str]) -> bool:
+    token = " ".join(match.group(1).split())
+    token_key = token.casefold()
+    if len(token) > 60:
+        return False
+    if "=" in match.group(0) or '"' in match.group(0) or "'" in match.group(0):
+        return False
+    if token_key in STRUCTURAL_PAGE_TAGS or token_key in DANGEROUS_HTML_TAGS or token_key in SAFE_INLINE_HTML_TAGS:
+        return False
+    if token_key in VOID_HTML_TAGS:
+        return False
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*(?:\s+[A-Za-z][A-Za-z0-9_-]*){0,2}", token):
+        return False
+    if _has_matching_closing_tag(text, token_key, match.end()):
+        return False
+    return _has_placeholder_context(text, match)
+
+
+def _has_matching_closing_tag(text: str, tag_name: str, start: int) -> bool:
+    return bool(re.search(rf"</\s*{re.escape(tag_name)}\s*>", text[start:], flags=re.IGNORECASE))
+
+
+def _has_placeholder_context(text: str, match: re.Match[str]) -> bool:
+    before = text[max(0, match.start() - 90) : match.start()]
+    after = text[match.end() : match.end() + 90]
+    context = f"{before} {after}"
+    if PLACEHOLDER_CONTEXT_RE.search(context):
+        return True
+    return bool(PLACEHOLDER_SEPARATOR_RE.search(before) or PLACEHOLDER_SEPARATOR_RE.match(after))
+
+
+def _strip_safe_escaped_comparison_fragments(text: str) -> str:
+    return ESCAPED_COMPARISON_RE.sub(" ", text)
+
+
 def _is_safe_documented_tag(tag: _ParsedHtmlTag) -> bool:
     if tag.name not in SAFE_INLINE_HTML_TAGS and not _is_safe_custom_element_name(tag.name):
         return False
@@ -533,19 +622,27 @@ def _is_safe_custom_element_name(name: str) -> bool:
 
 
 def _attrs_are_safe_for_documented_example(tag: _ParsedHtmlTag) -> bool:
+    if tag.name == "input" and tag.attrs != {"type": "checkbox"}:
+        return False
     for name, value in tag.attrs.items():
         if name.startswith("on") or name.startswith("data-") or name.startswith("aria-"):
             return False
         if name in FORBIDDEN_HTML_ATTRS:
             return False
         if name == "class":
-            if tag.name not in SAFE_CLASS_TAGS or value is None or not _is_safe_example_class(value):
+            if value is None:
                 return False
+            if tag.name in SAFE_LANGUAGE_CLASS_TAGS and _is_safe_language_class(value):
+                continue
+            if tag.name not in SAFE_CLASS_TAGS or not _is_safe_example_class(value):
+                return False
+            continue
+        if value is None and _is_safe_boolean_attr_name(name):
             continue
         if name not in SAFE_HTML_ATTRS:
             return False
         if value is None:
-            if name not in {"expandable", "open", "reversed"}:
+            if not _is_safe_boolean_attr_name(name):
                 return False
             continue
         if not _is_safe_attr_value(name, value):
@@ -565,6 +662,15 @@ def _is_safe_example_class(value: str) -> bool:
     return True
 
 
+def _is_safe_language_class(value: str) -> bool:
+    clean = value.strip()
+    return bool(re.fullmatch(r"language-[A-Za-z0-9_.+-]{1,50}", clean))
+
+
+def _is_safe_boolean_attr_name(name: str) -> bool:
+    return name in SAFE_BOOLEAN_HTML_ATTRS or bool(SAFE_CUSTOM_BOOLEAN_ATTR_RE.fullmatch(name))
+
+
 def _is_safe_attr_value(name: str, value: str) -> bool:
     clean = value.strip()
     if len(clean) > 240 or any(char in clean for char in "<>`"):
@@ -577,6 +683,8 @@ def _is_safe_attr_value(name: str, value: str) -> bool:
         return clean in {"auto", "ltr", "rtl"}
     if name == "type":
         return bool(re.fullmatch(r"[A-Za-z0-9_./+-]{1,80}", clean))
+    if name in {"scope", "valign"}:
+        return bool(re.fullmatch(r"[A-Za-z0-9_-]{1,40}", clean))
     return True
 
 
@@ -589,6 +697,47 @@ def _is_isolated_tag_mention(text: str, tag: _ParsedHtmlTag) -> bool:
         re.search(r"\b(?:element|tag|tags|markup|html)\s+(?:called|named)?\s*$", before)
         or re.match(r"\s*(?:element|tag|tags|markup|html)\b", after)
     )
+
+
+def _has_documented_markup_context(text: str) -> bool:
+    lowered = text.casefold()
+    return bool(
+        re.search(
+            r"\b(?:html|markup|tag|tags|element|elements|syntax|formatting|"
+            r"example|examples|supports|supported|corresponding to|rich block|"
+            r"rich text|preformatted|table|blockquote)\b",
+            lowered,
+        )
+    )
+
+
+def _is_tag_list_mention(text: str, tag: _ParsedHtmlTag) -> bool:
+    if tag.attrs or tag.self_closing:
+        return False
+    before = text[max(0, tag.start - 60) : tag.start].casefold()
+    after = text[tag.end : tag.end + 60].casefold()
+    if re.search(r"\b(?:tag|tags|element|elements|syntax|formatting|corresponding to)\b", before + " " + after):
+        return True
+    return bool(re.match(r"\s*(?:,|/|\bor\b|\band\b|\.|\)|:)", after))
+
+
+def _is_safe_closing_tag_mention(tag: _ParsedHtmlTag) -> bool:
+    pseudo_tag = _ParsedHtmlTag(
+        name=tag.name,
+        attrs_text="",
+        attrs={},
+        closing=False,
+        self_closing=False,
+        start=tag.start,
+        end=tag.end,
+    )
+    return _is_safe_documented_tag(pseudo_tag)
+
+
+def _is_unclosed_safe_documented_mention(text: str, tag: _ParsedHtmlTag, documented_context: bool) -> bool:
+    if _is_isolated_tag_mention(text, tag):
+        return True
+    return documented_context and _is_tag_list_mention(text, tag)
 
 
 def _strip_html_tags(text: str) -> str:
