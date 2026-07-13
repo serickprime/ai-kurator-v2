@@ -514,7 +514,7 @@ def _looks_like_documented_html_example(text: str) -> bool:
             if tag.attrs or not _is_isolated_tag_mention(text, tag):
                 return False
             continue
-        if not _is_safe_documented_tag(tag):
+        if not _is_safe_documented_tag(tag, documented_context=documented_context):
             return False
         saw_safe_documented_fragment = True
         if tag.self_closing or tag.name in VOID_HTML_TAGS:
@@ -524,7 +524,7 @@ def _looks_like_documented_html_example(text: str) -> bool:
             continue
         stack.append(tag)
     return all(_is_unclosed_safe_documented_mention(text, tag, documented_context) for tag in stack) and all(
-        _is_safe_documented_tag(tag) for tag in isolated_mentions
+        _is_safe_documented_tag(tag, documented_context=documented_context) for tag in isolated_mentions
     )
 
 
@@ -650,10 +650,10 @@ def _strip_safe_escaped_comparison_fragments(text: str) -> str:
     return ESCAPED_COMPARISON_RE.sub(" ", text)
 
 
-def _is_safe_documented_tag(tag: _ParsedHtmlTag) -> bool:
+def _is_safe_documented_tag(tag: _ParsedHtmlTag, *, documented_context: bool = False) -> bool:
     if tag.name not in SAFE_INLINE_HTML_TAGS and not _is_safe_custom_element_name(tag.name):
         return False
-    return _attrs_are_safe_for_documented_example(tag)
+    return _attrs_are_safe_for_documented_example(tag, documented_context=documented_context)
 
 
 def _is_safe_custom_element_name(name: str) -> bool:
@@ -664,9 +664,9 @@ def _is_safe_custom_element_name(name: str) -> bool:
     )
 
 
-def _attrs_are_safe_for_documented_example(tag: _ParsedHtmlTag) -> bool:
-    if tag.name == "input" and tag.attrs != {"type": "checkbox"}:
-        return False
+def _attrs_are_safe_for_documented_example(tag: _ParsedHtmlTag, *, documented_context: bool = False) -> bool:
+    if tag.name == "input":
+        return _is_safe_documented_checkbox_input(tag, documented_context=documented_context)
     for name, value in tag.attrs.items():
         if name.startswith("on") or name.startswith("data-") or name.startswith("aria-"):
             return False
@@ -695,6 +695,15 @@ def _attrs_are_safe_for_documented_example(tag: _ParsedHtmlTag) -> bool:
         if not _is_safe_attr_value(name, value):
             return False
     return True
+
+
+def _is_safe_documented_checkbox_input(tag: _ParsedHtmlTag, *, documented_context: bool) -> bool:
+    if not documented_context:
+        return False
+    return tag.attrs in (
+        {"type": "checkbox"},
+        {"type": "checkbox", "checked": None},
+    )
 
 
 def _is_safe_example_class(value: str) -> bool:

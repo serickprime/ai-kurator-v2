@@ -414,6 +414,120 @@ def test_external_docs_validation_allows_table_alignment_attributes_for_cells() 
     assert result.metrics["raw_html_count"] == 0
 
 
+def test_external_docs_validation_allows_documented_checkbox_examples() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                (
+                    "Documented HTML example: <ul>"
+                    '<li><input type="checkbox" checked>Selected option</li>'
+                    '<li><input type="checkbox">Unselected option</li>'
+                    "</ul> with explanatory markup text."
+                ),
+            ),
+            _chunk(
+                "doc-1",
+                (
+                    "Rich markup example:\n"
+                    '<blockquote>Checklist</blockquote>\n'
+                    '<input type="checkbox" checked> remains a literal documented control.'
+                ),
+            ),
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
+def test_external_docs_validation_flags_unsafe_checkbox_variants() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", '<input type="checkbox" checked>'),
+            _chunk("doc-1", "Documented HTML example: <input checked>"),
+            _chunk("doc-1", 'Documented HTML example: <input type="text" checked>'),
+            _chunk("doc-1", 'Documented HTML example: <input type="radio" checked>'),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked="false">'),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked="checked">'),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked="">'),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked class="filter-toggle">'),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked style="display:block">'),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked onchange="run()">'),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked data-controller="filters">'),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 11
+
+
+def test_external_docs_validation_flags_checkbox_form_page_and_mixed_residue() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk(
+                "doc-1",
+                'Documented HTML example: <form action="/submit" method="post">'
+                '<input type="checkbox" checked></form>',
+            ),
+            _chunk("doc-1", "Documented HTML example: <nav><input type=\"checkbox\" checked></nav>"),
+            _chunk(
+                "doc-1",
+                'Documented HTML example: <div class="filter-panel">'
+                '<input type="checkbox" checked></div>',
+            ),
+            _chunk(
+                "doc-1",
+                "Documented HTML example: <main><section>"
+                '<input type="checkbox" checked><input type="text"></section></main>',
+            ),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked><script>run()</script>'),
+            _chunk(
+                "doc-1",
+                (
+                    'Documented HTML example: <input type="checkbox" checked> '
+                    '<figure class="dev_page_image"><img srcset="small.png 1x" src="/file/page.png"></figure>'
+                ),
+            ),
+            _chunk(
+                "doc-1",
+                (
+                    'Documented HTML example: <input type="checkbox" checked> '
+                    '<a href="/file/page.png" target="_blank"><img class="dev_page_image" src="/file/page.png"/></a></div>'
+                ),
+            ),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked> </a></div>'),
+            _chunk("doc-1", 'Documented HTML example: <input type="checkbox" checked> <div class="navigation">Docs</div>'),
+        ],
+    )
+
+    assert result.quality == "FAIL"
+    assert result.metrics["raw_html_count"] == 9
+
+
+def test_external_docs_validation_checkbox_policy_preserves_existing_safe_examples() -> None:
+    result = validate_external_docs(
+        source_name="future_docs",
+        documents=[_doc("doc-1")],
+        chunks=[
+            _chunk("doc-1", "Custom documented elements include <x-emoji item-id=\"123\"></x-emoji>."),
+            _chunk("doc-1", "Documented HTML example: <footer>Footer text</footer> with enough contextual words."),
+            _chunk("doc-1", 'Documented table example: <table><tr><td align="left">Cell</td></tr></table>.'),
+            _chunk("doc-1", "Use https://api.example.test/<provider>/<service> as the endpoint template."),
+            _chunk("doc-1", "Place the script before the <body> tag when documenting page structure."),
+        ],
+    )
+
+    assert result.quality == "PASS"
+    assert result.metrics["raw_html_count"] == 0
+
+
 def test_external_docs_validation_flags_unsafe_table_alignment_attributes() -> None:
     result = validate_external_docs(
         source_name="future_docs",
