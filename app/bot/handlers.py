@@ -25,6 +25,12 @@ from app.bot.features.docs_registry import (
     send_docs_wizard_callback,
 )
 from app.bot.features.docs_health import DocsHealthReportReader, send_docs_health_preview
+from app.bot.features.docs_discovery import DocsDiscoveryReader, maybe_send_docs_discovery_suggestion
+from app.bot.features.docs_suggestions import (
+    DocsSuggestionsRepository,
+    send_docs_suggestion_callback,
+    send_docs_suggestions,
+)
 from app.bot.features.service_suggestions import send_service_suggestion_preview
 from app.bot.formatting import format_for_telegram, format_status
 from app.bot.intake_buffer import MessageIntakeBuffer, UserIntake
@@ -150,6 +156,8 @@ class BotServices:
     docs_preview_service: DocsPreviewReader | None = None
     docs_activation_service: DocsActivationReader | None = None
     docs_queue_service: DocsActivationQueueReader | None = None
+    docs_suggestions_repository: DocsSuggestionsRepository | None = None
+    docs_discovery_service: DocsDiscoveryReader | None = None
     base_status_provider: BaseStatusReader | None = None
     materials_provider: MaterialsReader | None = None
     conversation_repo: Any | None = None
@@ -216,6 +224,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "",
                 "Для владельца:",
                 "- /docs_preview <id>",
+                "- /docs_suggestions",
                 "- /docs_preview_all",
                 "- /docs_health [service_id]",
                 "- /service_suggest <question>",
@@ -533,6 +542,43 @@ async def docs_preview_command(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
+async def docs_suggestions_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/docs_suggestions`."""
+    services = _services(context)
+    user_id = _user_id(update)
+    await send_docs_suggestions(
+        update,
+        repository=services.docs_suggestions_repository,
+        workspace_id=services.default_workspace_id,
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        suggestion_id_or_prefix=_first_command_arg(update, context),
+        reply_markup=main_menu_keyboard(),
+        safe_error=_safe_error,
+    )
+
+
+async def docs_suggestions_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle `/docs_suggestions` inline review callbacks."""
+    services = _services(context)
+    user_id = _user_id(update)
+    data = (update.callback_query.data if update.callback_query is not None else "") or ""
+    parts = data.split(":", 2)
+    action = parts[1] if len(parts) > 1 else "list"
+    suggestion_id = parts[2] if len(parts) > 2 else ""
+    await send_docs_suggestion_callback(
+        update,
+        repository=services.docs_suggestions_repository,
+        workspace_id=services.default_workspace_id,
+        action=action,
+        suggestion_id=suggestion_id,
+        reviewer_user_id=user_id,
+        is_allowed=user_id is not None and _can_use_docs_dashboard(services, user_id),
+        preview_service=services.docs_preview_service,
+        activation_service=services.docs_activation_service,
+        safe_error=_safe_error,
+    )
+
+
 async def docs_activate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle `/docs_activate`."""
     services = _services(context)
@@ -706,6 +752,7 @@ _TEXT_COMMAND_HANDLERS: dict[str, CommandFallbackHandler] = {
     "services": services_command,
     "docs": docs_command,
     "docs_preview": docs_preview_command,
+    "docs_suggestions": docs_suggestions_command,
     "docs_activate": docs_activate_command,
     "docs_preview_all": docs_preview_all_command,
     "docs_health": docs_health_command,
@@ -753,6 +800,17 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             "Сейчас включен режим загрузки материалов. Отправьте файл или нажмите «Готово».",
             reply_markup=upload_menu_keyboard(),
         )
+        return
+
+    if await maybe_send_docs_discovery_suggestion(
+        update,
+        discovery_service=services.docs_discovery_service,
+        question=text,
+        workspace_id=services.default_workspace_id,
+        requested_by_user_id=user_id,
+        is_owner_or_admin=_can_use_docs_dashboard(services, user_id),
+        reply_markup=main_menu_keyboard(),
+    ):
         return
 
     services.intake_buffer.add_text(user_id, text, message_id=update.message.message_id)
@@ -901,6 +959,7 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("services", services_command))
     application.add_handler(CommandHandler("docs", docs_command))
     application.add_handler(CommandHandler("docs_preview", docs_preview_command))
+    application.add_handler(CommandHandler("docs_suggestions", docs_suggestions_command))
     application.add_handler(CommandHandler("docs_activate", docs_activate_command))
     application.add_handler(CommandHandler("docs_preview_all", docs_preview_all_command))
     application.add_handler(CommandHandler("docs_health", docs_health_command))
@@ -909,6 +968,7 @@ def register_handlers(application: Application, services: BotServices | None = N
     application.add_handler(CommandHandler("docs_activate_ready", docs_activate_ready_command))
     application.add_handler(CommandHandler("base_status", base_status_command))
     application.add_handler(CommandHandler("debug_last", debug_last_command))
+    application.add_handler(CallbackQueryHandler(docs_suggestions_callback, pattern=r"^docs_suggest:"))
     application.add_handler(CallbackQueryHandler(docs_wizard_callback, pattern=r"^docs:"))
     application.add_handler(CallbackQueryHandler(handle_settings_callback, pattern=r"^settings:"))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))

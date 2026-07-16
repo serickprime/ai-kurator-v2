@@ -8,6 +8,7 @@ from app.docs_registry.activation import (
     DocsActivationCandidateNotFoundError,
     DocsActivationPolicyError,
     DocsActivationService,
+    DynamicDocsActivationPolicy,
     build_activation_quality_gate,
     candidate_to_activation_source,
 )
@@ -180,6 +181,60 @@ def test_activation_quality_gate_fails_for_wrong_domain() -> None:
     assert "URL outside allowed domains" in gate.failures
 
 
+def test_dynamic_policy_limits_activation_to_one_url_and_domain() -> None:
+    service = DocsActivationService()
+    candidate = _dynamic_candidate()
+    policy = _dynamic_policy()
+
+    plan = service.plan_candidate("suggestion-1", candidate, policy=policy)
+
+    assert plan.service_id == "acmepay"
+    assert plan.start_urls == ("https://docs.acmepay.com/docs",)
+    with pytest.raises(DocsActivationPolicyError):
+        service.plan_candidate(
+            "suggestion-1",
+            DocsSourceCandidate(
+                service_id="acmepay",
+                display_name="AcmePay",
+                aliases=("AcmePay",),
+                docs_source="acmepay_docs",
+                official_start_urls=("https://evil.example.com/docs",),
+                allowed_domains=("evil.example.com",),
+                allow_patterns=(r"^https://evil\.example\.com/docs",),
+                deny_patterns=("/login",),
+                max_pages=25,
+                crawl_depth=1,
+                risk_level="review",
+            ),
+            policy=policy,
+        )
+
+
+def test_dynamic_activation_uses_existing_activation_dependencies() -> None:
+    crawler = FakeCrawler([_crawled_page("https://docs.acmepay.com/docs")])
+    extractor = FakeExtractor()
+    indexer = FakeIndexer(
+        ExternalDocsIndexResult(
+            source_name="acmepay_docs",
+            url="https://docs.acmepay.com/docs",
+            document_id="doc-1",
+            document_key="https://docs.acmepay.com/docs",
+            version=1,
+            chunks_count=5,
+        )
+    )
+    service = DocsActivationService(crawler=crawler, extractor=extractor, indexer=indexer, workspace="team")
+
+    result = asyncio.run(service.activate_candidate("suggestion-1", _dynamic_candidate(), policy=_dynamic_policy()))
+
+    assert crawler.calls[-1][0].name == "acmepay_docs"
+    assert crawler.calls[-1][1] == 25
+    assert len(extractor.calls) == 1
+    assert len(indexer.calls) == 1
+    assert indexer.calls[-1][1].start_urls == ("https://docs.acmepay.com/docs",)
+    assert result.quality_gate.passed
+
+
 def _config(*candidates: DocsSourceCandidate) -> DocsSourceCandidatesConfig:
     return DocsSourceCandidatesConfig(candidates=candidates)
 
@@ -232,6 +287,33 @@ def _ollama_candidate() -> DocsSourceCandidate:
         crawl_depth=2,
         risk_level="low",
         notes="test",
+    )
+
+
+def _dynamic_candidate() -> DocsSourceCandidate:
+    return DocsSourceCandidate(
+        service_id="acmepay",
+        display_name="AcmePay",
+        aliases=("AcmePay", "acmepay"),
+        docs_source="acmepay_docs",
+        official_start_urls=("https://docs.acmepay.com/docs",),
+        allowed_domains=("docs.acmepay.com",),
+        allow_patterns=(r"^https://docs\.acmepay\.com/docs",),
+        deny_patterns=("/login", "/account", "/admin", "/dashboard"),
+        max_pages=25,
+        crawl_depth=1,
+        risk_level="review",
+        notes="dynamic test",
+    )
+
+
+def _dynamic_policy() -> DynamicDocsActivationPolicy:
+    return DynamicDocsActivationPolicy(
+        candidate_id="suggestion-1",
+        official_url="https://docs.acmepay.com/docs",
+        allowed_domain="docs.acmepay.com",
+        preview_status="ok",
+        confirmed_by_user_id=7,
     )
 
 

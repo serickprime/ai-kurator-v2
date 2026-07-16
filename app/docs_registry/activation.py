@@ -66,6 +66,61 @@ class DocsActivationIndexer(Protocol):
         """Index one extracted page."""
 
 
+class DocsActivationCandidatePolicy(Protocol):
+    """Policy hook for activating a non-curated candidate."""
+
+    def validate_candidate(
+        self,
+        *,
+        candidate_id: str,
+        candidate: DocsSourceCandidate,
+        source: ExternalDocSource,
+    ) -> tuple[str, ...]:
+        """Return policy failures, or an empty tuple when activation is allowed."""
+
+
+@dataclass(frozen=True)
+class DynamicDocsActivationPolicy:
+    """Strict policy for one owner-confirmed persisted suggestion."""
+
+    candidate_id: str
+    official_url: str
+    allowed_domain: str
+    preview_status: str
+    confirmed_by_user_id: int | None = None
+
+    def validate_candidate(
+        self,
+        *,
+        candidate_id: str,
+        candidate: DocsSourceCandidate,
+        source: ExternalDocSource,
+    ) -> tuple[str, ...]:
+        """Allow only the exact previewed suggestion URL/domain."""
+        failures: list[str] = []
+        clean_url = self.official_url.rstrip("/")
+        clean_domain = self.allowed_domain.casefold().strip()
+        if not self.candidate_id or candidate_id != self.candidate_id:
+            failures.append("candidate id is not allowed")
+        if self.preview_status not in {"ok", "needs_review"}:
+            failures.append("successful preview is required")
+        if not self.confirmed_by_user_id:
+            failures.append("owner/admin confirmation is required")
+        if tuple(url.rstrip("/") for url in candidate.official_start_urls) != (clean_url,):
+            failures.append("candidate URL does not match approved suggestion")
+        if tuple(domain.casefold() for domain in candidate.allowed_domains) != (clean_domain,):
+            failures.append("candidate domain does not match approved suggestion")
+        if tuple(url.rstrip("/") for url in source.start_urls) != (clean_url,):
+            failures.append("source URL does not match approved suggestion")
+        if tuple(domain.casefold() for domain in source.allowed_domains) != (clean_domain,):
+            failures.append("source domain does not match approved suggestion")
+        if not _url_domain_allowed(clean_url, (clean_domain,)):
+            failures.append("approved URL is outside allowed domain")
+        if urlparse(clean_url).scheme != "https":
+            failures.append("approved URL must be HTTPS")
+        return tuple(failures)
+
+
 @dataclass(frozen=True)
 class DocsActivationPlan:
     """Safe activation plan shown before any indexing happens."""
@@ -155,6 +210,53 @@ class DocsActivationService:
         plan = self.plan(service_id_or_alias)
         candidate = self._find_candidate(service_id_or_alias)
         source = candidate_to_activation_source(candidate)
+        return await self._activate_source(plan, source)
+
+    def plan_candidate(
+        self,
+        candidate_id: str,
+        candidate: DocsSourceCandidate,
+        *,
+        policy: DocsActivationCandidatePolicy,
+    ) -> DocsActivationPlan:
+        """Build a dynamic activation plan for one persisted suggestion."""
+        source = candidate_to_activation_source(candidate)
+        failures = list(policy.validate_candidate(candidate_id=candidate_id, candidate=candidate, source=source))
+        failures.extend(_source_policy_warnings(source))
+        if failures:
+            raise DocsActivationPolicyError("; ".join(failures))
+        return DocsActivationPlan(
+            service_id=candidate.service_id,
+            display_name=candidate.display_name,
+            docs_source=candidate.docs_source,
+            allowed_domains=candidate.allowed_domains,
+            start_urls=candidate.official_start_urls,
+            max_pages=candidate.max_pages,
+            crawl_depth=candidate.crawl_depth,
+            risk_level=candidate.risk_level,
+            confirm_command=f"docs_suggest:confirm_add:{candidate_id}",
+        )
+
+    async def activate_candidate(
+        self,
+        candidate_id: str,
+        candidate: DocsSourceCandidate,
+        *,
+        policy: DocsActivationCandidatePolicy,
+    ) -> DocsActivationResult:
+        """Run controlled activation for one owner-confirmed persisted suggestion."""
+        plan = self.plan_candidate(candidate_id, candidate, policy=policy)
+        source = candidate_to_activation_source(candidate)
+        return await self._activate_source(plan, source, allow_dynamic_source=True)
+
+    async def _activate_source(
+        self,
+        plan: DocsActivationPlan,
+        source: ExternalDocSource,
+        *,
+        allow_dynamic_source: bool = False,
+    ) -> DocsActivationResult:
+        """Run crawl/extract/index through the existing activation dependencies."""
         if self._indexer is None:
             raise DocsActivationRuntimeUnavailableError("Activation indexer is not configured.")
 
@@ -201,6 +303,7 @@ class DocsActivationService:
             failed=failed,
             chunks_total=chunks_total,
             crawled_urls=tuple(crawled_urls),
+            allow_dynamic_source=allow_dynamic_source,
         )
         return DocsActivationResult(
             plan=plan,
@@ -262,6 +365,7 @@ def build_activation_quality_gate(
     failed: int,
     chunks_total: int,
     crawled_urls: tuple[str, ...] = (),
+    allow_dynamic_source: bool = False,
 ) -> DocsActivationQualityGate:
     """Return PASS/FAIL for a controlled activation result."""
     failures: list[str] = []
@@ -269,10 +373,11 @@ def build_activation_quality_gate(
 
     expected_docs_source = ALLOWED_ACTIVATION_SOURCES.get(plan.service_id)
     if expected_docs_source is None:
-        failures.append("source is not allowlisted")
+        if not allow_dynamic_source:
+            failures.append("source is not allowlisted")
     elif plan.docs_source != expected_docs_source or source.name != expected_docs_source:
         failures.append(f"source_name is not {expected_docs_source}")
-    if plan.risk_level != "low":
+    if plan.risk_level != "low" and not allow_dynamic_source:
         failures.append("candidate is not low risk")
     if fetched_pages <= 0:
         failures.append("no pages fetched")

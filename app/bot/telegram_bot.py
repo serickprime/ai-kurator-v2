@@ -10,7 +10,10 @@ from app.bot.base_status import BaseStatusProvider
 from app.bot.handlers import BotServices, register_handlers
 from app.bot.materials import MaterialsProvider
 from app.config import Settings
+from app.db.repositories import DocsCandidateSuggestionRepository
 from app.docs_registry.activation import DocsActivationService
+from app.docs_registry.candidate_suggestions import DocsCandidateSuggestionService
+from app.docs_registry.discovery import DocsDiscoveryService, HttpDocumentationSearchProvider
 from app.docs_registry.queue import DocsActivationQueueService
 from app.external_docs.extractor import ExternalDocsExtractor
 from app.external_docs.indexer import ExternalDocsIndexer
@@ -60,6 +63,8 @@ def _build_services(settings: Settings) -> BotServices:
     materials_provider = None
     docs_activation_service = None
     docs_queue_service = None
+    docs_suggestions_repository = None
+    docs_discovery_service = None
     status_client = None
     if rag_runtime is not None:
         status_client = rag_runtime.resources.supabase
@@ -73,6 +78,17 @@ def _build_services(settings: Settings) -> BotServices:
             service_status_provider=service_docs_status_provider,
         )
         materials_provider = MaterialsProvider(status_client)
+        docs_suggestions_repository = DocsCandidateSuggestionRepository(status_client)
+        if settings.docs_discovery_enabled and settings.docs_search_api_key and settings.docs_search_base_url:
+            docs_discovery_service = DocsDiscoveryService(
+                search_provider=HttpDocumentationSearchProvider(
+                    base_url=settings.docs_search_base_url,
+                    api_key=settings.docs_search_api_key,
+                ),
+                suggestion_repository=docs_suggestions_repository,
+                suggestion_service=DocsCandidateSuggestionService(docs_suggestions_repository),
+                status_provider=service_docs_status_provider,
+            )
     if ingestion_runtime is not None:
         docs_activation_service = DocsActivationService(
             extractor=ExternalDocsExtractor(),
@@ -120,6 +136,8 @@ def _build_services(settings: Settings) -> BotServices:
         docs_health_report_provider=docs_health_report_provider,
         docs_activation_service=docs_activation_service,
         docs_queue_service=docs_queue_service,
+        docs_suggestions_repository=docs_suggestions_repository,
+        docs_discovery_service=docs_discovery_service,
         base_status_provider=base_status_provider,
         materials_provider=materials_provider,
         conversation_repo=rag_runtime.conversation_repo if rag_runtime is not None else None,
@@ -156,6 +174,9 @@ async def _shutdown_runtime_services(application: Application) -> None:
     docs_activation_service = getattr(services, "docs_activation_service", None)
     if docs_activation_service is not None and hasattr(docs_activation_service, "close"):
         await docs_activation_service.close()
+    docs_discovery_service = getattr(services, "docs_discovery_service", None)
+    if docs_discovery_service is not None and hasattr(docs_discovery_service, "close"):
+        await docs_discovery_service.close()
     vision_textifier = getattr(services, "vision_textifier", None)
     if vision_textifier is not None:
         await vision_textifier.close()

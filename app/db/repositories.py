@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -15,6 +16,13 @@ if TYPE_CHECKING:
     from app.db.supabase_client import SupabaseClient
 
 LOGGER = logging.getLogger(__name__)
+
+_DOCS_CANDIDATE_SUGGESTION_STATUSES = frozenset(
+    {"pending", "preview_ready", "approved", "rejected", "failed", "activated"}
+)
+_DOCS_CANDIDATE_PREVIEW_STATUSES = frozenset({"not_run", "ok", "failed", "needs_review"})
+_DOCS_CANDIDATE_REVIEWED_STATUSES = frozenset({"approved", "rejected", "activated"})
+_SERVICE_ID_DEDUPE_RE = re.compile(r"[^a-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -57,6 +65,33 @@ class UserSettings:
             "selected_workspace_id": self.selected_workspace_id,
             "updated_at": (self.updated_at or datetime.now(timezone.utc)).isoformat(),
         }
+
+
+@dataclass(frozen=True)
+class DocsCandidateSuggestion:
+    """Persistent owner-review record for a documentation candidate."""
+
+    id: str
+    workspace_id: str
+    service_id: str
+    display_name: str
+    aliases: tuple[str, ...]
+    official_url: str
+    allowed_domain: str
+    source_query: str = ""
+    discovery_reason: str = ""
+    confidence: float = 0.0
+    risk_level: str = "review"
+    status: str = "pending"
+    preview_status: str = "not_run"
+    preview_result: dict[str, Any] = field(default_factory=dict)
+    requested_by_user_id: int | None = None
+    created_at: str = ""
+    updated_at: str = ""
+    reviewed_at: str | None = None
+    reviewed_by_user_id: int | None = None
+    rejection_reason: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class DocumentRepository:
@@ -509,6 +544,318 @@ class UserSettingsRepository:
         return await self.save(updated)
 
 
+class DocsCandidateSuggestionRepository:
+    """Database access for persistent docs candidate suggestions."""
+
+    _SELECT = (
+        "id,workspace_id,service_id,display_name,aliases,official_url,allowed_domain,"
+        "source_query,discovery_reason,confidence,risk_level,status,preview_status,"
+        "preview_result,requested_by_user_id,created_at,updated_at,reviewed_at,"
+        "reviewed_by_user_id,rejection_reason,metadata"
+    )
+
+    def __init__(self, client: "SupabaseClient") -> None:
+        self._client = client
+
+    async def get(self, suggestion_id: str) -> DocsCandidateSuggestion | None:
+        """Return one suggestion by id."""
+        rows = await self._client.select(
+            "docs_candidate_suggestions",
+            params={"select": self._SELECT, "id": f"eq.{suggestion_id}", "limit": "1"},
+        )
+        return _docs_candidate_suggestion(rows[0]) if rows else None
+
+    async def list_pending(
+        self,
+        workspace_id: str,
+        *,
+        limit: int = 10,
+    ) -> tuple[DocsCandidateSuggestion, ...]:
+        """Return pending, preview-ready, or failed suggestions for owner review."""
+        if limit <= 0:
+            return ()
+        rows = await self._client.select(
+            "docs_candidate_suggestions",
+            params={
+                "select": self._SELECT,
+                "workspace_id": f"eq.{workspace_id}",
+                "status": "in.(pending,preview_ready,failed)",
+                "order": "updated_at.desc",
+                "limit": str(limit),
+            },
+        )
+        return tuple(_docs_candidate_suggestion(row) for row in rows)
+
+    async def find_by_service_url(
+        self,
+        *,
+        workspace_id: str,
+        service_id: str,
+        official_url: str,
+    ) -> DocsCandidateSuggestion | None:
+        """Return an existing suggestion for service/url after normalized comparison."""
+        normalized_service_id = _normalize_service_id_for_dedupe(service_id)
+        normalized_url = _normalize_url_for_dedupe(official_url)
+        if not normalized_service_id or not normalized_url:
+            return None
+        rows = await self._client.select(
+            "docs_candidate_suggestions",
+            params={
+                "select": self._SELECT,
+                "workspace_id": f"eq.{workspace_id}",
+                "order": "updated_at.desc",
+                "limit": "200",
+            },
+        )
+        for row in rows:
+            if (
+                _normalize_service_id_for_dedupe(str(row.get("service_id") or "")) == normalized_service_id
+                and _normalize_url_for_dedupe(str(row.get("official_url") or "")) == normalized_url
+            ):
+                return _docs_candidate_suggestion(row)
+        return None
+
+    async def recent_for_service(
+        self,
+        *,
+        workspace_id: str,
+        service_id: str,
+        limit: int = 10,
+    ) -> tuple[DocsCandidateSuggestion, ...]:
+        """Return recent suggestions for a service, including rejected ones for cooldown."""
+        rows = await self._client.select(
+            "docs_candidate_suggestions",
+            params={
+                "select": self._SELECT,
+                "workspace_id": f"eq.{workspace_id}",
+                "service_id": f"eq.{service_id}",
+                "order": "updated_at.desc",
+                "limit": str(limit),
+            },
+        )
+        return tuple(_docs_candidate_suggestion(row) for row in rows)
+
+    async def create_pending(
+        self,
+        *,
+        workspace_id: str,
+        service_id: str,
+        display_name: str,
+        aliases: tuple[str, ...],
+        official_url: str,
+        allowed_domain: str,
+        source_query: str,
+        discovery_reason: str,
+        confidence: float,
+        risk_level: str,
+        requested_by_user_id: int | None,
+        metadata: dict[str, Any] | None = None,
+    ) -> DocsCandidateSuggestion:
+        """Create one sanitized pending suggestion."""
+        clean_workspace_id = _required_text(workspace_id, "workspace_id")
+        clean_service_id = _required_text(service_id, "service_id")
+        clean_official_url = _required_text(official_url, "official_url")
+        existing = await self.find_by_service_url(
+            workspace_id=clean_workspace_id,
+            service_id=clean_service_id,
+            official_url=clean_official_url,
+        )
+        if existing is not None:
+            return existing
+        payload = {
+            "workspace_id": clean_workspace_id,
+            "service_id": clean_service_id,
+            "display_name": _required_text(display_name, "display_name"),
+            "aliases": list(_clean_text_tuple(aliases)),
+            "official_url": clean_official_url,
+            "allowed_domain": _required_text(allowed_domain, "allowed_domain").casefold(),
+            "source_query": str(source_query or "").strip(),
+            "discovery_reason": str(discovery_reason or "").strip(),
+            "confidence": max(0.0, min(float(confidence), 1.0)),
+            "risk_level": _validate_risk_level(risk_level),
+            "status": "pending",
+            "preview_status": "not_run",
+            "preview_result": {},
+            "requested_by_user_id": requested_by_user_id,
+            "metadata": metadata or {},
+        }
+        try:
+            rows = await self._client.insert("docs_candidate_suggestions", payload)
+        except SupabaseRequestError as exc:
+            if not _is_duplicate_suggestion_error(exc):
+                raise
+            existing = await self.find_by_service_url(
+                workspace_id=clean_workspace_id,
+                service_id=clean_service_id,
+                official_url=clean_official_url,
+            )
+            if existing is not None:
+                return existing
+            raise
+        return _docs_candidate_suggestion(_first_row(rows, "create docs candidate suggestion"))
+
+    async def create(
+        self,
+        *,
+        workspace_id: str,
+        service_id: str,
+        display_name: str,
+        aliases: tuple[str, ...],
+        official_url: str,
+        allowed_domain: str,
+        source_query: str,
+        discovery_reason: str,
+        confidence: float,
+        risk_level: str,
+        requested_by_user_id: int | None,
+        metadata: dict[str, Any] | None = None,
+    ) -> DocsCandidateSuggestion:
+        """Backward-compatible alias for creating a pending suggestion."""
+        return await self.create_pending(
+            workspace_id=workspace_id,
+            service_id=service_id,
+            display_name=display_name,
+            aliases=aliases,
+            official_url=official_url,
+            allowed_domain=allowed_domain,
+            source_query=source_query,
+            discovery_reason=discovery_reason,
+            confidence=confidence,
+            risk_level=risk_level,
+            requested_by_user_id=requested_by_user_id,
+            metadata=metadata,
+        )
+
+    async def save_preview_result(
+        self,
+        suggestion_id: str,
+        *,
+        preview_status: str,
+        preview_result: dict[str, Any],
+        status: str | None = None,
+    ) -> DocsCandidateSuggestion:
+        """Store sanitized preview result for a candidate."""
+        clean_preview_status = _validate_preview_status(preview_status)
+        clean_status = _validate_suggestion_status(status or _status_for_preview(clean_preview_status))
+        rows = await self._client.update(
+            "docs_candidate_suggestions",
+            {
+                "status": clean_status,
+                "preview_status": clean_preview_status,
+                "preview_result": preview_result,
+            },
+            params={"id": f"eq.{suggestion_id}"},
+        )
+        return _docs_candidate_suggestion(_first_row(rows, "save docs candidate preview result"))
+
+    async def update_preview(
+        self,
+        suggestion_id: str,
+        *,
+        status: str,
+        preview_status: str,
+        preview_result: dict[str, Any],
+    ) -> DocsCandidateSuggestion:
+        """Backward-compatible alias for storing a preview result."""
+        return await self.save_preview_result(
+            suggestion_id,
+            status=status,
+            preview_status=preview_status,
+            preview_result=preview_result,
+        )
+
+    async def update_status(
+        self,
+        suggestion_id: str,
+        status: str,
+        *,
+        reviewed_by_user_id: int | None = None,
+        rejection_reason: str = "",
+    ) -> DocsCandidateSuggestion:
+        """Change suggestion status without deleting review history."""
+        clean_status = _validate_suggestion_status(status)
+        payload: dict[str, Any] = {"status": clean_status}
+        if reviewed_by_user_id is not None:
+            payload["reviewed_by_user_id"] = reviewed_by_user_id
+        if clean_status in _DOCS_CANDIDATE_REVIEWED_STATUSES:
+            payload["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+        if clean_status == "rejected":
+            payload["rejection_reason"] = rejection_reason or "owner_rejected"
+
+        rows = await self._client.update(
+            "docs_candidate_suggestions",
+            payload,
+            params={"id": f"eq.{suggestion_id}"},
+        )
+        return _docs_candidate_suggestion(_first_row(rows, "update docs candidate suggestion status"))
+
+    async def mark_approved(self, suggestion_id: str, *, reviewed_by_user_id: int) -> DocsCandidateSuggestion:
+        """Mark a preview-ready candidate approved before activation."""
+        return await self.update_status(suggestion_id, "approved", reviewed_by_user_id=reviewed_by_user_id)
+
+    async def mark_activated(self, suggestion_id: str, *, reviewed_by_user_id: int) -> DocsCandidateSuggestion:
+        """Mark a candidate activated after controlled indexing succeeds."""
+        return await self.update_status(suggestion_id, "activated", reviewed_by_user_id=reviewed_by_user_id)
+
+    async def save_activation_result(
+        self,
+        suggestion_id: str,
+        *,
+        activation_result: dict[str, Any],
+        status: str,
+        reviewed_by_user_id: int | None = None,
+    ) -> DocsCandidateSuggestion:
+        """Store a compact activation result in metadata and update review status."""
+        clean_status = _validate_suggestion_status(status)
+        current = await self.get(suggestion_id)
+        metadata = dict(current.metadata) if current is not None else {}
+        metadata["activation_result"] = activation_result
+        payload: dict[str, Any] = {
+            "status": clean_status,
+            "metadata": metadata,
+        }
+        if reviewed_by_user_id is not None:
+            payload["reviewed_by_user_id"] = reviewed_by_user_id
+        if clean_status in _DOCS_CANDIDATE_REVIEWED_STATUSES or reviewed_by_user_id is not None:
+            payload["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+
+        rows = await self._client.update(
+            "docs_candidate_suggestions",
+            payload,
+            params={"id": f"eq.{suggestion_id}"},
+        )
+        return _docs_candidate_suggestion(_first_row(rows, "save docs candidate activation result"))
+
+    async def reject(
+        self,
+        suggestion_id: str,
+        *,
+        reviewed_by_user_id: int,
+        rejection_reason: str = "",
+    ) -> DocsCandidateSuggestion:
+        """Reject a candidate without deleting it, preserving dedupe/cooldown."""
+        return await self.update_status(
+            suggestion_id,
+            "rejected",
+            reviewed_by_user_id=reviewed_by_user_id,
+            rejection_reason=rejection_reason,
+        )
+
+    async def mark_rejected(
+        self,
+        suggestion_id: str,
+        *,
+        reviewed_by_user_id: int,
+        rejection_reason: str = "",
+    ) -> DocsCandidateSuggestion:
+        """Backward-compatible alias for rejecting a candidate."""
+        return await self.reject(
+            suggestion_id,
+            reviewed_by_user_id=reviewed_by_user_id,
+            rejection_reason=rejection_reason,
+        )
+
+
 class EvidenceLogRepository:
     """Database access for evidence-first RAG traces."""
 
@@ -561,3 +908,104 @@ def _user_settings(row: dict[str, Any]) -> UserSettings:
         selected_workspace_id=row.get("selected_workspace_id"),
         updated_at=None,
     )
+
+
+def _docs_candidate_suggestion(row: dict[str, Any]) -> DocsCandidateSuggestion:
+    preview_result = row.get("preview_result")
+    metadata = row.get("metadata")
+    return DocsCandidateSuggestion(
+        id=str(row.get("id") or ""),
+        workspace_id=str(row.get("workspace_id") or ""),
+        service_id=str(row.get("service_id") or ""),
+        display_name=str(row.get("display_name") or ""),
+        aliases=tuple(str(item) for item in row.get("aliases") or () if str(item).strip()),
+        official_url=str(row.get("official_url") or ""),
+        allowed_domain=str(row.get("allowed_domain") or ""),
+        source_query=str(row.get("source_query") or ""),
+        discovery_reason=str(row.get("discovery_reason") or ""),
+        confidence=float(row.get("confidence") or 0.0),
+        risk_level=str(row.get("risk_level") or "review"),
+        status=str(row.get("status") or "pending"),
+        preview_status=str(row.get("preview_status") or "not_run"),
+        preview_result=preview_result if isinstance(preview_result, dict) else {},
+        requested_by_user_id=_int_or_none(row.get("requested_by_user_id")),
+        created_at=str(row.get("created_at") or ""),
+        updated_at=str(row.get("updated_at") or ""),
+        reviewed_at=str(row.get("reviewed_at") or "") or None,
+        reviewed_by_user_id=_int_or_none(row.get("reviewed_by_user_id")),
+        rejection_reason=str(row.get("rejection_reason") or ""),
+        metadata=metadata if isinstance(metadata, dict) else {},
+    )
+
+
+def _normalize_url_for_dedupe(value: str) -> str:
+    return str(value or "").strip().rstrip("/").casefold()
+
+
+def _normalize_service_id_for_dedupe(value: str) -> str:
+    return _SERVICE_ID_DEDUPE_RE.sub("_", str(value or "").strip().casefold())
+
+
+def _required_text(value: str, field_name: str) -> str:
+    clean = str(value or "").strip()
+    if not clean:
+        raise ValueError(f"{field_name} is required")
+    return clean
+
+
+def _clean_text_tuple(values: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+
+
+def _validate_suggestion_status(value: str) -> str:
+    clean = str(value or "").strip()
+    if clean not in _DOCS_CANDIDATE_SUGGESTION_STATUSES:
+        raise ValueError(f"Unsupported docs candidate suggestion status: {value!r}")
+    return clean
+
+
+def _validate_preview_status(value: str) -> str:
+    clean = str(value or "").strip()
+    if clean not in _DOCS_CANDIDATE_PREVIEW_STATUSES:
+        raise ValueError(f"Unsupported docs candidate preview status: {value!r}")
+    return clean
+
+
+def _validate_risk_level(value: str) -> str:
+    clean = str(value or "").strip()
+    if clean not in {"low", "medium", "review"}:
+        raise ValueError(f"Unsupported docs candidate risk level: {value!r}")
+    return clean
+
+
+def _status_for_preview(preview_status: str) -> str:
+    if preview_status == "failed":
+        return "failed"
+    if preview_status == "not_run":
+        return "pending"
+    return "preview_ready"
+
+
+def _first_row(rows: list[dict[str, Any]], action: str) -> dict[str, Any]:
+    if not rows:
+        raise LookupError(f"No row returned while trying to {action}.")
+    return rows[0]
+
+
+def _is_duplicate_suggestion_error(exc: SupabaseRequestError) -> bool:
+    body = exc.body.casefold()
+    return (
+        exc.status_code == 409
+        or "23505" in body
+        or "duplicate" in body
+        or "docs_candidate_suggestions_workspace_service_url_key" in body
+    )
+
+
+def _int_or_none(value: object) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

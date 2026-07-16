@@ -39,6 +39,16 @@ These rules protect the project from uncontrolled growth and accidental regressi
 - Query enrichment must not change AnswerGenerator, replace evidence, or bypass evidence-first source flow.
 - Automatic glossary candidate discovery may suggest rules, but owner/admin approval is required before applying them.
 
+## Generic Retrieval Fixes
+
+- Treat a failed question as a regression case for a general retrieval problem, not as a reason for a question-specific Python branch.
+- Keep normalization generic and store synonyms, translations, user variants, and canonical documentation terms in the data-driven glossary.
+- Keep service-specific values in configuration, with traceable provenance for glossary-derived anchors.
+- A glossary-derived anchor may affect evidence acceptance only in its matched service context and only when the evidence contains the canonical anchor.
+- Never weaken global evidence gates to make one case pass.
+- Prefer adding future terms through YAML plus regression tests without changing Python logic.
+- Every retrieval fix needs a positive regression, a service-free negative, an unrelated-evidence negative, a different-service or synthetic generic case, and an out-of-base regression check.
+
 ## External docs rules
 
 - Do not crawl arbitrary user URLs.

@@ -17,11 +17,13 @@ from app.rag.quality_harness import (
     AnswerQualityBaseline,
     AnswerQualityCase,
     AnswerQualityCaseResult,
+    HarnessOperationState,
     baseline_from_results,
     build_answer_quality_runtime_from_settings,
+    capture_production_safety_snapshot,
     discover_dynamic_cases,
     fixed_answer_quality_cases,
-    load_existing_case_results,
+    load_existing_baseline_for_resume,
     run_answer_quality_case,
     save_baseline_atomic,
 )
@@ -107,19 +109,39 @@ def _print_plan(selected_ids: list[str], args: argparse.Namespace) -> None:
 
 
 def _run_confirmed(*, selected_ids: list[str], output_path: Path, resume: bool, answer_mode: str) -> int:
-    settings = get_settings()
-    runtime = build_answer_quality_runtime_from_settings(settings, answer_mode=answer_mode)
-    completed: list[AnswerQualityCaseResult] = load_existing_case_results(output_path) if resume else []
+    existing_baseline = load_existing_baseline_for_resume(output_path) if resume else None
+    completed: list[AnswerQualityCaseResult] = list(existing_baseline.case_results) if existing_baseline else []
     completed_ids = {case.case_id for case in completed}
+    if resume and existing_baseline and set(selected_ids).issubset(completed_ids):
+        print(f"baseline_saved: {output_path}")
+        print("resume_state: already_completed")
+        print(f"overall_classification: {existing_baseline.overall_classification}")
+        print(f"primary_blocker: {existing_baseline.primary_blocker}")
+        print(f"supabase_write_attempts: {existing_baseline.supabase_write_attempts}")
+        print(f"safety_result: {existing_baseline.production_safety_telemetry.safety_result}")
+        return 0
+    operation_state = HarnessOperationState()
+    operation_state.settings_loader_attempted = True
+    settings = get_settings()
+    operation_state.settings_loader_used = True
+    runtime = build_answer_quality_runtime_from_settings(
+        settings,
+        answer_mode=answer_mode,
+        operation_state=operation_state,
+    )
 
     async def _run() -> AnswerQualityBaseline:
-        cases_by_id = {case.case_id: case for case in fixed_answer_quality_cases()}
-        if set(selected_ids) & set(DYNAMIC_CASE_IDS):
-            dynamic_cases = await discover_dynamic_cases(runtime.resources.supabase, runtime.workspace_id)
-            cases_by_id.update({case.case_id: case for case in dynamic_cases})
-
+        before_snapshots = await capture_production_safety_snapshot(runtime.resources.supabase)
+        after_snapshots = {}
         results = list(completed)
+        final_baseline: AnswerQualityBaseline
+        run_failed = False
         try:
+            cases_by_id = {case.case_id: case for case in fixed_answer_quality_cases()}
+            if set(selected_ids) & set(DYNAMIC_CASE_IDS):
+                dynamic_cases = await discover_dynamic_cases(runtime.resources.supabase, runtime.workspace_id)
+                cases_by_id.update({case.case_id: case for case in dynamic_cases})
+
             for case_id in selected_ids:
                 if resume and case_id in completed_ids:
                     print(f"resume: keeping completed case {case_id}")
@@ -133,6 +155,10 @@ def _run_confirmed(*, selected_ids: list[str], output_path: Path, resume: bool, 
                     git_sha=_git_sha(),
                     workspace_id=runtime.workspace_id,
                     safety_state=runtime.resources.supabase.safety.snapshot(),
+                    operation_state=operation_state,
+                    before_snapshots=before_snapshots,
+                    after_snapshots=after_snapshots,
+                    run_state="in_progress",
                 )
                 save_baseline_atomic(output_path, baseline)
                 print(
@@ -141,21 +167,33 @@ def _run_confirmed(*, selected_ids: list[str], output_path: Path, resume: bool, 
                     f"writes={baseline.supabase_write_attempts} "
                     f"unknown_rpc={baseline.non_allowlisted_rpc_attempts}"
                 )
-            return baseline_from_results(
+        except Exception:
+            run_failed = True
+            raise
+        finally:
+            after_snapshots = await capture_production_safety_snapshot(runtime.resources.supabase)
+            final_baseline = baseline_from_results(
                 case_results=results,
                 git_sha=_git_sha(),
                 workspace_id=runtime.workspace_id,
                 safety_state=runtime.resources.supabase.safety.snapshot(),
+                operation_state=operation_state,
+                before_snapshots=before_snapshots,
+                after_snapshots=after_snapshots,
+                run_state="failed" if run_failed else "completed",
             )
-        finally:
-            await runtime.close()
+            try:
+                save_baseline_atomic(output_path, final_baseline)
+            finally:
+                await runtime.close()
+        return final_baseline
 
     baseline = _run_coroutine(_run())
-    save_baseline_atomic(output_path, baseline)
     print(f"baseline_saved: {output_path}")
     print(f"overall_classification: {baseline.overall_classification}")
     print(f"primary_blocker: {baseline.primary_blocker}")
     print(f"supabase_write_attempts: {baseline.supabase_write_attempts}")
+    print(f"safety_result: {baseline.production_safety_telemetry.safety_result}")
     return 0
 
 

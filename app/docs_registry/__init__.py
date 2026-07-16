@@ -1,6 +1,10 @@
 """External docs registry helpers."""
 
 from app.docs_registry.activation import DocsActivationPlan, DocsActivationResult, DocsActivationService
+from app.docs_registry.candidate_suggestions import (
+    DocsCandidateSuggestionEnsureResult,
+    DocsCandidateSuggestionService,
+)
 from app.docs_registry.candidates import load_docs_source_candidates_config
 from app.docs_registry.models import DocsCandidatePreviewResult, DocsSourceCandidate, DocsSourceCandidatesConfig
 from app.docs_registry.preview import DocsCandidatePreviewService
@@ -10,6 +14,8 @@ __all__ = [
     "DocsActivationPlan",
     "DocsActivationResult",
     "DocsActivationService",
+    "DocsCandidateSuggestionEnsureResult",
+    "DocsCandidateSuggestionService",
     "DocsCandidatePreviewResult",
     "DocsCandidatePreviewService",
     "DocsActivationQueueService",

@@ -91,10 +91,11 @@ n8n:
   rules:
     - phrases:
         - http запрос
+        - post запрос
         - запрос к api
         - запрос к апи
         - отправить запрос
-      exact_terms:
+      object_anchors:
         - HTTP Request node
       config_terms:
         - method

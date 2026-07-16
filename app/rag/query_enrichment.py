@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import re
+import unicodedata
 from typing import Any, Sequence
 
-from app.rag.types import QueryFacet
+from app.rag.types import GlossaryDerivedAnchor, QueryEnrichmentContext, QueryFacet
 
 DEFAULT_QUERY_GLOSSARY_CONFIG = Path("config/query_glossary.yaml")
 SERVICE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -25,6 +26,8 @@ class QueryGlossaryRule:
     phrases: tuple[str, ...]
     exact_terms: tuple[str, ...] = ()
     config_terms: tuple[str, ...] = ()
+    object_anchors: tuple[str, ...] = ()
+    rule_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -48,15 +51,34 @@ class QueryGlossaryConfig:
 class QueryEnrichment:
     """Retrieval-only enrichment produced from a user question."""
 
+    normalized_question: str = ""
+    normalized_user_terms: tuple[str, ...] = ()
     service_ids: tuple[str, ...] = ()
     exact_terms: tuple[str, ...] = ()
     config_terms: tuple[str, ...] = ()
+    object_anchors: tuple[GlossaryDerivedAnchor, ...] = ()
     facets: tuple[QueryFacet, ...] = ()
 
     @property
     def is_empty(self) -> bool:
         """Return true when no enrichment matched."""
-        return not (self.service_ids or self.exact_terms or self.config_terms or self.facets)
+        return not (self.service_ids or self.exact_terms or self.config_terms or self.object_anchors or self.facets)
+
+    @property
+    def context(self) -> QueryEnrichmentContext:
+        """Return this legacy enrichment as a typed context."""
+        return QueryEnrichmentContext(
+            normalized_question=self.normalized_question,
+            normalized_user_terms=self.normalized_user_terms,
+            confirmed_service_ids=self.service_ids,
+            glossary_object_anchors=self.object_anchors,
+            exact_terms=self.exact_terms,
+            config_terms=self.config_terms,
+            facets=self.facets,
+        )
+
+
+GlossaryObjectAnchor = GlossaryDerivedAnchor
 
 
 class QueryEnricher:
@@ -92,13 +114,27 @@ class QueryEnricher:
 
     def enrich(self, question: str) -> QueryEnrichment:
         """Return technical retrieval anchors for a user question."""
+        context = self.build_context(question)
+        return QueryEnrichment(
+            normalized_question=context.normalized_question,
+            normalized_user_terms=context.normalized_user_terms,
+            service_ids=context.confirmed_service_ids,
+            exact_terms=context.exact_terms,
+            config_terms=context.config_terms,
+            object_anchors=context.glossary_object_anchors,
+            facets=context.facets,
+        )
+
+    def build_context(self, question: str) -> QueryEnrichmentContext:
+        """Return typed enrichment context for one user question."""
         normalized = _normalize_text(question)
         if not normalized:
-            return QueryEnrichment()
+            return QueryEnrichmentContext()
 
         service_ids: list[str] = []
         exact_terms: list[str] = []
         config_terms: list[str] = []
+        object_anchors: list[GlossaryDerivedAnchor] = []
         facets: list[QueryFacet] = []
 
         for service in self._config.services:
@@ -106,21 +142,36 @@ class QueryEnricher:
                 continue
             matched = False
             for rule in service.rules:
-                if not _rule_matches(rule, normalized):
+                matched_variant = _matched_rule_variant(rule, normalized)
+                if matched_variant is None:
                     continue
                 matched = True
                 exact_terms.extend(rule.exact_terms)
+                exact_terms.extend(rule.object_anchors)
                 config_terms.extend(rule.config_terms)
                 facets.extend(QueryFacet("exact", term, 1.0) for term in rule.exact_terms)
+                facets.extend(QueryFacet("exact", term, 1.0) for term in rule.object_anchors)
                 facets.extend(QueryFacet("config", term, 1.0) for term in rule.config_terms)
+                object_anchors.extend(
+                    GlossaryDerivedAnchor(
+                        service_id=service.service_id,
+                        term=term,
+                        matched_variant=matched_variant,
+                        rule_id=rule.rule_id,
+                    )
+                    for term in rule.object_anchors
+                )
             if matched:
                 service_ids.append(service.service_id)
                 facets.insert(0, QueryFacet("platform", service.display_name, 1.0))
 
-        return QueryEnrichment(
-            service_ids=tuple(_dedupe(service_ids, limit=12)),
+        return QueryEnrichmentContext(
+            normalized_question=normalized,
+            normalized_user_terms=tuple(_normalized_user_terms(normalized, limit=48)),
+            confirmed_service_ids=tuple(_dedupe(service_ids, limit=12)),
             exact_terms=tuple(_dedupe(exact_terms, limit=24)),
             config_terms=tuple(_dedupe(config_terms, limit=24)),
+            glossary_object_anchors=tuple(_dedupe_object_anchors(object_anchors, limit=24)),
             facets=tuple(_dedupe_facets(facets, limit=64)),
         )
 
@@ -170,12 +221,17 @@ def _rule_from_mapping(row: Any, *, service_id: str, index: int) -> QueryGlossar
     phrases = tuple(_required_list(row, "phrases", index=index))
     exact_terms = tuple(_optional_list(row.get("exact_terms")))
     config_terms = tuple(_optional_list(row.get("config_terms")))
-    if not exact_terms and not config_terms:
-        raise QueryGlossaryConfigError(f"Service {service_id}: rule #{index} must define exact_terms or config_terms.")
+    object_anchors = tuple(_optional_list(row.get("object_anchors")))
+    if not exact_terms and not config_terms and not object_anchors:
+        raise QueryGlossaryConfigError(
+            f"Service {service_id}: rule #{index} must define exact_terms, config_terms, or object_anchors."
+        )
     return QueryGlossaryRule(
         phrases=tuple(_dedupe(phrases, limit=32)),
         exact_terms=tuple(_dedupe(exact_terms, limit=32)),
         config_terms=tuple(_dedupe(config_terms, limit=32)),
+        object_anchors=tuple(_dedupe(object_anchors, limit=32)),
+        rule_id=f"{service_id}:rule:{index}",
     )
 
 
@@ -308,15 +364,42 @@ def _service_matches(service: QueryGlossaryService, normalized: str) -> bool:
     return any(_normalize_text(alias) in normalized for alias in service.aliases)
 
 
-def _rule_matches(rule: QueryGlossaryRule, normalized: str) -> bool:
-    candidates = (*rule.phrases, *rule.exact_terms)
-    return any(_normalize_text(candidate) in normalized for candidate in candidates if candidate)
+def _matched_rule_variant(rule: QueryGlossaryRule, normalized: str) -> str | None:
+    candidates = (*rule.phrases, *rule.exact_terms, *rule.object_anchors)
+    for candidate in candidates:
+        if candidate and normalize_glossary_text(candidate) in normalized:
+            return candidate
+    return None
+
+
+def normalize_glossary_text(text: str) -> str:
+    """Normalize text for glossary and evidence matching without changing source text."""
+    clean = str(text or "").casefold().replace("ё", "е")
+    clean = clean.replace("н8н", "n8n").replace("нейтн", "n8n")
+    clean = _normalize_glossary_dashes(clean)
+    return re.sub(r"\s+", " ", clean).strip()
 
 
 def _normalize_text(text: str) -> str:
-    clean = str(text or "").casefold().replace("ё", "е")
-    clean = clean.replace("н8н", "n8n").replace("нейтн", "n8n")
-    return re.sub(r"\s+", " ", clean).strip()
+    return normalize_glossary_text(text)
+
+
+def _normalize_glossary_dashes(text: str) -> str:
+    normalized: list[str] = []
+    in_dash_run = False
+    for char in text:
+        if _glossary_dash_char(char):
+            if not in_dash_run:
+                normalized.append(" ")
+            in_dash_run = True
+            continue
+        normalized.append(char)
+        in_dash_run = False
+    return "".join(normalized)
+
+
+def _glossary_dash_char(char: str) -> bool:
+    return bool(char) and (char == "\u2212" or unicodedata.category(char) == "Pd")
 
 
 def _display_name(service_id: str) -> str:
@@ -350,3 +433,24 @@ def _dedupe_facets(facets: Sequence[QueryFacet], limit: int) -> list[QueryFacet]
         if len(result) >= limit:
             break
     return result
+
+
+def _dedupe_object_anchors(
+    anchors: Sequence[GlossaryDerivedAnchor],
+    limit: int,
+) -> list[GlossaryDerivedAnchor]:
+    seen: set[tuple[str, str]] = set()
+    result: list[GlossaryDerivedAnchor] = []
+    for anchor in anchors:
+        key = (anchor.service_id.casefold(), normalize_glossary_text(anchor.term))
+        if not key[1] or key in seen:
+            continue
+        seen.add(key)
+        result.append(anchor)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _normalized_user_terms(normalized: str, *, limit: int) -> list[str]:
+    return _dedupe(re.findall(r"[\w#+./:]{2,}", normalized, flags=re.UNICODE), limit=limit)
