@@ -2,21 +2,7 @@
 
 Evidence-first Telegram RAG bot with Supabase, document-first retrieval, evidence packs, and claim verification.
 
-## Why V2 Exists
 
-The old chunk-first flow searched similar chunks across the full knowledge base and then sent mixed candidate chunks to the answer model. That made the bot vulnerable to noisy sources from unrelated lessons that happened to share broad terms like `n8n`, `Supabase`, `API`, or `Docker`.
-
-V2 uses an evidence-first architecture:
-
-- document-first retrieval selects the most relevant documents before detailed evidence search;
-- evidence retrieval runs inside selected documents, not across every raw chunk in the database;
-- the generation prompt receives only the evidence pack;
-- answers must be written only from evidence;
-- claim verification checks the draft against the evidence pack;
-- sources are built only from evidence actually used in the answer;
-- raw candidate chunks are never included in the generation prompt.
-
-If no evidence is found, the bot should say that the answer is not supported by the knowledge base and ask for the missing material or a more specific question.
 
 ## Pipeline
 
