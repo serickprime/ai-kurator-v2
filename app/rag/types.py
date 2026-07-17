@@ -66,6 +66,54 @@ class QueryFacet:
 
 
 @dataclass(frozen=True)
+class GlossaryDerivedAnchor:
+    """Canonical documentation anchor derived from a glossary rule."""
+
+    service_id: str
+    term: str
+    matched_variant: str
+    rule_id: str = ""
+    provenance: str = "query_glossary"
+
+    @property
+    def canonical_term(self) -> str:
+        """Return the canonical documentation term."""
+        return self.term
+
+
+@dataclass(frozen=True)
+class QueryEnrichmentContext:
+    """Typed retrieval enrichment created once from the user question."""
+
+    normalized_question: str = ""
+    normalized_user_terms: tuple[str, ...] = ()
+    confirmed_service_ids: tuple[str, ...] = ()
+    glossary_object_anchors: tuple[GlossaryDerivedAnchor, ...] = ()
+    exact_terms: tuple[str, ...] = ()
+    config_terms: tuple[str, ...] = ()
+    facets: tuple[QueryFacet, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "normalized_user_terms", tuple(self.normalized_user_terms))
+        object.__setattr__(self, "confirmed_service_ids", tuple(self.confirmed_service_ids))
+        object.__setattr__(self, "glossary_object_anchors", tuple(self.glossary_object_anchors))
+        object.__setattr__(self, "exact_terms", tuple(self.exact_terms))
+        object.__setattr__(self, "config_terms", tuple(self.config_terms))
+        object.__setattr__(self, "facets", tuple(self.facets))
+
+    @property
+    def is_empty(self) -> bool:
+        """Return true when no enrichment signal was produced."""
+        return not (
+            self.confirmed_service_ids
+            or self.glossary_object_anchors
+            or self.exact_terms
+            or self.config_terms
+            or self.facets
+        )
+
+
+@dataclass(frozen=True)
 class QueryPlan:
     """Routing and evidence plan derived from the user question."""
 
@@ -89,6 +137,7 @@ class QueryPlan:
     ambiguity: tuple[str, ...] = ()
     needs_external_docs: bool = False
     source_required: bool = True
+    enrichment_context: QueryEnrichmentContext = field(default_factory=QueryEnrichmentContext)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "expected_content_types", tuple(self.expected_content_types or ("unknown",)))
@@ -102,6 +151,7 @@ class QueryPlan:
         object.__setattr__(self, "common_terms", tuple(self.common_terms))
         object.__setattr__(self, "evidence_requirements", tuple(self.evidence_requirements))
         object.__setattr__(self, "ambiguity", tuple(self.ambiguity))
+        object.__setattr__(self, "enrichment_context", self.enrichment_context)
 
 
 @dataclass(frozen=True)
@@ -154,6 +204,7 @@ class QuestionAnalysis:
     needs_external_docs: bool = False
     expected_source_kinds: tuple[str, ...] = ()
     freshness_required: bool = False
+    enrichment_context: QueryEnrichmentContext = field(default_factory=QueryEnrichmentContext)
     query_plan: QueryPlan | None = None
 
     def __post_init__(self) -> None:
@@ -171,6 +222,7 @@ class QuestionAnalysis:
         expected_content_types = tuple(self.expected_content_types or ("unknown",))
         source_priority = tuple(self.source_priority or expected_content_types)
         needs_external_docs = self.needs_external_docs or self.needs_official_docs
+        enrichment_context = self.enrichment_context
         query_plan = self.query_plan or QueryPlan(
             user_question=user_question,
             normalized_question=normalized,
@@ -192,6 +244,7 @@ class QuestionAnalysis:
             ambiguity=self.ambiguity,
             needs_external_docs=needs_external_docs,
             source_required=self.source_required,
+            enrichment_context=enrichment_context,
         )
 
         object.__setattr__(self, "original_question", original)
@@ -227,6 +280,7 @@ class QuestionAnalysis:
         expected_source_kinds = tuple(self.expected_source_kinds or (("external_docs",) if needs_external_docs else ()))
         object.__setattr__(self, "expected_source_kinds", expected_source_kinds)
         object.__setattr__(self, "freshness_required", bool(self.freshness_required))
+        object.__setattr__(self, "enrichment_context", enrichment_context)
         object.__setattr__(self, "query_plan", query_plan)
 
 

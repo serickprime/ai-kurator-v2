@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     reranker_mode: str = Field(default="identity", alias="RERANKER_MODE")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_dir: str = Field(default="logs", alias="LOG_DIR")
+    docs_discovery_enabled: bool = Field(default=False, alias="DOCS_DISCOVERY_ENABLED")
+    docs_search_api_key: str = Field(default="", alias="DOCS_SEARCH_API_KEY")
+    docs_search_base_url: str = Field(default="", alias="DOCS_SEARCH_BASE_URL")
 
     @property
     def openrouter_model(self) -> str:

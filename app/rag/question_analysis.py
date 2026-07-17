@@ -408,6 +408,9 @@ _CONTENT_TYPE_MARKERS: dict[ContentType, tuple[str, ...]] = {
 class QuestionAnalyzer:
     """Extract compact routing signals from a user question."""
 
+    def __init__(self, query_enricher: QueryEnricher | None = None) -> None:
+        self._query_enricher = query_enricher or QueryEnricher.default()
+
     def analyze(
         self,
         question: str,
@@ -415,13 +418,19 @@ class QuestionAnalyzer:
         attachments: Sequence[object] | None = None,
     ) -> QuestionAnalysis:
         """Return deterministic initial analysis for the question."""
-        return analyze_question(question, intake_sections=intake_sections, attachments=attachments)
+        return analyze_question(
+            question,
+            intake_sections=intake_sections,
+            attachments=attachments,
+            query_enricher=self._query_enricher,
+        )
 
 
 def analyze_question(
     question: str,
     intake_sections: Sequence[str] | None = None,
     attachments: Sequence[object] | None = None,
+    query_enricher: QueryEnricher | None = None,
 ) -> QuestionAnalysis:
     """Analyze what the user is asking before routing to documents."""
     normalized = _normalize_question(question)
@@ -454,10 +463,10 @@ def analyze_question(
     requested_action = _requested_action(task_type, lowered)
     generic_terms = tuple(_generic_terms(tokens))
     exact_terms = tuple(extract_exact_terms(combined))
-    query_enrichment = QueryEnricher.default().enrich(combined)
-    exact_terms = tuple(_dedupe([*exact_terms, *query_enrichment.exact_terms], limit=16))
+    enrichment_context = (query_enricher or QueryEnricher.default()).build_context(combined)
+    exact_terms = tuple(_dedupe([*exact_terms, *enrichment_context.exact_terms], limit=16))
     config_terms = tuple(term for term in exact_terms if guess_term_type(term) in {"config", "identifier", "function", "path_or_parameter", "endpoint_or_address"})
-    config_terms = tuple(_dedupe([*config_terms, *query_enrichment.config_terms], limit=16))
+    config_terms = tuple(_dedupe([*config_terms, *enrichment_context.config_terms], limit=16))
     object_terms = tuple(_object_terms(tokens, requested_action=requested_action, generic_terms=generic_terms))
     primary_object = object_terms[0] if object_terms else ""
     requested_attribute = _requested_attribute(lowered, object_terms)
@@ -485,7 +494,7 @@ def analyze_question(
         generic_terms=generic_terms,
         exact_terms=exact_terms,
         config_terms=config_terms,
-        extra_facets=query_enrichment.facets,
+        extra_facets=enrichment_context.facets,
     )
     keywords = tuple(_dedupe([facet.text for facet in facets] + list(tokens), limit=16))
     constraints = tuple(facet.text for facet in facets if facet.role == "constraint")
@@ -526,6 +535,7 @@ def analyze_question(
         ambiguity=ambiguity,
         needs_external_docs=needs_external_docs,
         source_required=True,
+        enrichment_context=enrichment_context,
     )
 
     return QuestionAnalysis(
@@ -575,6 +585,7 @@ def analyze_question(
         domain_hint=domain_hint,
         domain_hint_confidence=domain_confidence,
         ambiguity=ambiguity,
+        enrichment_context=enrichment_context,
         query_plan=query_plan,
     )
 

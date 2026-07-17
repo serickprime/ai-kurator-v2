@@ -9,11 +9,13 @@ from typing import Any, Protocol
 
 from app.ingestion.text_normalizer import is_generic_heading
 from app.rag import term_scoring
-from app.rag.types import DocumentCandidate, EvidenceSpan, QuestionAnalysis
+from app.rag.query_enrichment import normalize_glossary_text
+from app.rag.types import DocumentCandidate, EvidenceSpan, GlossaryDerivedAnchor, QuestionAnalysis, QueryEnrichmentContext
 
 LOGGER = logging.getLogger(__name__)
 TOKEN_RE = re.compile(r"[\w#+.-]{2,}", re.UNICODE)
 FACT_MARKER_RE = re.compile(r"\bFACT-ID:\s*[A-Z0-9_]+\b")
+MAX_SERVICE_SCOPED_QUERY_VARIANTS = 2
 
 GENERIC_QUERY_TERMS = {
     "and",
@@ -263,10 +265,22 @@ class EvidenceRetriever:
         selected: list[EvidenceSpan] = []
         discarded: list[DiscardedEvidence] = []
         document_titles = _document_titles(documents)
+        enrichment_context = analysis.enrichment_context
 
         for record in records:
-            scored = score_evidence_record(analysis, record, term_scorer=self._term_scorer)
-            discard_reason = _discard_reason(analysis, scored, self._min_score, term_scorer=self._term_scorer)
+            scored = score_evidence_record(
+                analysis,
+                record,
+                term_scorer=self._term_scorer,
+                enrichment_context=enrichment_context,
+            )
+            discard_reason = _discard_reason(
+                analysis,
+                scored,
+                self._min_score,
+                term_scorer=self._term_scorer,
+                enrichment_context=enrichment_context,
+            )
             if discard_reason:
                 discarded.append(_discarded(scored, discard_reason))
                 continue
@@ -279,9 +293,20 @@ class EvidenceRetriever:
         for record in records:
             if record.chunk_id in selected_ids or len(discarded) >= 16:
                 continue
-            scored = score_evidence_record(analysis, record, term_scorer=self._term_scorer)
+            scored = score_evidence_record(
+                analysis,
+                record,
+                term_scorer=self._term_scorer,
+                enrichment_context=enrichment_context,
+            )
             discard_reason = (
-                _discard_reason(analysis, scored, self._min_score, term_scorer=self._term_scorer)
+                _discard_reason(
+                    analysis,
+                    scored,
+                    self._min_score,
+                    term_scorer=self._term_scorer,
+                    enrichment_context=enrichment_context,
+                )
                 or "not selected after reranking"
             )
             discarded.append(_discarded(scored, discard_reason))
@@ -302,6 +327,7 @@ class EvidenceRetriever:
         document_ids = _trusted_document_ids(analysis, documents)
         query_text = evidence_query_text(analysis)
         query_embedding = await self._query_embedding(query_text)
+        enrichment_context = analysis.enrichment_context
         try:
             records = await self._chunk_store.match_chunks(
                 workspace_id=self._workspace_id,
@@ -314,7 +340,33 @@ class EvidenceRetriever:
             LOGGER.warning("evidence chunk retrieval failed: %s", exc)
             return ()
 
-        scored = [score_evidence_record(analysis, record, term_scorer=self._term_scorer) for record in records]
+        for scoped_query in _service_scoped_query_variants(
+            analysis,
+            enrichment_context,
+            base_query_text=query_text,
+        ):
+            try:
+                scoped_records = await self._chunk_store.match_chunks(
+                    workspace_id=self._workspace_id,
+                    document_ids=document_ids,
+                    query_text=scoped_query,
+                    query_embedding=None,
+                    match_count=self._match_count,
+                )
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("service-scoped evidence chunk retrieval failed: %s", exc)
+                continue
+            records = _merge_chunk_records(records, scoped_records)
+
+        scored = [
+            score_evidence_record(
+                analysis,
+                record,
+                term_scorer=self._term_scorer,
+                enrichment_context=enrichment_context,
+            )
+            for record in records
+        ]
         scored.sort(key=lambda item: _sort_key(item))
         return tuple(scored)
 
@@ -348,20 +400,32 @@ def score_evidence_record(
     record: EvidenceChunkRecord,
     *,
     term_scorer: term_scoring.CorpusTermScorer | None = None,
+    enrichment_context: QueryEnrichmentContext | None = None,
 ) -> EvidenceChunkRecord:
     """Apply deterministic object-first scoring to one chunk candidate."""
     term_scorer = term_scorer or term_scoring.CorpusTermScorer.neutral()
+    context = _resolve_enrichment_context(analysis, enrichment_context)
+    glossary_object_anchors = _active_glossary_object_anchors(context)
     query_term_analysis = term_scorer.query_terms(analysis)
     text = _record_text(record)
     text_roots = _roots(_tokens(text))
     query_roots = _query_roots(analysis)
     object_roots = _roots(analysis.object_terms)
+    matched_object_anchors = _matched_glossary_object_anchors(
+        glossary_object_anchors,
+        _record_anchor_text(record),
+    )
     action_roots = _roots([analysis.requested_action]) if analysis.requested_action else set()
     constraint_roots = _constraint_roots(analysis)
     symptom_roots = _roots(analysis.symptom_terms)
 
     overlap = query_roots & text_roots
     object_overlap = object_roots & text_roots
+    raw_object_support = _has_raw_object_support(
+        object_overlap,
+        glossary_object_anchors=glossary_object_anchors,
+        matched_object_anchors=matched_object_anchors,
+    )
     action_overlap = action_roots & text_roots
     constraint_overlap = constraint_roots & text_roots
     symptom_overlap = symptom_roots & text_roots
@@ -377,7 +441,12 @@ def score_evidence_record(
 
     base = max(record.score, record.vector_score, record.text_score, record.trigram_score, 0.0)
     overlap_score = len(overlap) / max(len(query_roots), 1) if query_roots else 0.0
-    object_score = len(object_overlap) / max(len(object_roots), 1) if object_roots else 0.0
+    if matched_object_anchors:
+        object_score = 1.0
+    elif object_roots and raw_object_support:
+        object_score = len(object_overlap) / max(len(object_roots), 1)
+    else:
+        object_score = 0.0
     constraint_score = len(constraint_overlap) / max(len(constraint_roots), 1) if constraint_roots else 0.0
     symptom_score = len(symptom_overlap) / max(len(symptom_roots), 1) if symptom_roots else 0.0
     action_score = 1.0 if action_overlap else 0.0
@@ -405,6 +474,10 @@ def score_evidence_record(
         reason_parts.append("matched roots: " + ", ".join(sorted(overlap)[:8]))
     if object_overlap:
         reason_parts.append("object match: " + ", ".join(sorted(object_overlap)[:5]))
+    if matched_object_anchors:
+        reason_parts.append(
+            "glossary object anchor: " + ", ".join(anchor.term for anchor in matched_object_anchors[:5])
+        )
     if action_overlap:
         reason_parts.append("action match")
     if constraint_overlap:
@@ -444,6 +517,17 @@ def score_evidence_record(
             "score_breakdown": score_breakdown,
             "query_overlap": sorted(overlap),
             "object_overlap": sorted(object_overlap),
+            "glossary_object_anchors": [
+                {
+                    "service_id": anchor.service_id,
+                    "term": anchor.term,
+                    "canonical_term": anchor.canonical_term,
+                    "matched_variant": anchor.matched_variant,
+                    "rule_id": anchor.rule_id,
+                    "provenance": anchor.provenance,
+                }
+                for anchor in matched_object_anchors
+            ],
             "symptom_overlap": sorted(symptom_overlap),
             "constraint_overlap": sorted(constraint_overlap),
             "common_terms": list(common_matches),
@@ -466,17 +550,30 @@ def _discard_reason(
     min_score: float,
     *,
     term_scorer: term_scoring.CorpusTermScorer | None = None,
+    enrichment_context: QueryEnrichmentContext | None = None,
 ) -> str:
     term_scorer = term_scorer or term_scoring.CorpusTermScorer.neutral()
+    context = _resolve_enrichment_context(analysis, enrichment_context)
+    glossary_object_anchors = _active_glossary_object_anchors(context)
     text = _record_text(record)
     text_roots = _roots(_tokens(text))
     object_roots = _roots(analysis.object_terms)
+    object_overlap = object_roots & text_roots
+    matched_object_anchors = _matched_glossary_object_anchors(
+        glossary_object_anchors,
+        _record_anchor_text(record),
+    )
+    raw_object_support = _has_raw_object_support(
+        object_overlap,
+        glossary_object_anchors=glossary_object_anchors,
+        matched_object_anchors=matched_object_anchors,
+    )
     constraint_roots = _constraint_roots(analysis)
     lowered_heading = (record.heading or "").casefold()
 
     if "не объясняет" in lowered_heading:
         return "not-about section"
-    if object_roots and not (object_roots & text_roots):
+    if object_roots and not raw_object_support and not matched_object_anchors:
         return "missing primary object terms"
     if term_scorer.has_statistics and not term_scorer.has_strong_evidence_match(analysis, text):
         return "missing strong evidence term"
@@ -579,12 +676,92 @@ def _trusted_document_ids(
         return ()
     if analysis.task_type in {"compare", "source_check"}:
         return tuple(_dedupe([document.document_id for document in documents[:3]], limit=3))
+    if _has_confirmed_service_context(analysis):
+        return tuple(_dedupe([document.document_id for document in documents], limit=5))
     return (documents[0].document_id,)
 
 
 def _sort_key(record: EvidenceChunkRecord) -> tuple[float, str, str]:
     fact_bias = 0.02 if _has_fact_marker(record) else 0.0
     return (-(record.score + fact_bias), record.document_id, record.chunk_id)
+
+
+def _service_scoped_query_variants(
+    analysis: QuestionAnalysis,
+    context: QueryEnrichmentContext,
+    *,
+    base_query_text: str,
+) -> tuple[str, ...]:
+    if not context.confirmed_service_ids:
+        return ()
+
+    primary_terms = _service_scoped_primary_terms(context)
+    if not primary_terms:
+        return ()
+
+    config_terms = tuple(_dedupe(list(context.config_terms), limit=8))
+    action_object_terms = tuple(
+        _dedupe(
+            [
+                analysis.requested_action,
+                analysis.requested_attribute,
+                *analysis.object_terms[:4],
+            ],
+            limit=6,
+        )
+    )
+    candidates = (
+        " ".join(_dedupe([*primary_terms, *config_terms], limit=12)),
+        " ".join(_dedupe([*primary_terms, *action_object_terms, *config_terms], limit=14)),
+    )
+    normalized_base = normalize_glossary_text(base_query_text)
+    variants: list[str] = []
+    for candidate in candidates:
+        clean = re.sub(r"\s+", " ", candidate).strip()
+        if not clean:
+            continue
+        if normalize_glossary_text(clean) == normalized_base:
+            continue
+        variants.append(clean)
+        if len(variants) >= MAX_SERVICE_SCOPED_QUERY_VARIANTS:
+            break
+    return tuple(_dedupe(variants, limit=MAX_SERVICE_SCOPED_QUERY_VARIANTS))
+
+
+def _service_scoped_primary_terms(context: QueryEnrichmentContext) -> tuple[str, ...]:
+    confirmed = {service_id.casefold() for service_id in context.confirmed_service_ids}
+    if not confirmed:
+        return ()
+    anchor_terms = [
+        anchor.term
+        for anchor in context.glossary_object_anchors
+        if anchor.service_id.casefold() in confirmed
+    ]
+    return tuple(_dedupe([*anchor_terms, *context.exact_terms], limit=8))
+
+
+def _merge_chunk_records(
+    base_records: list[EvidenceChunkRecord],
+    extra_records: list[EvidenceChunkRecord],
+) -> list[EvidenceChunkRecord]:
+    by_key: dict[tuple[str, str, str], EvidenceChunkRecord] = {}
+    for record in [*base_records, *extra_records]:
+        key = _record_identity(record)
+        existing = by_key.get(key)
+        if existing is None or _raw_record_score(record) > _raw_record_score(existing):
+            by_key[key] = record
+    return list(by_key.values())
+
+
+def _record_identity(record: EvidenceChunkRecord) -> tuple[str, str, str]:
+    if record.chunk_id:
+        return ("chunk", record.document_id, record.chunk_id)
+    content_signature = normalize_glossary_text(" ".join([record.heading or "", record.content]))[:240]
+    return ("content", record.document_id, content_signature)
+
+
+def _raw_record_score(record: EvidenceChunkRecord) -> float:
+    return max(record.score, record.vector_score, record.text_score, record.trigram_score, 0.0)
 
 
 def _record_text(record: EvidenceChunkRecord) -> str:
@@ -595,6 +772,72 @@ def _record_text(record: EvidenceChunkRecord) -> str:
             record.content,
         ]
     )
+
+
+def _record_anchor_text(record: EvidenceChunkRecord) -> str:
+    return " ".join([record.heading or "", record.content])
+
+
+def _matched_glossary_object_anchors(
+    anchors: tuple[GlossaryDerivedAnchor, ...],
+    text: str,
+) -> tuple[GlossaryDerivedAnchor, ...]:
+    normalized_text = normalize_glossary_text(text)
+    matched: list[GlossaryDerivedAnchor] = []
+    for anchor in anchors:
+        normalized_anchor = normalize_glossary_text(anchor.term)
+        if not normalized_anchor:
+            continue
+        pattern = rf"(?<!\w){re.escape(normalized_anchor)}(?!\w)"
+        if re.search(pattern, normalized_text):
+            matched.append(anchor)
+    return tuple(matched)
+
+
+def _has_raw_object_support(
+    object_overlap: set[str],
+    *,
+    glossary_object_anchors: tuple[GlossaryDerivedAnchor, ...],
+    matched_object_anchors: tuple[GlossaryDerivedAnchor, ...],
+) -> bool:
+    if not object_overlap:
+        return False
+    if not glossary_object_anchors or matched_object_anchors:
+        return True
+
+    anchor_component_roots = _roots(
+        token
+        for anchor in glossary_object_anchors
+        for token in _tokens(anchor.term)
+    )
+    return bool(object_overlap - anchor_component_roots)
+
+
+def _active_glossary_object_anchors(context: QueryEnrichmentContext) -> tuple[GlossaryDerivedAnchor, ...]:
+    confirmed = {service_id.casefold() for service_id in context.confirmed_service_ids}
+    if not confirmed:
+        return ()
+    return tuple(
+        anchor
+        for anchor in context.glossary_object_anchors
+        if anchor.service_id.casefold() in confirmed
+    )
+
+
+def _resolve_enrichment_context(
+    analysis: QuestionAnalysis,
+    explicit_context: QueryEnrichmentContext | None,
+) -> QueryEnrichmentContext:
+    if explicit_context is not None:
+        return explicit_context
+    analysis_context = getattr(analysis, "enrichment_context", None)
+    if analysis_context is not None:
+        return analysis_context
+    return QueryEnrichmentContext()
+
+
+def _has_confirmed_service_context(analysis: QuestionAnalysis) -> bool:
+    return bool(analysis.enrichment_context.confirmed_service_ids)
 
 
 def _query_roots(analysis: QuestionAnalysis) -> set[str]:
