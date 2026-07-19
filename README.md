@@ -1,27 +1,26 @@
 # AI Kurator V2
 
-AI Kurator V2 - Telegram-бот с evidence-first RAG v2 для ответов по
-загруженным материалам и официальной документации сервисов. Система сначала
-выбирает документы и доказательства, проверяет утверждения и безопасно
-предлагает новые источники только для ручной проверки владельцем.
+AI Kurator V2 - Telegram-бот с RAG v2, который отвечает по загруженным
+материалам и официальной документации сервисов. Система сначала выбирает
+подходящие документы и доказательства, формирует ответ только на их основе,
+проверяет утверждения и безопасно предлагает новые источники для ручной
+проверки владельцем.
 
-
-
-## Pipeline
+## Конвейер ответа
 
 ```text
-question
--> question analysis
--> document router
--> evidence retrieval inside selected documents
--> reranking
--> evidence pack
--> answer generation from evidence only
--> claim verification
--> final answer with sources from used evidence only
+вопрос
+-> анализ вопроса
+-> выбор документов
+-> поиск доказательств внутри выбранных документов
+-> повторное ранжирование
+-> пакет доказательств
+-> генерация ответа только по доказательствам
+-> проверка утверждений
+-> итоговый ответ с использованными источниками
 ```
 
-## Project Layout
+## Структура проекта
 
 ```text
 app/
@@ -39,15 +38,16 @@ tests/
 docs/
 ```
 
-## Requirements
+## Требования
 
 - Python 3.11+
-- Telegram bot token
-- Supabase project with PostgreSQL and pgvector
-- Local multilingual embeddings, defaulting to `BAAI/bge-m3` with `EMBEDDING_DIM=1024`
-- OpenRouter-compatible chat model for answer generation
+- токен Telegram-бота
+- проект Supabase с PostgreSQL и pgvector
+- локальная многоязычная модель эмбеддингов, по умолчанию `BAAI/bge-m3` с
+  `EMBEDDING_DIM=1024`
+- совместимая с OpenRouter чат-модель для генерации ответов
 
-## Local Setup
+## Локальная настройка
 
 ```powershell
 python -m venv .venv
@@ -55,11 +55,13 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-Fill `.env` with local secrets. Never commit `.env`.
+Заполните `.env` локальными секретами. Никогда не добавляйте `.env` в Git.
 
-`SUPABASE_SERVICE_ROLE_KEY` is only for the server-side Telegram bot and local maintenance scripts. Never put it in browser, mobile, frontend, README examples with real values, logs, or any client-side code.
+`SUPABASE_SERVICE_ROLE_KEY` предназначен только для серверного Telegram-бота и
+локальных служебных скриптов. Не размещайте реальное значение в браузере,
+мобильном или клиентском приложении, примерах README и логах.
 
-Required first-run settings:
+Обязательные настройки первого запуска:
 
 - `TELEGRAM_BOT_TOKEN`
 - `OWNER_IDS`
@@ -74,20 +76,26 @@ Required first-run settings:
 - `EMBEDDING_DIM=1024`
 - `RAG_PIPELINE_VERSION=v2`
 
-## Run
+## Запуск
 
 ```powershell
 python scripts/run_telegram_bot.py
 ```
 
-Runtime logs are written to `logs/app.log` and `logs/errors.log`.
-For the full Telegram RAG v2 runtime checklist on Windows, see [Run Telegram RAG V2](docs/run_telegram_rag.md).
-For local/server startup verification, use the practical [Runtime Deployment Checklist](docs/runtime_deployment_checklist.md).
-`scripts/run_telegram_bot.py` runs the read-only healthcheck first and uses a local PID lock to avoid starting a second runner-managed polling process.
+Логи выполнения записываются в `logs/app.log` и `logs/errors.log`.
 
-## Smoke Checks
+Полный список действий для запуска Telegram RAG v2 в Windows находится в
+[инструкции по запуску](docs/run_telegram_rag.md). Для проверки локального или
+серверного запуска используйте
+[контрольный список развёртывания](docs/runtime_deployment_checklist.md).
 
-Run these after filling `.env` and applying the Supabase schema:
+`scripts/run_telegram_bot.py` сначала выполняет проверку состояния без записи
+данных, а затем использует локальный PID-lock, чтобы не запустить второй
+процесс получения обновлений под управлением этого скрипта.
+
+## Проверки работоспособности
+
+Запускайте эти команды после заполнения `.env` и применения схемы Supabase:
 
 ```powershell
 python scripts/runtime_healthcheck.py
@@ -98,100 +106,209 @@ python scripts/smoke_rag_runtime.py
 python scripts/smoke_telegram_upload_ingestion.py
 ```
 
-`runtime_healthcheck.py` is read-only: it checks required config, the default Supabase workspace, and service/docs status without starting Telegram polling or writing to Supabase.
-`smoke_supabase.py` is read-only and checks that `DEFAULT_WORKSPACE_ID` exists in `workspaces`.
-`scripts/plan_docs_reprocessing.py` is read-only preparation tooling for one source-scoped docs reprocessing plan, baseline manifest export, manifest verification, and live drift comparison. It does not run activation, crawl, sync, indexing, reindex, or Supabase writes.
-`scripts/plan_docs_reconciliation.py` is read-only reconciliation planning for one source-scoped discovered-key snapshot. It compares active document keys with a local snapshot, exports an owner-review plan when requested, and never archives, activates, crawls, indexes, reindexes, or writes Supabase.
-`scripts/archive_reviewed_external_doc.py` previews one reviewed external-doc archive target. It requires an exact document id, reviewed reconciliation artifact, and fresh rollback-capable backup before any future archive; preview is the default and production execution also requires `--confirm-archive-one` plus an exact confirmation phrase.
-`scripts/reprocess_reviewed_external_docs.py` previews reviewed exact-key external-doc reprocessing. It accepts exact reviewed document ids only, disables full source crawl and arbitrary URLs, requires a fresh post-archive rollback-capable backup, and needs `--confirm-reprocess-reviewed` plus an exact confirmation phrase before any future execution.
-`scripts/relocate_reviewed_external_doc.py` previews one owner-reviewed canonical relocation where an external-doc key moved to a different canonical key. It requires a dedicated canonical relocation artifact, exact old document id, fresh rollback-capable backup, collision-free new key, and future execution requires `--confirm-relocate-reviewed` plus an exact confirmation phrase.
-`smoke_openrouter.py` sends a tiny completion request to `OPENROUTER_DEFAULT_MODEL`.
-`smoke_rag_runtime.py` only builds runtime dependencies and prints missing `.env` settings when RAG v2 is disabled.
-`smoke_telegram_upload_ingestion.py` writes a tiny txt material through the same ingestion service used by Telegram upload mode.
+`runtime_healthcheck.py` работает без записи: проверяет обязательные настройки,
+рабочее пространство Supabase по умолчанию и состояние сервисов и документации,
+не запуская получение обновлений Telegram и не изменяя Supabase.
 
-## Telegram UX
+`smoke_supabase.py` работает без записи и проверяет, что
+`DEFAULT_WORKSPACE_ID` существует в таблице `workspaces`.
 
-The bot has a compact persistent reply keyboard:
+`scripts/plan_docs_reprocessing.py` готовит без записи план повторной обработки
+документации одного источника, экспорт исходного манифеста, проверку манифеста
+и сравнение с текущим состоянием. Скрипт не запускает активацию, обход сайтов,
+синхронизацию, индексирование, повторное индексирование и не записывает данные
+в Supabase.
+
+`scripts/plan_docs_reconciliation.py` без записи строит план сверки одного
+снимка обнаруженных ключей источника. Скрипт сравнивает активные ключи
+документов с локальным снимком, при необходимости экспортирует план для
+проверки владельцем и никогда не архивирует, не активирует, не сканирует, не
+индексирует и не изменяет Supabase.
+
+`scripts/archive_reviewed_external_doc.py` показывает предварительный план
+архивации одного проверенного документа внешнего источника. Перед будущей
+архивацией требуются точный идентификатор документа, проверенный артефакт
+сверки и свежая резервная копия с возможностью восстановления. По умолчанию
+работает только предварительный просмотр; для выполнения в рабочей среде также
+нужны `--confirm-archive-one` и точная фраза подтверждения.
+
+`scripts/reprocess_reviewed_external_docs.py` показывает предварительный план
+повторной обработки внешней документации по проверенным точным ключам. Скрипт
+принимает только проверенные идентификаторы документов, запрещает полный обход
+источника и произвольные URL, требует свежую резервную копию после архивации и
+для выполнения в рабочей среде требует `--confirm-reprocess-reviewed` и точную фразу
+подтверждения.
+
+`scripts/relocate_reviewed_external_doc.py` показывает предварительный план
+переноса одного проверенного владельцем документа на новый канонический ключ.
+Нужны отдельный артефакт переноса, точный идентификатор старого документа,
+свежая резервная копия, отсутствие конфликта нового ключа и, для будущего
+выполнения, `--confirm-relocate-reviewed` с точной фразой подтверждения.
+
+`smoke_openrouter.py` отправляет небольшой тестовый запрос модели
+`OPENROUTER_DEFAULT_MODEL`.
+
+`smoke_rag_runtime.py` только собирает зависимости среды выполнения и выводит
+отсутствующие настройки `.env`, если RAG v2 отключён.
+
+`smoke_telegram_upload_ingestion.py` записывает небольшой txt-материал через тот
+же сервис загрузки, который использует режим загрузки материалов в Telegram.
+
+## Интерфейс Telegram
+
+У бота есть компактная постоянная клавиатура:
 
 - `Новая тема`
 - `Загрузить материал`
 - `Настройки`
 
-Questions, captions, and image context are combined into one user intake before RAG. Vision text is context only, not a standalone question. Upload mode is explicit: files outside `Загрузить материал` are not indexed automatically, and text sent during upload mode does not go to RAG.
+Вопрос, подпись и контекст изображения объединяются в один пользовательский
+запрос перед запуском RAG. Текст, полученный из изображения, используется
+только как контекст, а не как самостоятельный вопрос. Режим загрузки включается
+явно: файлы вне команды `Загрузить материал` не индексируются автоматически, а
+текст, отправленный во время загрузки, не передаётся в RAG.
 
-Telegram material uploads are described in [Telegram Upload Ingestion](docs/telegram_upload_ingestion.md). Upload feedback shows processing status, document/section/chunk counts, and detected services when service discovery finds them.
+Загрузка материалов описана в
+[документе о загрузке из Telegram](docs/telegram_upload_ingestion.md). Бот
+показывает состояние обработки, число документов, разделов и фрагментов, а
+также найденные сервисы, если они были обнаружены.
 
-Manual RAG quality smoke suite: [docs/rag_quality_smoke_suite.md](docs/rag_quality_smoke_suite.md).
+Набор ручных проверок качества RAG:
+[docs/rag_quality_smoke_suite.md](docs/rag_quality_smoke_suite.md).
 
-External Docs Registry v2 design: [docs/external_docs_registry_v2.md](docs/external_docs_registry_v2.md).
+Архитектура External Docs Registry v2:
+[docs/external_docs_registry_v2.md](docs/external_docs_registry_v2.md).
 
-External docs candidate QA: [docs/external_docs_candidate_qa.md](docs/external_docs_candidate_qa.md).
+Проверка качества кандидатов внешней документации:
+[docs/external_docs_candidate_qa.md](docs/external_docs_candidate_qa.md).
 
-Useful read-only Telegram status commands:
+Полезные Telegram-команды, работающие без записи:
 
-- `/docs` shows a read-only inline documentation dashboard and curated candidates from `config/docs_source_candidates.yaml`. It does not crawl, sync, index, activate, write to Supabase, or change config.
-- `/docs_preview <service>` safely checks one curated docs candidate without indexing, writing to Supabase, or activating docs.
-- `/docs_preview_all` checks all curated candidates and classifies them as ready, needs_review, failed, or already_connected without indexing or writing.
-- `/docs_ready` shows candidates ready for the next controlled activation plan.
-- `/docs_health [service_id]` is owner/admin-only and shows a read-only docs health/stale preview. It does not refresh, activate, crawl, sync, index, write to Supabase, or change docs status.
-- `/docs_activate_ready` shows a no-write activation plan. `/docs_activate_ready confirm` is owner/admin-only and activates only ready candidates in the MVP allowlist (`openrouter`, `telegram_bot_api`); arbitrary URLs, needs_review, failed, and already connected sources are skipped.
-- `/docs_activate openrouter` shows a controlled activation plan for OpenRouter only. `/docs_activate openrouter confirm` is owner/admin-only and runs the controlled activation flow; arbitrary URLs and other candidates are rejected in this MVP. `/docs` never runs activation confirm.
-- `/service_suggest <question>` is owner/admin-only and shows a read-only service-aware docs preview for a user question. It does not call `/docs_preview`, activate, crawl, sync, index, write to Supabase, or change config.
-- `/services` shows detected services and whether their docs source is connected.
-- `/base_status` shows knowledge base counts, external docs status, service status, and recent documents.
-- `/materials` lists recent uploaded/local materials and excludes external docs.
-- `/material <id>` shows one uploaded/local material card by full UUID or short displayed id.
-- `/source_last` shows sources used by the last RAG answer.
+- `/docs` показывает панель документации и кандидатов из
+  `config/docs_source_candidates.yaml`. Команда не запускает обход сайтов,
+  синхронизацию, индексирование, активацию, запись в Supabase или изменение
+  конфигурации.
+- `/docs_preview <service>` безопасно проверяет одного кандидата без
+  индексирования, записи в Supabase и активации.
+- `/docs_preview_all` проверяет всех кандидатов и присваивает им состояния
+  `ready`, `needs_review`, `failed` или `already_connected` без индексирования
+  и записи данных.
+- `/docs_ready` показывает кандидатов, готовых к следующему контролируемому
+  плану активации.
+- `/docs_health [service_id]` доступна только владельцу и администраторам и
+  показывает состояние и устаревание документации без записи. Команда не
+  обновляет документацию, не активирует источники, не запускает обход сайтов,
+  синхронизацию или индексирование и не изменяет Supabase.
+- `/docs_activate_ready` показывает план активации без записи.
+  `/docs_activate_ready confirm` доступна только владельцу и администраторам и
+  активирует только готовых кандидатов из разрешённого списка MVP (`openrouter`,
+  `telegram_bot_api`). Произвольные URL и кандидаты в состояниях
+  `needs_review`, `failed` и `already_connected` пропускаются.
+- `/docs_activate openrouter` показывает контролируемый план только для
+  OpenRouter. `/docs_activate openrouter confirm` доступна только владельцу и
+  администраторам и запускает контролируемую активацию. Произвольные URL и
+  другие кандидаты отклоняются. Команда `/docs` никогда не запускает
+  подтверждение активации.
+- `/service_suggest <question>` доступна только владельцу и администраторам и
+  показывает без записи предварительную проверку документации с учётом сервиса.
+  Команда не вызывает `/docs_preview`, не активирует, не запускает обход сайтов,
+  синхронизацию или индексирование, не записывает данные в Supabase и не
+  изменяет конфигурацию.
+- `/services` показывает найденные сервисы и состояние подключения их
+  документации.
+- `/base_status` показывает статистику базы знаний, состояние внешней
+  документации и сервисов, а также последние документы.
+- `/materials` показывает последние загруженные и локальные материалы, исключая
+  внешнюю документацию.
+- `/material <id>` показывает карточку загруженного или локального материала по
+  полному UUID либо короткому отображаемому идентификатору.
+- `/source_last` показывает источники, использованные в последнем ответе RAG.
 
-Owner/admin material management:
+Управление материалами для владельца и администраторов:
 
-- `/archive_material <id>` archives one active uploaded/local material by setting `documents.status = archived`.
-- `/archive_source <id>` archives an uploaded/local source from the last RAG answer.
+- `/archive_material <id>` архивирует один активный загруженный или локальный
+  материал, устанавливая `documents.status = archived`.
+- `/archive_source <id>` архивирует загруженный или локальный источник из
+  последнего ответа RAG.
 
-Archiving does not physically delete chunks and cannot be used for external/official docs.
+Архивация не удаляет фрагменты физически и не применяется к внешней или
+официальной документации.
 
-Reviewed external-doc archive tooling is separate from uploaded/local material archiving. It is generic, exact-id scoped, review/backup gated, and must not be used for production archive without a separate owner-approved execution block.
-Reviewed exact-key reprocessing tooling is also separate: it keeps archive and keep-active cleanup as different approval boundaries, uses the shared external-doc extractor/cleaner/indexer, and must not run production reprocessing without a fresh backup, preview, and explicit owner approval.
-Reviewed canonical relocation tooling is a third separate path for confirmed old-key to new-key moves. It does not treat relocation as same-key replacement, creates the new canonical key first in future execution, then archives the exact old document only after the new active document is verified.
+Инструменты архивации проверенной внешней документации отделены от архивации
+загруженных и локальных материалов. Они универсальны, ограничены точным
+идентификатором, требуют проверки и резервной копии и не должны использоваться
+в рабочей среде без отдельного подтверждения владельца.
 
-When an answer used a bad uploaded/local source, check `/source_last`, archive the source with `/archive_source <id>`, then ask the question again.
+Повторная обработка по проверенным точным ключам также отделена от архивации:
+архивирование и очистка активных документов остаются разными границами
+подтверждения. Обработка использует общие компоненты извлечения, очистки и
+индексирования внешней документации и не должна запускаться в рабочей среде без свежей резервной копии,
+предварительного просмотра и явного подтверждения владельца.
 
-Answer model routing is controlled by per-user settings and the `OPENROUTER_*_MODELS` environment lists. Free mode never silently falls back to paid models. Quality can fall back to cheap only when `ALLOW_QUALITY_TO_CHEAP_FALLBACK=true`.
+Перенос на новый канонический ключ является третьим отдельным путём для
+подтверждённых перемещений. Он не считается заменой по прежнему ключу: при
+будущем выполнении сначала создаётся новый канонический ключ, а точный старый
+документ архивируется только после проверки нового активного документа.
 
-`OPENROUTER_BASE_URL`, `OPENROUTER_SITE_URL`, and `OPENROUTER_APP_NAME` are optional transport/header settings. Keep `OPENROUTER_API_KEY` server-side only.
+Если в ответ попал плохой загруженный или локальный источник, проверьте
+`/source_last`, архивируйте источник через `/archive_source <id>`, затем
+повторите вопрос.
 
-Persistent settings need the optional `user_settings` migration proposed in [Telegram UX](docs/bot_ux.md). It has not been applied automatically in this step.
+Маршрутизация моделей ответа управляется пользовательскими настройками и
+списками `OPENROUTER_*_MODELS`. Бесплатный режим никогда незаметно не
+переключается на платные модели. Режим `quality` может переключиться на `cheap`
+только при `ALLOW_QUALITY_TO_CHEAP_FALLBACK=true`.
 
-## Ingest Materials
+`OPENROUTER_BASE_URL`, `OPENROUTER_SITE_URL` и `OPENROUTER_APP_NAME` являются
+необязательными транспортными настройками и заголовками. Храните
+`OPENROUTER_API_KEY` только на сервере.
+
+Постоянные пользовательские настройки требуют необязательной миграции
+`user_settings`, предложенной в [описании интерфейса Telegram](docs/bot_ux.md).
+Она не применяется автоматически.
+
+## Загрузка материалов
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\ingest_files.py --path .\materials --workspace team --course "n8n 3.0"
 ```
 
-Ingestion creates a document row, a document card for document-first routing, parent sections, child chunks, and embeddings for the card, sections, and chunks. If a file has the same content hash as the active version, it is skipped. If the file changed, the old active document is archived after the new version is fully indexed.
+При загрузке создаются запись документа, карточка для первичного выбора
+документов, родительские разделы, дочерние фрагменты и эмбеддинги карточки,
+разделов и фрагментов. Если активная версия уже имеет такой же хеш содержимого,
+файл пропускается. Если файл изменился, старая активная версия архивируется
+только после полного индексирования новой.
 
-Ingestion also attempts to refresh corpus term statistics, so frequently repeated terms automatically become weaker retrieval signals and rare exact terms become stronger anchors. After a large import or reindexing, rebuild them explicitly:
+Загрузка также пытается обновить статистику терминов корпуса: часто
+повторяющиеся термины становятся более слабыми сигналами поиска, а редкие
+точные термины - более сильными опорными словами. После крупного импорта или
+повторного индексирования пересоберите статистику явно:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\rebuild_term_statistics.py --workspace team
 ```
 
-Make sure `EMBEDDING_MODEL` points to a local model that actually returns 1024-dimensional vectors. The database schema uses `vector(1024)`, so older 768-dimensional models such as `nomic-embed-text` require a schema change or reindexing plan before use.
+Убедитесь, что `EMBEDDING_MODEL` указывает на локальную модель, которая
+возвращает векторы размерности 1024. Схема базы использует `vector(1024)`,
+поэтому старые модели размерности 768, например `nomic-embed-text`, требуют
+отдельного плана изменения схемы или повторного индексирования.
 
-## Demo Materials
+## Демонстрационные материалы
 
-The repository includes a tiny first-run corpus:
+Репозиторий содержит небольшой корпус для первого запуска:
 
 ```powershell
 python scripts/ingest_files.py --path .\sample_materials --workspace team --course "demo"
 python scripts/evaluate.py --cases app\eval\cases.json --save-report
 ```
 
-The sample materials cover `n8n local install`, `YooMoney setup`, and `Supabase match_documents` so routing can be checked against documents with overlapping technical terms.
+Демонстрационные материалы охватывают `n8n local install`, настройку YooMoney и
+`Supabase match_documents`, чтобы проверить выбор документов с пересекающимися
+техническими терминами.
 
-## Simple Retrieval Benchmark
+## Простой тест поиска
 
-For retrieval-only diagnostics on non-technical household materials:
+Для диагностики поиска без генерации ответа на простых бытовых материалах:
 
 ```powershell
 python scripts/evaluate_retrieval_simple_synthetic.py
@@ -199,42 +316,54 @@ python scripts/evaluate_retrieval_simple_synthetic.py --reingest
 python scripts/evaluate_retrieval_simple_synthetic.py --question "как поливать комнатный лимон зимой?"
 ```
 
-Reports are written to `eval_runs/retrieval_simple_synthetic/latest.json` and `eval_runs/retrieval_simple_synthetic/latest.md`. This benchmark does not generate final answers; it checks document routing, evidence chunks, fact ids, and forbidden document leakage in the evidence pack.
+Отчёты записываются в `eval_runs/retrieval_simple_synthetic/latest.json` и
+`eval_runs/retrieval_simple_synthetic/latest.md`. Этот тест не генерирует
+итоговые ответы: он проверяет выбор документов, фрагменты доказательств,
+идентификаторы фактов и отсутствие запрещённых документов в пакете
+доказательств.
 
-## CI
+## Непрерывная интеграция
 
-GitHub Actions runs:
+GitHub Actions выполняет:
 
-- `compileall` for `app`, `scripts`, and `tests`;
-- `pytest`;
-- JSON validation for committed `.json` files;
-- a secret grep that fails on common Telegram, GitHub, and Supabase secret patterns.
+- `compileall` для `app`, `scripts` и `tests`
+- `pytest`
+- проверку добавленных в Git JSON-файлов
+- поиск распространённых шаблонов секретов Telegram, GitHub и Supabase
 
-## Как проверять качество
+## Проверка качества
 
-RAG v2 eval проверяет не только текст ответа, но и document routing, evidence, sources, answer mode и утечки forbidden/discarded candidates.
+Оценка RAG v2 проверяет не только текст ответа, но и выбор документов,
+доказательства, источники, режим ответа и утечки запрещённых или отброшенных
+кандидатов.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\evaluate.py --cases app\eval\cases.json --save-report
 ```
 
-Отчёты пишутся в `eval_runs/latest.json`, `eval_runs/latest.md` и timestamp-файлы. Без подключенного prediction-файла раннер честно помечает кейсы как `not_run`; реальные результаты pipeline можно подать через `--predictions path\to\predictions.json`.
+Отчёты записываются в `eval_runs/latest.json`, `eval_runs/latest.md` и файлы с
+меткой времени. Без подключённого файла прогнозов скрипт оценки честно помечает случаи
+как `not_run`; реальные результаты конвейера можно передать через
+`--predictions path\to\predictions.json`.
 
-Сравнение прогонов:
+Сравнение запусков:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\compare_eval_runs.py eval_runs\baseline.json eval_runs\latest.json
 ```
 
-Регрессиями считаются пропавший expected document, появившийся forbidden document, лишние sources, неправильный answer mode, sources при `ask_for_missing_data`, использование discarded candidate и падение score на `0.5+`.
+Регрессиями считаются исчезновение ожидаемого документа, появление запрещённого
+документа, лишние источники, неправильный режим ответа, наличие источников при
+`ask_for_missing_data`, использование отброшенного кандидата и снижение оценки
+на `0.5` или больше.
 
-## Docs
+## Документация
 
-- [Architecture](docs/architecture.md)
-- [RAG pipeline](docs/rag_pipeline.md)
-- [Evaluation](docs/eval.md)
-- [Prompts](docs/prompts.md)
-- [Telegram UX](docs/bot_ux.md)
-- [Ported utilities](docs/ported_utilities.md)
-- [Project handoff context](docs/project_handoff_context.md)
-- [Prompting playbook](docs/prompting_playbook.md)
+- [Архитектура](docs/architecture.md)
+- [Конвейер RAG](docs/rag_pipeline.md)
+- [Оценка качества](docs/eval.md)
+- [Промпты](docs/prompts.md)
+- [Интерфейс Telegram](docs/bot_ux.md)
+- [Перенесённые утилиты](docs/ported_utilities.md)
+- [Контекст передачи проекта](docs/project_handoff_context.md)
+- [Правила составления промптов](docs/prompting_playbook.md)
