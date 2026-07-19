@@ -80,9 +80,11 @@ Core state:
   record this merge consistently.
 - Phase 7C-B is not yet closed: no post-change production baseline artifact is
   recorded, so the real-corpus effect remains unverified.
-- Documentation Discovery remains feature-flagged off by default. The
-  production migration apply, search-provider configuration, and manual
-  Telegram smoke are not confirmed by repository evidence.
+- Documentation Discovery remains feature-flagged off by default. Production
+  suggestions-table availability, search-provider configuration, and one
+  owner-approved manual Telegram smoke are now recorded. No migration was
+  applied during verification, and discovered candidates remain pending until
+  owner review.
 
 ## Completed PRs
 
@@ -149,6 +151,17 @@ continuity:
 - discovery/search failures remain fail-open for the user answer path;
 - no detection/ranking expansion, crawl, sync, indexing, activation, schema
   change, production write, or AnswerGenerator/retrieval change is included.
+- owner-approved production preflight and one manual Telegram smoke completed
+  on 2026-07-19 against `main` commit `5889755`;
+- the read-only preflight confirmed the suggestions table and configured search
+  provider without applying a migration;
+- the smoke question for an unconnected service received the normal
+  `ask_for_missing_data` RAG result first and the safe discovery notice second;
+- suggestions for the smoke service changed from zero to exactly one `pending`
+  record, and neither new Telegram reply exposed a URL, confidence, UUID, or
+  internal diagnostic fields;
+- the smoke polling process was stopped after verification; no crawl, sync,
+  indexing, reindex, activation, schema change, or `.env` change was run.
 
 ## Latest completed project block
 
@@ -200,8 +213,8 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- run one short manual Telegram smoke only with explicit owner approval because
-  it sends real messages;
+- do not repeat the Documentation Discovery production smoke unless a future
+  change needs it; the owner-approved run is now recorded;
 - handle Phase 7C-B production validation and generic Docs Discovery
   detection/ranking improvements as separate future blocks;
 - keep Phase 8A and Phase 8B recorded but not started.

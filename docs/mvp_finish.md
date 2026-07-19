@@ -1,6 +1,6 @@
 # MVP Finish
 
-Last updated: 2026-07-16.
+Last updated: 2026-07-19.
 
 Scope boundary: this checklist tracks the docs candidate suggestions MVP. It is
 not a production migration log, production crawl log, or release log.
@@ -9,7 +9,8 @@ not a production migration log, production crawl log, or release log.
 
 MVP implementation progress: 15/15.
 
-Production enablement remains separately unconfirmed.
+Production enablement verification was completed on 2026-07-19 without
+applying a migration or activating documentation.
 
 - [x] `docs_candidate_suggestions` migration exists with statuses, preview result, dedupe, RLS, and service-role access.
 - [x] `app/db/schema.sql` mirrors the migration contract for the suggestions table, trigger, indexes, RLS, grants, and revokes.
@@ -29,9 +30,11 @@ Production enablement remains separately unconfirmed.
 
 Production enablement checklist:
 
-- [ ] Owner-approved migration apply is confirmed.
-- [ ] Search provider configuration is confirmed.
-- [ ] One manual Telegram smoke is recorded.
+- [x] Suggestions table availability is confirmed by a read-only production
+  select; no migration was applied during verification.
+- [x] Search provider configuration and one bounded live discovery request are
+  confirmed.
+- [x] One owner-approved manual Telegram smoke is recorded.
 
 ## Verified
 
@@ -42,13 +45,25 @@ Production enablement checklist:
 - `.\.venv\Scripts\python.exe -m pytest tests\test_telegram_docs_suggestions.py tests\test_telegram_docs_discovery.py tests\test_telegram_command_fallback.py`
 - Result: 26 passed.
 
-## Not Done
+Owner-approved production verification on 2026-07-19 at `main` commit
+`5889755`:
 
-- No production migration apply.
-- No production Supabase calls.
-- No real web search API call.
-- No real Telegram send.
-- No real crawl, indexing, reindex, or activation run.
+- read-only preflight confirmed the suggestions table, enabled discovery, and
+  configured search provider;
+- one ordinary question for an unconnected service produced
+  `ask_for_missing_data` with zero final sources before the advisory notice;
+- Telegram showed the normal RAG reply first and the safe discovery notice
+  second;
+- the service suggestion count changed from zero to exactly one `pending`
+  record;
+- the two new bot replies contained no URL, confidence, UUID, suggestion ID,
+  status, score, or other internal diagnostic fields.
+
+## Production Smoke Boundaries
+
+- No migration or schema change was applied; the table already existed.
+- No crawl, sync, indexing, reindex, preview, approval, or activation was run.
+- The single discovered candidate remains `pending` for owner review.
 - No `.env` changes.
-- Production migration/search/manual-smoke status is not established by the
-  repository and must not be inferred from the merged code.
+- Polling was stopped and temporary smoke artifacts were removed after the
+  checks completed.

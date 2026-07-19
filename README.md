@@ -1,6 +1,9 @@
 # AI Kurator V2
 
-Evidence-first Telegram RAG bot with Supabase, document-first retrieval, evidence packs, and claim verification.
+AI Kurator V2 - Telegram-бот с evidence-first RAG v2 для ответов по
+загруженным материалам и официальной документации сервисов. Система сначала
+выбирает документы и доказательства, проверяет утверждения и безопасно
+предлагает новые источники только для ручной проверки владельцем.
 
 
 
