@@ -37,14 +37,15 @@ Hard rules:
 - One branch = one meaningful block.
 - Do not start the next roadmap item without explicit instruction.
 - After a completed project block, update docs/project_status.md.
-- Current active focus: General Improvement Block 1 - keep Documentation
-  Discovery advisory so ordinary text questions always continue through the
+- Latest completed focus: General Improvement Block 1 - Documentation
+  Discovery is advisory and ordinary text questions continue through the
   normal evidence-first answer path.
+- No next improvement block is active until explicit owner instruction.
 - Phase 7C-B implementation changes are already present in `main`, but their
   post-change production validation remains pending.
-- Do not add discovery detection/ranking expansion, service-specific rules,
-  production docs operations, schema changes, or another RAG fix in this
-  branch.
+- Do not start discovery detection/ranking expansion, service-specific rules,
+  production docs operations, schema changes, or another RAG fix without a new
+  explicit owner instruction.
 
 ## Generic Retrieval Fixes
 

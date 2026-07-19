@@ -3,9 +3,10 @@
 ## Roadmap focus discipline
 
 Use one active roadmap focus at a time. By explicit owner request on
-2026-07-19, the current focus is General Improvement Block 1: Documentation
-Discovery must remain advisory and must not replace the normal evidence-first
-answer to an ordinary text question.
+2026-07-19, General Improvement Block 1 made Documentation Discovery advisory
+so it cannot replace the normal evidence-first answer to an ordinary text
+question. The implementation is merged; no next improvement block is active
+until explicit owner instruction.
 
 The Phase 7C-B implementation changes and Documentation Discovery MVP code are
 already present in `main` at `02b8693`. Phase 7C-B still needs a separately
@@ -483,7 +484,7 @@ question, not a claimed current defect until the harness proves it.
 
 ### General Improvement Block 1 - Advisory Docs Discovery
 
-Status: active focused branch.
+Status: complete and merged into `main` after owner approval.
 
 Goal: preserve the ordinary answer contract while still creating safe pending
 documentation suggestions for unknown services.

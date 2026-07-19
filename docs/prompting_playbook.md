@@ -26,11 +26,12 @@ recommendation only; it must not authorize the agent to start the next project
 block without an explicit owner command.
 
 Prompts should preserve one active roadmap focus. State the current focus and
-what must not be started in the same branch. The current focus is General
-Improvement Block 1: Documentation Discovery is advisory and ordinary text
-questions must still continue through the normal RAG answer path. Do not add
-discovery detection/ranking changes, Phase 8A, Phase 8B, production audits,
-external docs operations, schema changes, or RAG fixes in that branch.
+what must not be started in the same branch. General Improvement Block 1 is
+complete and merged: Documentation Discovery is advisory and ordinary text
+questions continue through the normal RAG answer path. No next improvement
+block is active. Do not start discovery detection/ranking changes, Phase 8A,
+Phase 8B, production audits, external docs operations, schema changes, or RAG
+fixes without a new explicit owner instruction.
 
 Do not treat `docs/project_status.md` as an automatic latest-main pointer.
 Project status should record durable project state and meaningful milestones.

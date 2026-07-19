@@ -142,6 +142,7 @@ General Improvement Block 1 - advisory Documentation Discovery answer
 continuity:
 
 - started by explicit owner request on 2026-07-19;
+- implementation merged into `main` after owner approval;
 - every ordinary text question continues through the normal evidence-first RAG
   answer flow even when discovery creates a pending docs suggestion;
 - a safe discovery notice is advisory and is sent after the answer;
@@ -185,8 +186,8 @@ Previous durable milestone, Phase 7B.2:
 
 Current active roadmap focus:
 
-- General Improvement Block 1 - make Documentation Discovery advisory so it
-  never replaces an ordinary RAG answer.
+- General Improvement Block 1 is implemented and merged; no next improvement
+  block is active until explicit owner instruction.
 - Phase 7C-B implementation is already present in `main`, but its post-change
   production baseline remains pending and must not be reported as complete.
 - Do not combine detection/ranking expansion, service-specific rules,
@@ -199,8 +200,6 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- review and merge the focused advisory-discovery branch only after its checks
-  pass;
 - run one short manual Telegram smoke only with explicit owner approval because
   it sends real messages;
 - handle Phase 7C-B production validation and generic Docs Discovery

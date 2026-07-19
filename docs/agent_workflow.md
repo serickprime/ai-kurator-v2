@@ -107,13 +107,14 @@ current workflow.
 
 Current focus:
 
-- General Improvement Block 1 - Documentation Discovery is advisory and must
-  not replace the normal answer path.
+- General Improvement Block 1 is complete and merged: Documentation Discovery
+  is advisory and does not replace the normal answer path.
+- No next improvement block is active until explicit owner instruction.
 - Phase 7C-B implementation is already in `main`; its post-change production
   validation is still pending.
-- Do not add discovery detection/ranking changes, Phase 8A, Phase 8B,
-  production audits, external docs operations, schema changes, or RAG fixes in
-  this branch.
+- Do not start discovery detection/ranking changes, Phase 8A, Phase 8B,
+  production audits, external docs operations, schema changes, or RAG fixes
+  without a new explicit owner instruction.
 
 ## After work
 

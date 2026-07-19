@@ -345,15 +345,16 @@ git log --oneline -5
   already present in `main` at `02b8693`.
 - Phase 7C-B post-change production validation is not recorded and remains
   pending.
-- Current focus: General Improvement Block 1 - keep Documentation Discovery
-  advisory so every ordinary text question still receives the normal RAG
-  answer.
+- General Improvement Block 1 is complete and merged: Documentation Discovery
+  is advisory and every ordinary text question is still passed to the normal
+  RAG answer path.
+- No next improvement block is active until explicit owner instruction.
 - Phase 8A and Phase 8B are recorded but not started.
 
-The current block must not add discovery detection/ranking expansion, course
-alias wiring, mixed-source allocation, prompt changes, citation changes,
-documentation ingestion, Phase 8A upload cleanup, or Phase 8B conversation
-memory.
+Do not start discovery detection/ranking expansion, course alias wiring,
+mixed-source allocation, prompt changes, citation changes, documentation
+ingestion, Phase 8A upload cleanup, or Phase 8B conversation memory without a
+new explicit owner instruction.
 
 ## Documentation Source Policy
 

@@ -98,9 +98,10 @@ These rules protect the project from uncontrolled growth and accidental regressi
 
 - One branch = one meaningful block.
 - One active roadmap focus at a time.
-- Current focus: General Improvement Block 1 - keep Documentation Discovery
-  advisory so ordinary questions always continue through the normal RAG answer
-  path.
+- Latest completed focus: General Improvement Block 1 - Documentation
+  Discovery is advisory and ordinary questions continue through the normal RAG
+  answer path.
+- No next improvement block is active until explicit owner instruction.
 - Phase 7C-B implementation is present in `main`, but post-change production
   validation remains pending.
 - Solo-owner mode is the default.
@@ -142,6 +143,6 @@ These rules protect the project from uncontrolled growth and accidental regressi
 - Keep backlog ideas separate from the current branch. Record them as backlog
   or a recommended next prompt instead of mixing unrelated work into the active
   PR.
-- During General Improvement Block 1, do not add detection/ranking expansion,
-  service-specific rules, production audits, external docs operations, schema
-  changes, RAG fixes, Phase 8A, or Phase 8B.
+- Do not start detection/ranking expansion, service-specific rules, production
+  audits, external docs operations, schema changes, RAG fixes, Phase 8A, or
+  Phase 8B without a new explicit owner instruction.
