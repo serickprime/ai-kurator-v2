@@ -802,17 +802,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         )
         return
 
-    if await maybe_send_docs_discovery_suggestion(
-        update,
-        discovery_service=services.docs_discovery_service,
-        question=text,
-        workspace_id=services.default_workspace_id,
-        requested_by_user_id=user_id,
-        is_owner_or_admin=_can_use_docs_dashboard(services, user_id),
-        reply_markup=main_menu_keyboard(),
-    ):
-        return
-
     services.intake_buffer.add_text(user_id, text, message_id=update.message.message_id)
     settings = await services.settings_repo.get(user_id)
     intake = services.intake_buffer.build_intake(
@@ -821,6 +810,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         user_settings=_settings_dict(settings),
     )
     await _answer_intake(update, services, intake)
+    await maybe_send_docs_discovery_suggestion(
+        update,
+        discovery_service=services.docs_discovery_service,
+        question=text,
+        workspace_id=services.default_workspace_id,
+        requested_by_user_id=user_id,
+        is_owner_or_admin=_can_use_docs_dashboard(services, user_id),
+        reply_markup=main_menu_keyboard(),
+    )
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

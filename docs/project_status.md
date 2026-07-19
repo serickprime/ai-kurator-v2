@@ -75,6 +75,14 @@ Core state:
 - Phase 7C-A safe answer-quality harness is complete. The harness uses the real RAG components through a separate no-write runtime with `EvidenceLogRepository` disabled, Telegram sending disabled, read-only Supabase guarded by an allowlisted adapter, and a resumable sanitized JSON artifact outside Git.
 - Phase 7C-A baseline result: `functional_blocker_found`, primary blocker `evidence_selection_gap`. Product WARN cases were `n8n_docs` and `openrouter_docs` because selected documents existed but no accepted evidence contained the expected high-signal terms. `mixed_course_service_auto` was blocked by lack of a suitable uploaded-material/service fixture, not classified as a proven product failure.
 - Phase 7C-A did not show dirty Telegram documentation residue entering final answers or citations. Remaining Webhooks/navigation residue stays deferred.
+- `main` at `02b8693` already contains the Phase 7C-B implementation changes
+  and the Documentation Discovery MVP code. The repository previously did not
+  record this merge consistently.
+- Phase 7C-B is not yet closed: no post-change production baseline artifact is
+  recorded, so the real-corpus effect remains unverified.
+- Documentation Discovery remains feature-flagged off by default. The
+  production migration apply, search-provider configuration, and manual
+  Telegram smoke are not confirmed by repository evidence.
 
 ## Completed PRs
 
@@ -125,6 +133,21 @@ Core state:
 - PR #44 - raw HTML validation refinement for documented markup.
 - PR #45 - placeholder and documented markup validation fix.
 - PR #46 - bounded documented syntax validation finalization.
+- PR #47 - documented checked-checkbox syntax compatibility.
+- PR #48 - Documentation Discovery MVP implementation.
+
+## Current implementation block
+
+General Improvement Block 1 - advisory Documentation Discovery answer
+continuity:
+
+- started by explicit owner request on 2026-07-19;
+- every ordinary text question continues through the normal evidence-first RAG
+  answer flow even when discovery creates a pending docs suggestion;
+- a safe discovery notice is advisory and is sent after the answer;
+- discovery/search failures remain fail-open for the user answer path;
+- no detection/ranking expansion, crawl, sync, indexing, activation, schema
+  change, production write, or AnswerGenerator/retrieval change is included.
 
 ## Latest completed project block
 
@@ -162,13 +185,13 @@ Previous durable milestone, Phase 7B.2:
 
 Current active roadmap focus:
 
-- Phase 7C-B - one focused functional fix for `evidence_selection_gap`.
-- Phase 7C-A is complete; do not rerun or repair cases merely to get greener
-  counters.
-- Phase 7C-B must choose one generic evidence-selection fix from the baseline
-  evidence. Do not combine routing, course aliases, prompts, source labels,
-  documentation repair, upload lifecycle, or conversation memory in the same
-  branch.
+- General Improvement Block 1 - make Documentation Discovery advisory so it
+  never replaces an ordinary RAG answer.
+- Phase 7C-B implementation is already present in `main`, but its post-change
+  production baseline remains pending and must not be reported as complete.
+- Do not combine detection/ranking expansion, service-specific rules,
+  documentation ingestion, prompts, schema, upload lifecycle, or conversation
+  memory in this branch.
 
 `docs/project_status.md` tracks project state and stable milestones, not an
 exact latest-main pointer after every technical docs merge. Do not create
@@ -176,12 +199,12 @@ docs-only PRs only to update latest commit values or for cosmetic cleanup.
 
 ## Next recommended
 
-- start Phase 7C-B only after explicit owner instruction;
-- inspect the Phase 7C-A sanitized artifact outside Git and current code before
-  selecting the exact `evidence_selection_gap` fix;
-- implement exactly one generic fix, with regression tests for the class of
-  questions that failed or warned;
-- rerun the Phase 7C-A baseline matrix after the fix;
+- review and merge the focused advisory-discovery branch only after its checks
+  pass;
+- run one short manual Telegram smoke only with explicit owner approval because
+  it sends real messages;
+- handle Phase 7C-B production validation and generic Docs Discovery
+  detection/ranking improvements as separate future blocks;
 - keep Phase 8A and Phase 8B recorded but not started.
 
 - optional retrieval-quality manual smoke when a future runtime/query enrichment

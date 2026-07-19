@@ -37,8 +37,14 @@ Hard rules:
 - One branch = one meaningful block.
 - Do not start the next roadmap item without explicit instruction.
 - After a completed project block, update docs/project_status.md.
-- Current active focus: Phase 7C-B - one focused fix for `evidence_selection_gap`, based on the completed Phase 7C-A baseline.
-- Do not start Phase 7C-B without explicit instruction. The next fix must be generic, evidence-first, and limited to one primary blocker.
+- Current active focus: General Improvement Block 1 - keep Documentation
+  Discovery advisory so ordinary text questions always continue through the
+  normal evidence-first answer path.
+- Phase 7C-B implementation changes are already present in `main`, but their
+  post-change production validation remains pending.
+- Do not add discovery detection/ranking expansion, service-specific rules,
+  production docs operations, schema changes, or another RAG fix in this
+  branch.
 
 ## Generic Retrieval Fixes
 

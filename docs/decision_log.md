@@ -489,3 +489,22 @@ PATs, Telegram bot tokens, and logs with secrets must not be committed.
 
 Reason: the bot uses privileged server-side keys and Telegram tokens. The repo
 must contain only placeholders and safe examples.
+
+## Documentation discovery is advisory to the answer path
+
+Decision: discovering an unknown service and creating a pending documentation
+suggestion must not replace the normal evidence-first answer attempt.
+
+Reason: documentation discovery is a maintenance and owner-review aid. The
+product contract is to answer the user's question from currently accepted
+evidence, including an honest insufficient-evidence result when the requested
+documentation is not connected.
+
+Boundaries:
+
+- ordinary text questions run through the normal RAG answer path exactly once;
+- a safe discovery notice may follow the answer;
+- discovery/search errors are fail-open for answering;
+- no discovered URL becomes evidence or an active source automatically;
+- preview, owner approval, allowlists, and explicit activation remain required;
+- discovery does not crawl, sync, index, or activate by itself.

@@ -339,19 +339,21 @@ git log --oneline -5
 
 ## Current Roadmap Focus
 
-- Completed block: Phase 7C-A.
-- Previous durable block: Phase 7B.2.
-- Current focus: Phase 7C-B - one focused functional fix for
-  `evidence_selection_gap`.
-- Phase 7C-B is not started.
-- The Phase 7C-A baseline selected exactly one primary blocker from measured
-  evidence: `evidence_selection_gap`.
+- Completed measured block: Phase 7C-A.
+- Previous durable source block: Phase 7B.2.
+- Phase 7C-B implementation changes and Documentation Discovery MVP code are
+  already present in `main` at `02b8693`.
+- Phase 7C-B post-change production validation is not recorded and remains
+  pending.
+- Current focus: General Improvement Block 1 - keep Documentation Discovery
+  advisory so every ordinary text question still receives the normal RAG
+  answer.
 - Phase 8A and Phase 8B are recorded but not started.
 
-Phase 7C-B must not combine multiple fixes. Do not start course alias wiring,
-explicit service routing, mixed-source allocation, prompt changes, citation
-changes, documentation repair, Phase 8A upload cleanup, or Phase 8B conversation
-memory unless the owner explicitly changes the scope.
+The current block must not add discovery detection/ranking expansion, course
+alias wiring, mixed-source allocation, prompt changes, citation changes,
+documentation ingestion, Phase 8A upload cleanup, or Phase 8B conversation
+memory.
 
 ## Documentation Source Policy
 

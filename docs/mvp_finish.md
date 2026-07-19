@@ -7,7 +7,9 @@ not a production migration log, production crawl log, or release log.
 
 ## Progress
 
-MVP progress: 14/15.
+MVP implementation progress: 15/15.
+
+Production enablement remains separately unconfirmed.
 
 - [x] `docs_candidate_suggestions` migration exists with statuses, preview result, dedupe, RLS, and service-role access.
 - [x] `app/db/schema.sql` mirrors the migration contract for the suggestions table, trigger, indexes, RLS, grants, and revokes.
@@ -23,7 +25,13 @@ MVP progress: 14/15.
 - [x] Discovery result validation rejects unsafe URLs, private/local hosts, forbidden paths, forums/blogs/aggregators/issue trackers, redirects to unverified domains, and low-confidence results.
 - [x] A valid official discovery result creates or reuses a pending suggestion and regular users receive a non-technical response.
 - [x] Owner approval requires successful preview, explicit confirmation, existing activation service reuse, a one-suggestion dynamic URL/domain policy, and compact activation result persistence.
-- [ ] Owner-approved migration apply, search provider configuration, one manual Telegram smoke, and commit/push/merge.
+- [x] Implementation commit/push/merge is present in `main`.
+
+Production enablement checklist:
+
+- [ ] Owner-approved migration apply is confirmed.
+- [ ] Search provider configuration is confirmed.
+- [ ] One manual Telegram smoke is recorded.
 
 ## Verified
 
@@ -42,4 +50,5 @@ MVP progress: 14/15.
 - No real Telegram send.
 - No real crawl, indexing, reindex, or activation run.
 - No `.env` changes.
-- No commit or push.
+- Production migration/search/manual-smoke status is not established by the
+  repository and must not be inferred from the merged code.

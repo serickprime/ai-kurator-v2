@@ -422,6 +422,31 @@ Expected:
 - command does not refresh, repair, activate, crawl, sync, index, reindex,
   edit docs status, run migrations, or write Supabase.
 
+## Advisory Documentation Discovery smoke
+
+Run only after the owner explicitly approves a real Telegram/search-provider
+smoke and the feature is configured. This smoke may create one pending
+suggestion, but it must not activate or index anything.
+
+1. Ask one ordinary text question about a synthetic or genuinely unsupported
+   service name that passes the configured discovery policy.
+2. Confirm the normal RAG answer or honest insufficient-evidence response is
+   sent first.
+3. Confirm a non-technical discovery notice follows when a pending suggestion
+   is created.
+4. Repeat with the search provider unavailable and confirm the RAG answer still
+   arrives without a discovery error leaking to the user.
+
+Expected:
+
+- the RAG pipeline is called exactly once with the original question;
+- discovery never replaces the answer;
+- regular users do not receive confidence values, URLs, internal ids, or owner
+  diagnostics;
+- only a pending owner-review suggestion may be created;
+- no crawl, sync, indexing, reindex, activation, migration, or schema change is
+  run by the smoke.
+
 ## Source Quality Cleanup smoke
 
 Run after Phase 7A external docs cleaning/quality changes:

@@ -107,11 +107,13 @@ current workflow.
 
 Current focus:
 
-- Phase 7C-A - safe end-to-end answer harness and functional baseline.
-- Phase 7C-A has not started yet.
-- Do not start Phase 7C-A implementation, Phase 7C-B, Phase 8A, Phase 8B,
-  production audits, external docs operations, schema changes, or RAG fixes
-  unless the owner explicitly asks.
+- General Improvement Block 1 - Documentation Discovery is advisory and must
+  not replace the normal answer path.
+- Phase 7C-B implementation is already in `main`; its post-change production
+  validation is still pending.
+- Do not add discovery detection/ranking changes, Phase 8A, Phase 8B,
+  production audits, external docs operations, schema changes, or RAG fixes in
+  this branch.
 
 ## After work
 

@@ -26,10 +26,11 @@ recommendation only; it must not authorize the agent to start the next project
 block without an explicit owner command.
 
 Prompts should preserve one active roadmap focus. State the current focus and
-what must not be started in the same branch. The current focus is Phase 7C-A -
-safe end-to-end answer harness and functional baseline, and it has not started
-yet. Do not start Phase 7C-B, Phase 8A, Phase 8B, production audits, external
-docs operations, schema changes, or RAG fixes unless the owner explicitly asks.
+what must not be started in the same branch. The current focus is General
+Improvement Block 1: Documentation Discovery is advisory and ordinary text
+questions must still continue through the normal RAG answer path. Do not add
+discovery detection/ranking changes, Phase 8A, Phase 8B, production audits,
+external docs operations, schema changes, or RAG fixes in that branch.
 
 Do not treat `docs/project_status.md` as an automatic latest-main pointer.
 Project status should record durable project state and meaningful milestones.

@@ -32,7 +32,7 @@ async def maybe_send_docs_discovery_suggestion(
     is_owner_or_admin: bool,
     reply_markup: Any | None = None,
 ) -> bool:
-    """Handle unknown-service discovery before normal RAG when a suggestion is created."""
+    """Send an advisory discovery notice without controlling the normal RAG flow."""
     if update.message is None or discovery_service is None:
         return False
     try:

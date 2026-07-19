@@ -98,8 +98,11 @@ These rules protect the project from uncontrolled growth and accidental regressi
 
 - One branch = one meaningful block.
 - One active roadmap focus at a time.
-- Current focus: Phase 7C-A - safe end-to-end answer harness and functional
-  baseline. Phase 7C-A has not started yet.
+- Current focus: General Improvement Block 1 - keep Documentation Discovery
+  advisory so ordinary questions always continue through the normal RAG answer
+  path.
+- Phase 7C-B implementation is present in `main`, but post-change production
+  validation remains pending.
 - Solo-owner mode is the default.
 - Start work from fresh `main` unless the user gives a different branch.
 - Push feature branches only after requested checks pass.
@@ -139,6 +142,6 @@ These rules protect the project from uncontrolled growth and accidental regressi
 - Keep backlog ideas separate from the current branch. Record them as backlog
   or a recommended next prompt instead of mixing unrelated work into the active
   PR.
-- During Phase 7C-A, do not start Phase 7C-B, Phase 8A, Phase 8B, production
-  audits, external docs operations, schema changes, or RAG fixes until the
-  owner explicitly changes focus.
+- During General Improvement Block 1, do not add detection/ranking expansion,
+  service-specific rules, production audits, external docs operations, schema
+  changes, RAG fixes, Phase 8A, or Phase 8B.

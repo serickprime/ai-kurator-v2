@@ -5,7 +5,11 @@ from types import SimpleNamespace
 
 from app.bot.handlers import BotServices, handle_text
 from app.db.repositories import DocsCandidateSuggestion
-from app.docs_registry.discovery import DISCOVERY_USER_MESSAGE, DocsDiscoveryOutcome
+from app.docs_registry.discovery import (
+    DISCOVERY_USER_MESSAGE,
+    LOW_CONFIDENCE_OWNER_MESSAGE,
+    DocsDiscoveryOutcome,
+)
 
 
 class FakeMessage:
@@ -36,6 +40,21 @@ class FakeDiscoveryService:
         return self.outcome
 
 
+class FailingDiscoveryService:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, int | None]] = []
+
+    async def discover_from_question(
+        self,
+        question: str,
+        *,
+        workspace_id: str,
+        requested_by_user_id: int | None = None,
+    ) -> DocsDiscoveryOutcome:
+        self.calls.append((question, workspace_id, requested_by_user_id))
+        raise RuntimeError("search unavailable")
+
+
 class FakeRagPipeline:
     def __init__(self) -> None:
         self.calls: list[str] = []
@@ -46,7 +65,7 @@ class FakeRagPipeline:
         return SimpleNamespace(answer="RAG answer", status="answered", sources=(), debug={})
 
 
-def test_regular_user_gets_safe_discovery_message_without_technical_details() -> None:
+def test_regular_user_gets_rag_answer_and_safe_discovery_notice() -> None:
     discovery = FakeDiscoveryService(
         DocsDiscoveryOutcome(
             handled=True,
@@ -68,11 +87,76 @@ def test_regular_user_gets_safe_discovery_message_without_technical_details() ->
     asyncio.run(handle_text(_update(message, user_id=42), _context(services)))
 
     assert discovery.calls == [("Как подключить AcmePay webhooks?", "workspace-1", 42)]
-    assert rag.calls == []
+    assert rag.calls == ["Как подключить AcmePay webhooks?"]
+    assert message.replies == ["RAG answer", DISCOVERY_USER_MESSAGE]
     assert message.replies[-1] == DISCOVERY_USER_MESSAGE
     assert "https://" not in message.replies[-1]
     assert "confidence" not in message.replies[-1].casefold()
     assert "AcmePay" not in message.replies[-1]
+
+
+def test_owner_low_confidence_notice_does_not_replace_rag_answer() -> None:
+    discovery = FakeDiscoveryService(
+        DocsDiscoveryOutcome(
+            handled=True,
+            reason="low_confidence",
+            service_name="CloudDesk",
+            service_id="clouddesk",
+        )
+    )
+    rag = FakeRagPipeline()
+    services = BotServices(
+        docs_discovery_service=discovery,
+        rag_pipeline=rag,
+        default_workspace_id="workspace-1",
+        owner_ids=(42,),
+    )
+    message = FakeMessage("Как подключить CloudDesk?")
+
+    asyncio.run(handle_text(_update(message, user_id=42), _context(services)))
+
+    assert rag.calls == ["Как подключить CloudDesk?"]
+    assert message.replies == ["RAG answer", LOW_CONFIDENCE_OWNER_MESSAGE]
+
+
+def test_regular_user_low_confidence_result_keeps_only_rag_answer() -> None:
+    discovery = FakeDiscoveryService(
+        DocsDiscoveryOutcome(
+            handled=True,
+            reason="low_confidence",
+            service_name="CloudDesk",
+            service_id="clouddesk",
+        )
+    )
+    rag = FakeRagPipeline()
+    services = BotServices(
+        docs_discovery_service=discovery,
+        rag_pipeline=rag,
+        default_workspace_id="workspace-1",
+    )
+    message = FakeMessage("Как подключить CloudDesk?")
+
+    asyncio.run(handle_text(_update(message, user_id=42), _context(services)))
+
+    assert rag.calls == ["Как подключить CloudDesk?"]
+    assert message.replies == ["RAG answer"]
+
+
+def test_discovery_failure_does_not_block_rag_answer() -> None:
+    discovery = FailingDiscoveryService()
+    rag = FakeRagPipeline()
+    services = BotServices(
+        docs_discovery_service=discovery,
+        rag_pipeline=rag,
+        default_workspace_id="workspace-1",
+    )
+    message = FakeMessage("Как подключить FutureService?")
+
+    asyncio.run(handle_text(_update(message, user_id=42), _context(services)))
+
+    assert discovery.calls == [("Как подключить FutureService?", "workspace-1", 42)]
+    assert rag.calls == ["Как подключить FutureService?"]
+    assert message.replies == ["RAG answer"]
 
 
 def _context(services: BotServices) -> SimpleNamespace:

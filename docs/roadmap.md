@@ -2,12 +2,17 @@
 
 ## Roadmap focus discipline
 
-Use one active roadmap focus at a time. The current focus is Phase 7C-B - one
-focused functional fix for `evidence_selection_gap`, based on the completed
-Phase 7C-A baseline.
+Use one active roadmap focus at a time. By explicit owner request on
+2026-07-19, the current focus is General Improvement Block 1: Documentation
+Discovery must remain advisory and must not replace the normal evidence-first
+answer to an ordinary text question.
 
-Until the owner explicitly starts Phase 7C-B, do not fix course aliases, change
-routing, change evidence allocation, edit prompts, run production audits, send
+The Phase 7C-B implementation changes and Documentation Discovery MVP code are
+already present in `main` at `02b8693`. Phase 7C-B still needs a separately
+approved post-change production baseline before it can be called closed.
+
+During the current block, do not expand service detection/ranking, change RAG
+retrieval or AnswerGenerator, edit prompts, run production audits, send real
 Telegram messages, crawl, sync, index, reindex, activate docs, archive
 documents, change schema, or write to Supabase.
 
@@ -450,7 +455,8 @@ the answer.
 
 ### Phase 7C-B - One focused functional fix
 
-Status: current focus, not started.
+Status: implementation changes are present in `main`; post-change production
+validation is pending, so the phase is not closed.
 
 Primary blocker selected by Phase 7C-A:
 
@@ -474,6 +480,22 @@ Requirements:
 
 Mixed course-plus-documentation evidence is an acceptance requirement and audit
 question, not a claimed current defect until the harness proves it.
+
+### General Improvement Block 1 - Advisory Docs Discovery
+
+Status: active focused branch.
+
+Goal: preserve the ordinary answer contract while still creating safe pending
+documentation suggestions for unknown services.
+
+Requirements:
+
+- run the normal RAG answer path exactly once for every ordinary text question;
+- run discovery as an advisory follow-up and keep its user notice non-technical;
+- discovery/search failure must not remove or replace the answer;
+- preserve the existing feature flag and owner review/activation safeguards;
+- do not change unknown-service detection/ranking, crawl, indexing, activation,
+  schema, AnswerGenerator, or retrieval in this block.
 
 ## Phase 8A - Uploaded File Lifecycle and Storage Hygiene
 
